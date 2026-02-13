@@ -1,0 +1,5 @@
+{
+  "artifactType": "ARTIFACT_TYPE_IMPLEMENTATION_PLAN",
+  "summary": "MapleStory Worlds 전체 Components 마스터 플랜. 100개 이상의 모든 Components를 10개 Phase로 분류하여 체계적 학습 계획 수립. Phase 1: 플레이어/캐릭터 (20개), Phase 2: 전투/상호작용 (6개), Phase 3: 애니메이션/상태 (7개), Phase 4: 물리/충돌 (13개), Phase 5: 맵/타일 (9개), Phase 6: UI (12개), Phase 7: 렌더링 (18개), Phase 8: 파티클 (10개), Phase 9: 사운드 (6개), Phase 10: 유틸리티 (4개). 각 Component별 학습 방법론 (개요, Properties, Methods, Events, 사용 패턴, 통합 패턴) 정의. 예상 일정 9-14일.",
+  "updatedAt": "2026-02-08T04:38:14.647487300Z"
+}

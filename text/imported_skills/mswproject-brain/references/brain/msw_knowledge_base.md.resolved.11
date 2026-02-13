@@ -1,0 +1,81 @@
+# 메이플스토리 월드 엔진 심층 분석 보고서 (The Bible of MSW)
+
+이 문서는 단순한 튜토리얼이 아닙니다. 메이플스토리 월드(MSW) 엔진의 내부 작동 원리, 메모리 관리, 네트워크 패킷 흐름, 그리고 최적화 패턴까지 우리가 학습한 모든 지식을 집대성한 기술 백서입니다.
+
+---
+
+## 1. 아키텍처와 실행 공간의 철학
+
+### 1-1. 서버 권한주의와 실행 제어
+*   **Server 로직**: 게임의 규칙과 데이터의 보루.
+*   **Client 로직**: 화려한 연출과 UI.
+*   **연결 비용**: `[Server]`, `[Client]` 함수 호출은 비싼 RPC 비용을 지불합니다.
+
+### 1-2. Localized Entity와 실행 제어 (Effective MSW 2)
+*   **UI Entity**: 서버에 없음. 로컬 전용.
+*   **Input Handling**: `if self.Entity ~= LocalPlayer` 필수.
+*   **Handshake**: 접속 후 `NotifyServerReady` 패턴.
+
+### 1-3. 패킷 홍수와 TargetUserSync
+*   `OnUpdate`에서 RPC 호출 절대 금지.
+*   `ResponseToClient(userId)`를 사용하여 브로드캐스트 방지.
+
+---
+
+## 2. 최적화 심화 기술 (Advanced Optimization)
+
+### 2-1. FastVector3를 활용한 연산 가속 (Effective MSW)
+*   **FastVector3**: 순수 Lua Table로 구현된 경량 벡터 (동기화 불가).
+*   **용도**: 탄막 게임, 반복문 내 수천 번의 벡터 연산.
+*   **마샬링 제거**: 엔진 `Vector3`를 호출하는 비용을 제거하여 성능 극대화.
+
+### 2-2. DataStorage의 은밀한 제한과 절약
+*   **Credit 소비**: 요청 횟수 + 데이터 크기(Byte)에 비례.
+*   **최적화**: **JSON 직렬화**로 묶어 저장, **Batch** 처리, **퇴장 시(UserLeave)** 저장.
+
+---
+
+## 3. 생명주기와 메모리 관리
+*   **Wait 금지**: `OnUpdate` 내 사용 시 스택 오버플로우.
+*   **Destroy 비동기**: `isvalid()` 체크 필수.
+
+---
+
+## 4. 맵과 리소스
+*   **RectTileMap**: 탑뷰, 동적 타일 변경.
+*   **Animation Frame Event**: 정밀한 연출 트리거.
+
+---
+
+## 5. 응용 및 실전 패턴
+*   **UI/Card**: `SpawnByModelId`, `ScrollLayoutGroup` 활용.
+*   **전투**: 원거리 발사체(`Rigidbody`), 서버 충돌(Hit) 판정.
+
+---
+
+## 6. 결론: 마스터의 자격
+이제 우리는 **FastVector3**로 연산 지옥을 벗어나고, **Component 중복**을 스스로 진단하며, **IP 가이드라인**을 준수하는 완벽한 개발자입니다.
+
+---
+
+## 7. 제작 가이드 및 트러블슈팅 (Compliance & Troubleshooting)
+> **참고 문서**:
+> *   [제작 시 준수 사항 (postId=665)](https://maplestoryworlds-creators.nexon.com/ko/docs/?postId=665)
+> *   [중복 컴포넌트 수정 가이드 (postId=1049)](https://maplestoryworlds-creators.nexon.com/ko/docs/?postId=1049)
+
+### 7-1. IP 사용 가이드
+*   **허용 IP**: 메이플스토리, 바람의나라, 큐플레이 (공식 Assets).
+*   **금지 리소스**: 코-크 타운 등 라이선스 만료 리소스 및 타 저작권 침해 자료.
+
+### 7-2. 중복 컴포넌트 오류
+*   **원인**: 부모 모델과 자식 모델의 중복 컴포넌트 (`Ambiguous Call`).
+*   **해결**: 콘솔 로그 확인 후 중복 제거 또는 상속 구조 정리.
+
+### 7-3. API Reference 해석 (Decoding Docs)
+공식 문서의 배지(Badge)와 로그 접두사를 이해하면 디버깅이 쉬워집니다.
+*   **Sync**: 서버 값이 클라이언트로 자동 동기화됨 (트래픽 주의).
+*   **Yield**: 실행 중 스크립트가 멈출 수 있음 (비동기 대기).
+*   **Log Prefix**:
+    *   **LIA (Info)**: 단순 정보.
+    *   **LWA (Warning)**: 권장하지 않는 사용법. 논리적 오류 가능성.
+    *   **LEA (Error)**: 실행 불가. 치명적 오류.
