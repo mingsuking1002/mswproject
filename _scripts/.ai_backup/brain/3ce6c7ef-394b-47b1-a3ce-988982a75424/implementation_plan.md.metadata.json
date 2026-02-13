@@ -1,5 +1,0 @@
-{
-  "artifactType": "ARTIFACT_TYPE_IMPLEMENTATION_PLAN",
-  "summary": "Detailed implementation plan for converting the Lua visual novel engine to HTML/CSS/JavaScript, including architecture design, data structure, optimization strategies, and verification plan",
-  "updatedAt": "2026-01-24T16:58:28.149926Z"
-}

@@ -1,5 +1,0 @@
-{
-  "artifactType": "ARTIFACT_TYPE_OTHER",
-  "summary": "Phase 1 Player & Character Components 완전 가이드. 11개 Components 상세 문서: PlayerController (3 props, 13 methods, 2 events), Movement (3 props, 7 methods, 2 events), Chat (7 props, 1 event), AvatarRenderer (6 props, 8 methods, 2 events), AvatarGUIRenderer (7 props, 5 methods), AvatarBodyActionSelector (2 props, 1 event), AvatarFaceActionSelector (3 props), AvatarStateAnimation (2 props, 4 methods, 1 event), CostumeManager (20 props, 2 methods, 2 events), NameTag (7 props), ChatBalloon (15 props, 1 event). 총 75 properties, 39 methods, 12 events. 실전 사용 패턴 및 코드 예제 포함.",
-  "updatedAt": "2026-02-08T04:44:19.707413300Z"
-}

@@ -1,5 +1,0 @@
-{
-  "artifactType": "ARTIFACT_TYPE_OTHER",
-  "summary": "6개 핵심 Components 상세 가이드: ButtonComponent (UI 버튼, 8 properties, 7 events), TextInputComponent (텍스트 입력, 14 properties, 2 methods, 8 events), CameraComponent (카메라 제어, 16 properties, 4 methods), MapComponent (맵 물리 설정, 13 properties), TileMapComponent (타일맵 렌더링, 14 properties), PlayerComponent (플레이어 관리, 9 properties, 8 methods). 각 컴포넌트의 모든 properties, methods, events를 표로 정리하고 실전 사용 패턴과 코드 예제 포함",
-  "updatedAt": "2026-02-06T02:59:47.347156900Z"
-}

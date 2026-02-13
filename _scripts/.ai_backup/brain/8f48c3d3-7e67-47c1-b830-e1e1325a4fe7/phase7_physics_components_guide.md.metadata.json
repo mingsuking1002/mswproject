@@ -1,5 +1,0 @@
-{
-  "artifactType": "ARTIFACT_TYPE_OTHER",
-  "summary": "Phase 7 Physics Components 완전 가이드. 3개 Component 상세 문서: RigidbodyComponent (25 props, 14 methods, 9 events, 메이플 이동), KinematicbodyComponent (12 props, 7 methods, 5 events, 탑다운 이동), SideviewbodyComponent (6 props, 4 methods, 4 events, 횡스크롤 이동). 총 43 properties, 25 methods, 18 events. 중력, 가속도, 점프, 타일 충돌, 실전 사용 패턴 및 코드 예제 포함.",
-  "updatedAt": "2026-02-08T06:09:39.759107800Z"
-}

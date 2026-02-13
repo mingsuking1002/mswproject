@@ -1,7 +1,0 @@
-# Unified Git Management for AI Brain and Code
-
-- [ ] Check project directory content <!-- id: 0 -->
-- [ ] Create a sync script to backup Brain to Project folder <!-- id: 1 -->
-- [ ] Initialize Git in the project folder (if not exists) <!-- id: 2 -->
-- [ ] Create `.gitignore` for the project <!-- id: 3 -->
-- [ ] Document the workflow for the user <!-- id: 4 -->

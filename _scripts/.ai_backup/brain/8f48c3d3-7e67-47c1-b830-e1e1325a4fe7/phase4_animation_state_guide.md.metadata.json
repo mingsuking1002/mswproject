@@ -1,5 +1,0 @@
-{
-  "artifactType": "ARTIFACT_TYPE_OTHER",
-  "summary": "Phase 4 Animation & State Components 완전 가이드. 2개 Components 상세 문서: StateComponent (1 prop, 6 methods, 3 events, 상태 관리), StateAnimationComponent (1 prop, 4 methods, 1 event, 상태 기반 애니메이션). 총 2 properties, 10 methods, 4 events. StateType 정의, 상태 전이 조건, 애니메이션 매핑, 실전 사용 패턴 및 코드 예제 포함.",
-  "updatedAt": "2026-02-08T05:03:18.790374Z"
-}

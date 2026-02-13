@@ -1,6 +1,0 @@
-{
-  "artifactType": "ARTIFACT_TYPE_OTHER",
-  "summary": "메이플스토리 월드 엔진 마스터 가이드 v4.0. Entity-Component-Property 모델, Workspace/Hierarchy 구조, 서버-클라이언트 실행 제어, 프로퍼티 동기화, 생명주기 이벤트, 모델 시스템, 맵 레이어, DataStorage 심화 (Batch/Transaction/Version), 월드 인스턴스, 최적화 패턴 (FastVector3, 네트워크), Lua 기초, 트러블슈팅 가이드를 포함한 종합 기술 백서.",
-  "updatedAt": "2026-02-06T01:43:36.984537700Z",
-  "version": "12"
-}
