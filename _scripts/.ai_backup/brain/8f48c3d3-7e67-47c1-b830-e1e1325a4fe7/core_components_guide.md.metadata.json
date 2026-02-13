@@ -1,0 +1,5 @@
+{
+  "artifactType": "ARTIFACT_TYPE_OTHER",
+  "summary": "Comprehensive deep-dive documentation for 3 core MSW Components: TransformComponent (position/rotation/scale), SpriteRendererComponent (sprite rendering/animation), and TextComponent (UI text display). Includes all Properties, Methods, Events, usage patterns, and code examples. Forms foundation for Component API mastery.",
+  "updatedAt": "2026-02-06T02:32:00.962375500Z"
+}

@@ -1,0 +1,10 @@
+# User File Review Task
+
+- [ ] **Locate User's File** <!-- id: 0 -->
+    - [ ] Check current brain directory (Done - Empty)
+    - [ ] Check previous brain directory (Done - Found candidates)
+    - [ ] Get confirmation from user on file location/name
+- [ ] **Review File Content** <!-- id: 1 -->
+    - [ ] Read file content
+    - [ ] Analyze content
+    - [ ] Provide feedback to user

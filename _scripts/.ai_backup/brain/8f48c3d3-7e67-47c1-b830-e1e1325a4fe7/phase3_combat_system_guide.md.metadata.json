@@ -1,0 +1,5 @@
+{
+  "artifactType": "ARTIFACT_TYPE_OTHER",
+  "summary": "Phase 3 Combat System Components 완전 가이드. 3개 Combat Components 상세 문서: AttackComponent (10 methods, 1 event, 공격 시스템), HitComponent (9 props, 2 methods, 1 event, 피격 시스템), DamageSkinComponent (대미지 스킨 표시). 총 9 properties, 12 methods, 2 events. 공격/피격 메커니즘, 대미지 계산, 크리티컬 시스템, 실전 사용 패턴 및 코드 예제 포함.",
+  "updatedAt": "2026-02-08T04:50:21.961413600Z"
+}
