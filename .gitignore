@@ -1,0 +1,13 @@
+# System Files
+*.tmp
+.DS_Store
+Thumbs.db
+
+# User Specific
+.vscode/
+*.log
+
+# AI Backup (Include these!)
+# We explicitly want to version control the backup
+!_scripts/
+!.ai_backup/
