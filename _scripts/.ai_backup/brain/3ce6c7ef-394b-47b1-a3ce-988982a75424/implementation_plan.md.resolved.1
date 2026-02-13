@@ -1,0 +1,170 @@
+# 비주얼 노벨 엔진 - HTML 구현 계획
+
+## 개요
+
+메이플 월드 엔진 Lua 기반 비주얼 노벨을 최적화된 현대적인 HTML/CSS/JavaScript 웹 애플리케이션으로 변환합니다. 시스템에는 타이핑 효과가 있는 대화, 캐릭터 초상화, 배경, CG 이미지, 타임아웃이 있는 선택지, 저장/불러오기 기능, 다양한 전환 효과, 오디오 지원 등 포괄적인 기능이 포함됩니다.
+
+## 사용자 확인 사항
+
+> [!IMPORTANT]
+> **데이터 소스**: 원본 코드는 `NPCTalk` DataService 테이블에서 데이터를 로드합니다. HTML 버전에서는 JSON 데이터 구조를 생성합니다.
+> - 샘플 JSON 구조와 예제 대화 데이터 생성
+> - 사용자가 나중에 데이터를 추가/수정할 수 있도록 구조화
+
+> [!NOTE]
+> **에셋 경로**: 원본은 이미지와 오디오에 RUID(리소스 고유 ID)를 사용합니다. HTML에서는 표준 파일 경로를 사용하며, 나중에 추가할 수 있도록 경로만 설정:
+> - 배경 이미지 (backgrounds/)
+> - 캐릭터 초상화 이미지 (portraits/)
+> - CG 이미지 (cg/)
+> - BGM 오디오 파일 (audio/bgm/)
+> - SFX 오디오 파일 (audio/sfx/)
+> - 팝업 이미지 (popup/)
+
+## Proposed Changes
+
+### [NEW] `index.html`
+
+Single-page application structure with:
+- Main menu screen (New Game, Load Game buttons)
+- Game UI group (dialog box, portraits, backgrounds, CG layer, etc.)
+- Save/load slot panels (main menu and in-game)
+- Choice panel with timeout display
+- Phone button and panel for in-game save/load
+- Jump/debug panel
+- Popup image overlay
+- Fade white overlay for transitions
+
+### [NEW] `styles.css`
+
+Modern, premium design system featuring:
+- **Dark theme** with gradient overlays and glassmorphism effects
+- **Smooth animations** for all transitions
+- **Responsive layout** that adapts to screen sizes
+- **Rich color palette** with vibrant accents
+- **Custom typography** using Google Fonts (e.g., Outfit, Inter)
+- **Hover effects** and micro-animations
+- **Z-index layering** system for proper overlay management
+
+Design elements:
+- Glassmorphic dialog boxes with backdrop blur
+- Gradient buttons with hover states
+- Smooth fade-in animations for UI elements
+- Character portrait depth effects (scale/opacity for inactive)
+- Elegant save slot cards with thumbnails
+- Stylish choice buttons with timing indicators
+
+### [NEW] `visual-novel.js`
+
+Core game engine with modular architecture:
+
+#### Data Management
+- JSON-based dialog data loader
+- ID-to-index mapping for efficient lookups
+- LocalStorage-based save/load system (3 slots)
+
+#### Scene Controller
+- Scene flow management
+- Text display with character-by-character typing effect
+- Skip typing on click/spacebar
+- Choice handling with timeout timers
+- Auto-progression to next scene
+
+#### UI Manager
+- Dynamic UI state management (show/hide elements)
+- Portrait positioning and state (active/inactive visual effects)
+- Background and CG management
+- Panel controls (main menu, phone, slots, jump)
+
+#### Effects Engine
+- **Fade transitions**: black/white fade in/out
+- **Shake effects**: configurable intensity and duration for screen and individual elements
+- **Blink/Impact**: screen flash effect
+- **Portrait shake**: individual character shake
+- **Smooth interpolation** for all animations
+
+#### Audio System
+- BGM playback with seamless transitions
+- SFX support
+- Audio preloading for performance
+
+#### Save/Load System
+- 3 save slots with thumbnails and text preview
+- Stores current scene ID, background, and dialog text
+- LocalStorage persistence
+- Slot UI updates with preview data
+
+#### Input Handler
+- Spacebar for advancing dialog/skipping typing
+- Click events for buttons and choices
+- Keyboard shortcuts for debug features
+
+## Data Structure
+
+Example JSON format for dialog data:
+
+```json
+{
+  "scenes": [
+    {
+      "id": 1,
+      "name": "Character Name",
+      "text": "Dialog text here...",
+      "portrait_1": "images/char1.png",
+      "portrait_2": "",
+      "main_portrait": "1",
+      "background": "images/bg1.jpg",
+      "cg": "",
+      "popup": "",
+      "bgm": "audio/bgm1.mp3",
+      "sfx": "",
+      "effect1": "fadeblackin",
+      "effect_sec1": 1.0,
+      "effect2": "",
+      "effect_sec2": 0,
+      "portraiteffect_1": "",
+      "portraiteffect_2": "",
+      "is_choice": 0,
+      "next_id": 2
+    },
+    {
+      "id": 2,
+      "text": "This is a choice scene!",
+      "is_choice": 1,
+      "choice_01": "Option 1",
+      "choice_02": "Option 2",
+      "choice_03": "Option 3",
+      "next_id_01": 3,
+      "next_id_02": 4,
+      "next_id_03": 5,
+      "timeout_sec": 10,
+      "timeout_next_id": 5
+    }
+  ]
+}
+```
+
+## Optimization Strategies
+
+1. **Asset Preloading**: Preload images and audio to prevent stuttering
+2. **Efficient Rendering**: Use CSS transforms and opacity for animations (GPU-accelerated)
+3. **Event Delegation**: Use event delegation for dynamic elements
+4. **Debouncing**: Prevent rapid repeated actions
+5. **Memory Management**: Clear unused assets, cancel timers properly
+6. **RequestAnimationFrame**: Use for smooth shake effects
+7. **Lazy Loading**: Load assets on-demand for large projects
+
+## Verification Plan
+
+### Automated Tests
+- Load sample dialog data and verify parsing
+- Test save/load to localStorage
+- Verify all effect types render correctly
+- Test choice system with timeout
+
+### Manual Verification
+- Visual review of design aesthetics
+- Test user flow from main menu through dialog to choices
+- Verify all transitions are smooth
+- Test responsive design on different screen sizes
+- Verify audio playback
+- Test edge cases (empty slots, end game trigger, rapid clicking)

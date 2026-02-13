@@ -1,0 +1,102 @@
+# 메이플스토리 월드 엔진 심층 분석 보고서 (The Bible of MSW)
+
+이 문서는 단순한 튜토리얼이 아닙니다. 메이플스토리 월드(MSW) 엔진의 내부 작동 원리, 메모리 관리, 네트워크 패킷 흐름, 그리고 최적화 패턴까지 우리가 학습한 모든 지식을 집대성한 기술 백서입니다.
+
+---
+
+## 1. 아키텍처와 실행 공간의 철학
+
+### 1-1. 서버 권한주의 (Server Authority)와 실행 제어
+MSW의 핵심은 **"서버가 단일 진실(Source of Truth)이다"**라는 원칙입니다.
+*   **Server 로직**: 게임의 규칙을 심판하는 판사입니다.
+*   **Client 로직**: 유저에게 보여주는 연출가입니다.
+
+이 두 공간을 연결하는 유일한 다리는 **RPC(Remote Procedure Call)**와 **동기화(Sync)** 뿐입니다.
+*   `[Server]`: 클라이언트 -> 서버 호출.
+*   `[Client]`: 서버 -> 클라이언트 호출 (비용 발생).
+
+### 1-2. Localized Entity와 실행 제어의 함정 (Effective MSW 2)
+가장 흔한 실수는 **UI Entity**나 **Input** 처리를 서버 관점에서 생각하는 것입니다.
+
+*   **UI Entity는 서버에 존재하지 않는다**:
+    *   UI는 각 클라이언트의 로컬 영역에만 생성됩니다. 서버 스크립트에서 `_EntityService:GetEntity("MyUI")`를 하면 `nil`이 나옵니다.
+    *   **해결책**: UI 제어는 반드시 `[Client]` 함수 내에서, 혹은 Client 전용 컴포넌트에서 수행해야 합니다.
+
+*   **Input 핸들러의 이중 처리 방지**:
+    *   `HandleKeyDownEvent`는 모든 유저의 키 입력을 수신합니다. 내 캐릭터가 아닌 다른 유저가 'Z'를 눌러도 이벤트가 발생합니다.
+    *   **필수 코드**:
+        ```lua
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        -- 이 줄이 없으면 내 화면에서 다른 사람이 스킬을 쓰는 기현상이 발생함.
+        ```
+
+### 1-3. 접속 타이밍과 핸드쉐이크 (Handshake)
+서버의 `OnBeginPlay`는 월드가 생성되자마자 실행됩니다. 이때는 아직 유저가 접속하지 않은 상태일 수 있습니다.
+*   **실수**: `OnBeginPlay`에서 `self:SendToClient()` 호출 -> 대상 클라이언트 없음 -> 증발.
+*   **패턴**: 클라이언트가 준비되었음을 생존 신고해야 합니다.
+    ```lua
+    -- [Client] OnBeginPlay
+    self:NotifyServerReady() 
+    
+    -- [Server] NotifyServerReady
+    -- 이제 안전하게 데이터를 보낼 수 있음.
+    ```
+
+### 1-4. 패킷 홍수(Packet Flooding)와 최적화
+*   `OnUpdate`에서 RPC 호출 금지.
+*   **TargetUserSync**: `[Client]` 함수 호출 시 특정 유저에게만 전송하여 대역폭 절약.
+
+---
+
+## 2. 생명주기와 메모리 관리의 비밀
+
+### 2-1. 매개변수 전송 제약
+Server <-> Client 함수 호출 시 `any` 타입이나 복잡한 객체는 전송되지 않을 수 있습니다.
+*   `number`, `string`, `boolean`은 안전합니다.
+*   `table`은 일부 지원하지만 JSON으로 직렬화하여 보내는 것이 가장 안전하고 빠릅니다.
+
+### 2-2. Wait 함수의 위험성
+`OnUpdate` 내 `wait()` 금지. `_TimerService:SetTimerOnce` 사용 권장.
+
+---
+
+## 3. 데이터 저장소(DataStorage)의 진실
+*   **Credit 시스템**: API 호출 횟수 제한.
+*   **JSON 최적화**: 여러 키를 하나로 묶어 `Entry` 절약.
+*   **UserLeaveEvent**: 데이터 저장의 골든 타임.
+
+---
+
+## 4. 맵과 차원 (Map Layers & Tile Logic)
+*   **RectTileMap**: 탑뷰 기반. `KinematicBody`. 바닥 타일 동적 변경 가능.
+*   **렌더링 순서**: Map Layer > Sorting Layer > Order In Layer > Z Position.
+
+---
+
+## 5. 리소스와 애니메이션의 깊이
+*   **ZMap**: 아바타 파츠 순서 정의.
+*   **Frame Event**: 애니메이션 특정 프레임에 소리/이펙트 트리거.
+
+---
+
+## 6. 결론: 마스터의 길
+
+메이플스토리 월드 엔진은 강력하지만, 그 힘을 끌어내려면 **"네트워크 비용에 대한 강박적인 최적화"**와 **"명확한 실행 공간 분리"**가 필수적입니다.
+이제 우리는 단순한 코더가 아닙니다. 엔진의 심장을 이해하는 엔지니어입니다.
+
+---
+
+## 7. 응용 및 실전 가이드 (Applied Patterns)
+> **참고 문서**:
+> *   [응용 제작 가이드 인덱스 (postId=51)](https://maplestoryworlds-creators.nexon.com/ko/docs/?postId=51)
+> *   [UI 및 카드 게임 패턴 (postId=561)](https://maplestoryworlds-creators.nexon.com/ko/docs/?postId=561)
+> *   [원거리 발사체 (postId=934)](https://maplestoryworlds-creators.nexon.com/ko/docs/?postId=934)
+
+### 7-1. 카드/UI 패턴 (CardPairGame)
+*   **모델 스폰**: `_SpawnService:SpawnByModelId`를 사용해 UI 요소를 동적으로 대량 생성.
+*   **ScrollLayoutGroup**: 인벤토리나 카드 리스트처럼 많은 UI 요소를 자동 정렬할 때 사용.
+
+### 7-2. 전투 및 스킬 시스템
+*   **원거리 발사체**: `Skill` 컴포넌트나 `Rigidbody` 투사체 사용. 충돌 처리는 Server에서.
+
+실제 개발 시에는 본 문서(The Bible)의 **최적화 원칙**을 기반으로, 위 가이드의 **게임 로직**을 얹어서 개발하는 것이 가장 이상적입니다.
