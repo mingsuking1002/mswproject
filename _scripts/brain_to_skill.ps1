@@ -1,33 +1,32 @@
 <#
 .SYNOPSIS
-Antigravity brain 백업을 Codex Skill 폴더로 변환합니다.
+Convert an Antigravity brain backup into a Codex skill folder.
 
 .DESCRIPTION
-레포에 백업된 Antigravity brain(.md) 문서를 `skill/<skill-name>/references/brain/`로 복사하고,
-Codex Skill 형식의 `SKILL.md`를 생성합니다.
+Copies Antigravity brain markdown files into `skill/<skill-name>/references/brain/` and generates `SKILL.md`.
 
-기본적으로 아래 경로 중 존재하는 첫 번째 brain 루트를 사용합니다:
-- `<repo>\\_scripts\\.ai_backup\\brain`
-- `<repo>\\.ai_backup\\brain`
-- `%USERPROFILE%\\.gemini\\antigravity\\brain`
+If -BrainRoot is not provided, this script uses the first existing path:
+- <repo>\_scripts\.ai_backup\brain
+- <repo>\.ai_backup\brain
+- %USERPROFILE%\.gemini\antigravity\brain
 
 .PARAMETER BrainRoot
-brain 스냅샷(UUID 폴더들)이 들어있는 루트 경로.
+Root folder containing brain snapshots (UUID directories).
 
 .PARAMETER BrainId
-특정 스냅샷 폴더(UUID). 미지정 시 `.md` 파일이 가장 많은 폴더를 우선 선택하고, 동률이면 최신 폴더를 선택합니다.
+Specific snapshot directory name (UUID). If omitted, selects the directory with the most `.md` files, then the newest.
 
 .PARAMETER SkillName
-생성할 스킬 폴더 이름(소문자/숫자/하이픈 권장). 미지정 시 `mswproject-brain`.
+Output skill folder name (letters/digits/hyphen). Default: mswproject-brain.
 
 .PARAMETER OutDir
-레포 루트 기준 출력 폴더(기본 `skill`).
+Output directory (relative to repo root). Default: skill.
 
 .PARAMETER InstallToCodex
-생성한 스킬을 `%USERPROFILE%\\.codex\\skills\\<skill-name>`로도 복사합니다.
+Also copies the generated skill to `%USERPROFILE%\.codex\skills\<skill-name>`.
 
 .PARAMETER Force
-이미 출력 폴더가 존재하면 덮어씁니다.
+Overwrite existing output folders.
 
 .EXAMPLE
 ./_scripts/brain_to_skill.ps1 -Force
@@ -69,7 +68,7 @@ function Normalize-SkillName {
     $normalized = $normalized.Trim("-")
 
     if ([string]::IsNullOrWhiteSpace($normalized)) {
-        throw "SkillName이 비어있습니다. (입력값: '$Name')"
+        throw "SkillName is empty after normalization. (input: '$Name')"
     }
 
     if ($normalized.Length -gt 64) {
@@ -89,11 +88,11 @@ function Assert-SafeToRemove {
     $fullTarget = (Resolve-Path -LiteralPath $PathToRemove).Path.TrimEnd("\")
 
     if ($fullTarget -eq $fullRepo) {
-        throw "안전장치: 레포 루트를 삭제할 수 없습니다: $fullTarget"
+        throw "Safety check: refusing to remove repo root: $fullTarget"
     }
 
     if (-not $fullTarget.StartsWith($fullRepo, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "안전장치: 레포 바깥 경로는 삭제할 수 없습니다: $fullTarget"
+        throw "Safety check: refusing to remove path outside repo: $fullTarget"
     }
 }
 
@@ -109,7 +108,7 @@ if (-not $BrainRoot) {
     ) | Where-Object { Test-Path $_ }
 
     if (-not $candidateRoots -or $candidateRoots.Count -eq 0) {
-        throw "BrainRoot를 찾지 못했습니다. -BrainRoot로 경로를 지정하세요. (기본 탐색: _scripts/.ai_backup/brain, .ai_backup/brain, ~/.gemini/antigravity/brain)"
+        throw "BrainRoot not found. Provide -BrainRoot. Searched: _scripts/.ai_backup/brain, .ai_backup/brain, ~/.gemini/antigravity/brain"
     }
 
     $BrainRoot = $candidateRoots[0]
@@ -119,13 +118,13 @@ $BrainRoot = (Resolve-Path $BrainRoot).Path
 
 $brainDirs = Get-ChildItem -Path $BrainRoot -Directory -Force
 if (-not $brainDirs -or $brainDirs.Count -eq 0) {
-    throw "brain 스냅샷 폴더가 없습니다: $BrainRoot"
+    throw "No brain snapshot directories found under: $BrainRoot"
 }
 
 if ($BrainId) {
     $selected = $brainDirs | Where-Object { $_.Name -eq $BrainId } | Select-Object -First 1
     if (-not $selected) {
-        throw "BrainId '$BrainId'를 찾지 못했습니다: $BrainRoot"
+        throw "BrainId '$BrainId' not found under: $BrainRoot"
     }
     $brainDir = $selected
 } else {
@@ -160,7 +159,7 @@ $agentsDir = Join-Path $outSkillDir "agents"
 
 if (Test-Path $outSkillDir) {
     if (-not $Force) {
-        throw "이미 출력 폴더가 존재합니다: $outSkillDir (덮어쓰려면 -Force)"
+        throw "Output folder already exists: $outSkillDir (re-run with -Force to overwrite)"
     }
 
     Assert-SafeToRemove -PathToRemove $outSkillDir -RepoRoot $repoRoot
@@ -170,19 +169,19 @@ if (Test-Path $outSkillDir) {
 New-Item -ItemType Directory -Force -Path $brainRefsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $agentsDir | Out-Null
 
-# 1) brain 문서(.md) 복사
+# 1) Copy brain markdown files
 $mdFiles = Get-ChildItem -Path $brainDir.FullName -File -Force -Filter "*.md"
 foreach ($f in $mdFiles) {
     Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $brainRefsDir $f.Name) -Force
 }
 
-# 2) file:// 절대경로 링크를 상대경로로 치환 (복사본만 수정)
+# 2) Rewrite absolute file:// links to relative links (copied files only)
 $copiedMd = Get-ChildItem -Path $brainRefsDir -File -Force -Filter "*.md"
 foreach ($f in $copiedMd) {
     $text = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8
     $rewritten = $text
 
-    # 예: file:///c:/Users/<user>/.gemini/antigravity/brain/<uuid>/task.md -> ./task.md
+    # Example: file:///c:/Users/<user>/.gemini/antigravity/brain/<uuid>/task.md -> ./task.md
     $rewritten = $rewritten -replace "(?i)file:///c:/users/[^/]+/\.gemini/antigravity/(brain|knowledge)/[^/]+/", "./"
 
     if ($rewritten -ne $text) {
@@ -190,7 +189,7 @@ foreach ($f in $copiedMd) {
     }
 }
 
-# 3) SKILL.md 생성
+# 3) Generate SKILL.md
 $entryPath = Join-Path $brainRefsDir "knowledge_summary.md"
 $entryRef = "references/brain/knowledge_summary.md"
 if (-not (Test-Path $entryPath)) {
@@ -207,27 +206,27 @@ $skillTitle = ($SkillName -replace "-", " ")
 $skillMdTemplate = @'
 ---
 name: {0}
-description: Antigravity brain 백업(.md)을 Codex Skill 참고자료로 제공. MapleStory Worlds(MSW) API/컴포넌트/서비스/Lua 스크립팅 질문, 프로젝트 규칙 확인, Antigravity brain 문서 검색/요약이 필요할 때 사용.
+description: Codex skill exposing Antigravity brain markdown references (MSW APIs, components, services, Lua scripting, project rules). Use when you need to search or summarize the brain docs.
 ---
 
 # {1}
 
-## 개요
+## Overview
 
-이 스킬은 레포에 저장된 Antigravity brain 문서들을 `references/`로 제공해, Codex가 작업 중 근거 문서를 빠르게 찾고 요약할 수 있게 합니다.
+This skill packages your Antigravity brain markdown backups as `references/` so Codex can quickly search and cite them while working.
 
-## 사용
+## Usage
 
-1. `references/brain/`에서 키워드로 검색해 관련 문서를 찾습니다.
-2. 답변은 문서 내용을 우선으로 하고, 불명확하면 사용자에게 확인 질문을 합니다.
+1. Search `references/brain/` for relevant keywords.
+2. Prefer the docs as source of truth; ask clarifying questions when needed.
 
-### 시작 문서(추천)
+### Entry (recommended)
 
 - `{2}`
 
-## 참고
+## Notes
 
-- Brain 문서: `references/brain/*.md`
+- Brain docs: `references/brain/*.md`
 '@
 
 $skillMd = $skillMdTemplate -f $SkillName, $skillTitle, $entryRef
@@ -237,14 +236,14 @@ Set-Content -LiteralPath (Join-Path $outSkillDir "SKILL.md") -Value $skillMd -En
 $openaiYamlTemplate = @'
 interface:
   display_name: "{0}"
-  short_description: "Antigravity brain 지식/규칙"
+  short_description: "Antigravity brain references"
 '@
 
 $openaiYaml = $openaiYamlTemplate -f $skillTitle
 
 Set-Content -LiteralPath (Join-Path $agentsDir "openai.yaml") -Value $openaiYaml -Encoding UTF8
 
-Write-Host "Skill 생성 완료: $outSkillDir"
+Write-Host "Skill generated: $outSkillDir"
 
 if ($InstallToCodex) {
     $codexRoot = Join-Path $env:USERPROFILE ".codex\\skills"
@@ -252,12 +251,12 @@ if ($InstallToCodex) {
 
     if (Test-Path $dest) {
         if (-not $Force) {
-            throw "Codex 스킬 경로가 이미 존재합니다: $dest (덮어쓰려면 -Force)"
+            throw "Codex skill already exists: $dest (re-run with -Force to overwrite)"
         }
         Remove-Item -LiteralPath $dest -Recurse -Force
     }
 
     New-Item -ItemType Directory -Force -Path $codexRoot | Out-Null
     Copy-Item -LiteralPath $outSkillDir -Destination $dest -Recurse -Force
-    Write-Host "Codex 설치 완료: $dest"
+    Write-Host "Installed to Codex: $dest"
 }

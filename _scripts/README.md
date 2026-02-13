@@ -36,6 +36,19 @@ Codex 전역 스킬 폴더(`%USERPROFILE%\.codex\skills`)로도 복사하려면:
 ./_scripts/brain_to_skill.ps1 -InstallToCodex -Force
 ```
 
+### 4. Codex Skill 백업/복원(다른 PC에서 그대로 사용)
+레포의 `skill/` 폴더를 Git으로 동기화해두면, 다른 PC에서도 스킬을 바로 설치해서 사용할 수 있습니다.
+
+#### 4-1) 복원(레포 → 내 PC Codex)
+```powershell
+./_scripts/restore_codex_skills.ps1 -Force
+```
+
+#### 4-2) 백업(내 PC Codex → 레포)
+```powershell
+./_scripts/sync_codex_skills.ps1 -Force
+```
+
 ## Codex / Copilot 연동
 `.ai_backup` 폴더 안에는 AI가 생성한 모든 문서와 기억이 Markdown 형태로 들어 있습니다.
 VS Code나 Cursor에서 **폴더 전체를 열어두면**, Copilot이나 AI가 이 파일들을 읽고 프로젝트의 문맥(Context)을 이해하는 데 도움을 줍니다.

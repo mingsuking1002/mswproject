@@ -1,23 +1,23 @@
 ﻿---
 name: mswproject-brain
-description: Antigravity brain 諛깆뾽(.md)??Codex Skill 李멸퀬?먮즺濡??쒓났. MapleStory Worlds(MSW) API/而댄룷?뚰듃/?쒕퉬??Lua ?ㅽ겕由쏀똿 吏덈Ц, ?꾨줈?앺듃 洹쒖튃 ?뺤씤, Antigravity brain 臾몄꽌 寃???붿빟???꾩슂?????ъ슜.
+description: Codex skill exposing Antigravity brain markdown references (MSW APIs, components, services, Lua scripting, project rules). Use when you need to search or summarize the brain docs.
 ---
 
 # mswproject brain
 
-## 媛쒖슂
+## Overview
 
-???ㅽ궗? ?덊룷????λ맂 Antigravity brain 臾몄꽌?ㅼ쓣 `references/`濡??쒓났?? Codex媛 ?묒뾽 以?洹쇨굅 臾몄꽌瑜?鍮좊Ⅴ寃?李얘퀬 ?붿빟?????덇쾶 ?⑸땲??
+This skill packages your Antigravity brain markdown backups as `references/` so Codex can quickly search and cite them while working.
 
-## ?ъ슜
+## Usage
 
-1. `references/brain/`?먯꽌 ?ㅼ썙?쒕줈 寃?됲빐 愿??臾몄꽌瑜?李얠뒿?덈떎.
-2. ?듬?? 臾몄꽌 ?댁슜???곗꽑?쇰줈 ?섍퀬, 遺덈챸?뺥븯硫??ъ슜?먯뿉寃??뺤씤 吏덈Ц???⑸땲??
+1. Search `references/brain/` for relevant keywords.
+2. Prefer the docs as source of truth; ask clarifying questions when needed.
 
-### ?쒖옉 臾몄꽌(異붿쿇)
+### Entry (recommended)
 
 - `references/brain/knowledge_summary.md`
 
-## 李멸퀬
+## Notes
 
-- Brain 臾몄꽌: `references/brain/*.md`
+- Brain docs: `references/brain/*.md`
