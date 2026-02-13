@@ -3,7 +3,7 @@
 Convert an Antigravity brain backup into a Codex skill folder.
 
 .DESCRIPTION
-Copies Antigravity brain markdown files into `skill/<skill-name>/references/brain/` and generates `SKILL.md`.
+Copies Antigravity brain files (markdown + artifacts like .resolved/.json/.webp) into `skill/<skill-name>/references/brain/` and generates `SKILL.md`.
 
 If -BrainRoot is not provided, this script uses the first existing path:
 - <repo>\_scripts\.ai_backup\brain
@@ -169,15 +169,17 @@ if (Test-Path $outSkillDir) {
 New-Item -ItemType Directory -Force -Path $brainRefsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $agentsDir | Out-Null
 
-# 1) Copy brain markdown files
-$mdFiles = Get-ChildItem -Path $brainDir.FullName -File -Force -Filter "*.md"
-foreach ($f in $mdFiles) {
-    Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $brainRefsDir $f.Name) -Force
-}
+# 1) Copy all brain files (markdown + artifacts like .resolved/.json/.webp)
+Copy-Item -Path (Join-Path $brainDir.FullName "*") -Destination $brainRefsDir -Recurse -Force
 
-# 2) Rewrite absolute file:// links to relative links (copied files only)
-$copiedMd = Get-ChildItem -Path $brainRefsDir -File -Force -Filter "*.md"
-foreach ($f in $copiedMd) {
+# 2) Rewrite absolute file:// links to relative links (text files only)
+$rewriteTargets = @()
+$rewriteTargets += Get-ChildItem -Path $brainRefsDir -File -Force -Recurse -Filter "*.md"
+$rewriteTargets += Get-ChildItem -Path $brainRefsDir -File -Force -Recurse -Filter "*.resolved"
+$rewriteTargets += Get-ChildItem -Path $brainRefsDir -File -Force -Recurse -Filter "*.resolved.*"
+$rewriteTargets = $rewriteTargets | Sort-Object FullName -Unique
+
+foreach ($f in $rewriteTargets) {
     $text = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8
     $rewritten = $text
 

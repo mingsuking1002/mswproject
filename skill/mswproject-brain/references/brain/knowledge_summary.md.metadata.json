@@ -1,0 +1,6 @@
+{
+  "artifactType": "ARTIFACT_TYPE_OTHER",
+  "summary": "MapleStory Worlds 학습 지식 총정리 문서. 17개 아티팩트 목록 (한글 8개 + 영문 9개), 12개 핵심 Components 요약, 학습 통계 (160 properties, 36 methods, 36 events), 핵심 개념 (Entity-Component, Client-Server, 좌표계, 이벤트, 물리), 실전 패턴 및 활용 가능한 기능 정리. 추가 문서: 완전 API 레퍼런스 (6802줄), Services/Events 카탈로그 (40 services, 170 events), Misc/Enums 카탈로그 (100+ 타입, 100 enums), Lua 스크립팅 가이드 (584줄), Logics/Lua API 카탈로그 (8 logics, 7 라이브러리)",
+  "updatedAt": "2026-02-08T04:31:14.975166700Z",
+  "version": "1"
+}

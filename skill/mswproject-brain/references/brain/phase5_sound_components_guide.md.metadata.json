@@ -1,0 +1,5 @@
+{
+  "artifactType": "ARTIFACT_TYPE_OTHER",
+  "summary": "Phase 5 Sound Components 완전 가이드. 1개 Component 상세 문서: SoundComponent (11 props, 14 methods, 1 event, 효과음/BGM 재생). 총 11 properties, 14 methods, 1 event. 음원 재생/일시정지/정지, 동기화 사운드, 3D 사운드, 리스너 설정, 실전 사용 패턴 및 코드 예제 포함.",
+  "updatedAt": "2026-02-08T05:25:39.061074100Z"
+}
