@@ -5,7 +5,7 @@
 
 ## 폴더 구조
 - `_scripts/`: 동기화 스크립트 모음
-- `.ai_backup/`: AI의 기억과 지식이 백업되는 곳 (Git에 포함됨)
+- `_scripts/.ai_backup/`: AI의 기억/지식/대화가 백업되는 곳 (Git에 포함됨)
 - `custom_rules.md`: 사용자가 편집하는 AI 규칙 파일
 
 ## 사용 방법
@@ -16,7 +16,7 @@
 ./_scripts/sync_ai.ps1
 ```
 이 스크립트는:
-1.  현재 AI의 기억을 `.ai_backup` 폴더로 복사합니다.
+1.  현재 AI의 기억을 `_scripts/.ai_backup` 폴더로 복사합니다.
 2.  `custom_rules.md`의 내용을 AI에게 적용합니다.
 
 ### 2. 새 기기에서 시작할 때 (복원)
@@ -50,5 +50,5 @@ Codex 전역 스킬 폴더(`%USERPROFILE%\.codex\skills`)로도 복사하려면:
 ```
 
 ## Codex / Copilot 연동
-`.ai_backup` 폴더 안에는 AI가 생성한 모든 문서와 기억이 Markdown 형태로 들어 있습니다.
+`_scripts/.ai_backup` 폴더 안에는 AI가 생성한 모든 문서와 기억이 Markdown 형태로 들어 있습니다.
 VS Code나 Cursor에서 **폴더 전체를 열어두면**, Copilot이나 AI가 이 파일들을 읽고 프로젝트의 문맥(Context)을 이해하는 데 도움을 줍니다.
