@@ -26,6 +26,16 @@
 ```
 이 스크립트는 저장소에 있는 기억을 로컬 AI 시스템으로 복원합니다.
 
+### 3. Brain을 Codex Skill로 변환하기
+레포에 백업된 brain 문서를 Codex Skill 폴더(`skill/<skill-name>/`)로 변환하려면:
+```powershell
+./_scripts/brain_to_skill.ps1 -Force
+```
+Codex 전역 스킬 폴더(`%USERPROFILE%\.codex\skills`)로도 복사하려면:
+```powershell
+./_scripts/brain_to_skill.ps1 -InstallToCodex -Force
+```
+
 ## Codex / Copilot 연동
 `.ai_backup` 폴더 안에는 AI가 생성한 모든 문서와 기억이 Markdown 형태로 들어 있습니다.
 VS Code나 Cursor에서 **폴더 전체를 열어두면**, Copilot이나 AI가 이 파일들을 읽고 프로젝트의 문맥(Context)을 이해하는 데 도움을 줍니다.
