@@ -1,0 +1,23 @@
+# 내보내기 폴더 구조 개선
+
+내보내기 결과물([.md](file:///c:/Users/ksh00/Documents/GitHub/mswproject/DATA_SCHEMA.md))들이 프로젝트 루트를 어지럽히지 않도록, `text`라는 전용 폴더에 모아서 저장합니다.
+
+## 제안된 변경 사항
+
+### 1. 스크립트 수정 ([export_context.ps1](file:///c:/Users/ksh00/Documents/GitHub/mswproject/_scripts/export_context.ps1))
+
+#### [MODIFY] [export_context.ps1](file:///c:/Users/ksh00/Documents/GitHub/mswproject/_scripts/export_context.ps1)
+- **저장 경로 변경**: 기존 `$repoRoot` 직하위에서 `$repoRoot\text`로 변경
+- **폴더 자동 생성**: `text` 폴더가 없으면 `New-Item -ItemType Directory`로 생성하는 로직 추가
+
+### 2. 파일 이동
+- 기존에 생성된 `AI_CONTEXT_EXPORT.md`나 [AI_KNOWLEDGE_BRIDGE.md](file:///c:/Users/ksh00/Documents/GitHub/mswproject/AI_KNOWLEDGE_BRIDGE.md)도 `text` 폴더로 이동 (선택적)
+- [AI_KNOWLEDGE_BRIDGE.md](file:///c:/Users/ksh00/Documents/GitHub/mswproject/AI_KNOWLEDGE_BRIDGE.md)는 프로젝트의 대문 역할을 하므로 루트에 두는 것이 좋으나, 사용자가 원하면 이동 가능. 
+  - **결정**: 사용자는 "이거(내보내기 결과)"를 text 폴더에 넣고 싶어하므로, `AI_CONTEXT_EXPORT*.md` 파일들은 `text` 폴더로, [AI_KNOWLEDGE_BRIDGE.md](file:///c:/Users/ksh00/Documents/GitHub/mswproject/AI_KNOWLEDGE_BRIDGE.md)는 일단 루트 유지 (또는 사용자에게 확인). 
+  - **수정**: 사용자의 "이거 같은 폴더안에 text 파일에 들어가도록" 요청은 [export_context.ps1](file:///c:/Users/ksh00/Documents/GitHub/mswproject/_scripts/export_context.ps1)의 결과물을 의미하는 것으로 해석됨.
+
+## 검증 계획
+
+### 자동 검증
+- 스크립트 실행 후 `text` 폴더가 생성되는지 확인
+- 결과 파일이 `text/AI_CONTEXT_EXPORT.md` 경로에 저장되는지 확인

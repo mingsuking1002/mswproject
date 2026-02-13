@@ -1,0 +1,31 @@
+# 🌉 AI 지식 공유 및 내보내기 결과 보고
+
+다른 AI가 이 프로젝트의 맥락을 완벽하게 이해하고 협업할 수 있도록 시스템을 구축했습니다.
+
+## 🛠️ 정교화된 변경 사항
+
+### 1. [AI_KNOWLEDGE_BRIDGE.md](file:///c:/Users/ksh00/Documents/GitHub/mswproject/AI_KNOWLEDGE_BRIDGE.md) (상세 설계도)
+- **업데이트**: 단순 요약에서 **마스터 기술 블루프린트**로 업그레이드.
+- **포함된 상세 정보**: 
+  - MSW의 ECP 모델 및 서버/클라이언트 실행 제어 규칙.
+  - 전투 시스템의 `Attack-Hit` 상호작용 코드 패턴.
+  - 비주얼 노벨 엔진 전환을 위한 데이터 구조 설계.
+
+### 2. [export_context.ps1](file:///c:/Users/ksh00/Documents/GitHub/mswproject/_scripts/export_context.ps1) (전체 히스토리 추출)
+- **업데이트**: **모든 대화 세션 전수 수집** 기능 탑재.
+- **기능**: 실행 시 현재 세션뿐만 아니라, 시스템에 기록된 **모든 과거 대화의 결과물(마크다운 아티팩트)**을 하나도 빠짐없이 찾아 하나의 `AI_CONTEXT_EXPORT.md` 파일로 합쳐줍니다.
+- **의미**: 채팅 로그 자체는 바이너리(.pb)라 직접 추출이 어렵지만, 그 대화의 모든 정수가 담긴 이 문서들을 모음으로써 사실상 '모든 대화'의 맥락을 완벽하게 전달할 수 있습니다.
+
+## 📋 사용 방법 (모든 대화 맥락 내보내기)
+
+1. 파워쉘에서 다음 명령 실행:
+   ```powershell
+   .\_scripts\export_context.ps1
+   ```
+2. 생성된 `AI_CONTEXT_EXPORT.md` 파일을 확인하세요. (수백~수천 줄의 전체 히스토리가 포함될 수 있습니다!)
+3. 다른 AI에게 [AI_KNOWLEDGE_BRIDGE.md](file:///c:/Users/ksh00/Documents/GitHub/mswproject/AI_KNOWLEDGE_BRIDGE.md)와 함께 이 파일을 제공하면 됩니다.
+
+## 🧪 검증 결과
+- [x] **파일 생성**: 프로젝트 루트 및 `_scripts` 폴더에 파일이 정상 생성됨.
+- [x] **스크립트 테스트**: 로컬 환경에서 브레인 폴더 탐색 및 마크다운 추출 로직이 정상 작동함을 확인.
+- [x] **가독성**: 다른 AI(Claude, GPT 등)가 읽기 쉬운 표준 마크다운 형식을 준수함.

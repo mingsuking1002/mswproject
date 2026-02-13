@@ -1,0 +1,51 @@
+# 대형 프로젝트 인프라 구축
+
+대형 프로젝트에서 모듈화, 데이터 시트 관리, 크로스 AI 작업을 문제없이 진행하기 위한 4가지 핵심 인프라를 구축합니다.
+
+## 제안된 변경 사항
+
+---
+
+### 1. 모듈별 내보내기 ([export_context.ps1](file:///c:/Users/ksh00/Documents/GitHub/mswproject/_scripts/export_context.ps1) 개선)
+
+#### [MODIFY] [export_context.ps1](file:///c:/Users/ksh00/Documents/GitHub/mswproject/_scripts/export_context.ps1)
+- `-Module` 파라미터 추가: `.\export_context.ps1 -Module combat` 처럼 특정 모듈만 추출
+- `-All` 파라미터: 기존처럼 전체 추출 (기본값)
+- 모듈 태그는 `PROJECT_STRUCTURE.md`에 정의된 이름 기준
+
+---
+
+### 2. 데이터 시트 명세서
+
+#### [NEW] [DATA_SCHEMA.md](file:///c:/Users/ksh00/Documents/GitHub/mswproject/DATA_SCHEMA.md)
+- 프로젝트에서 사용할 모든 데이터 시트의 **구조 템플릿** 제공
+- 몬스터, 스킬, 아이템, 퀘스트 등 주요 테이블 스키마 정의
+- 각 시트의 파일 위치, 포맷(JSON/CSV/Excel), 연결 코드 경로 명시
+
+---
+
+### 3. 프로젝트 구조도
+
+#### [NEW] [PROJECT_STRUCTURE.md](file:///c:/Users/ksh00/Documents/GitHub/mswproject/PROJECT_STRUCTURE.md)
+- Mermaid 다이어그램으로 모듈 간 의존 관계 시각화
+- 폴더별 역할과 담당 모듈 매핑
+- 새 모듈 추가 시 업데이트 가이드
+
+---
+
+### 4. 세션 마무리 워크플로우
+
+#### [NEW] [session_wrapup.md](file:///c:/Users/ksh00/Documents/GitHub/mswproject/.agent/workflows/session_wrapup.md)
+- 매 코딩 세션 종료 시 실행할 체크리스트 워크플로우
+- Brain 요약 저장 → 데이터 시트 갱신 체크 → Git 커밋 리마인더
+
+---
+
+## 검증 계획
+
+### 자동 검증
+- `export_context.ps1 -Module combat` 실행 시 전투 관련 문서만 추출되는지 확인
+- 모든 신규 파일이 정상 생성되었는지 확인
+
+### 수동 검증
+- 사용자가 각 문서의 구조와 직접적인 사용법을 확인

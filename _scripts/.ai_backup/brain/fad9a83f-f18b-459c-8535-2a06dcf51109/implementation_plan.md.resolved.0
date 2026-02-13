@@ -1,0 +1,29 @@
+# Exporting Conversation for Cross-AI Compatibility
+
+This plan outlines the creation of a "Knowledge Bridge" document. Since raw system logs are in a binary or system-specific format, a structured Markdown file is the most portable and effective way to share context with other AIs.
+
+## User Review Required
+
+> [!IMPORTANT]
+> This export file will contain a summary of our past sessions and current progress. It will **not** be a word-for-word transcript of every message, as those are stored in a binary format by the system. However, it will include all critical decisions, technical designs, and next steps.
+
+## Proposed Changes
+
+### Project Root
+
+#### [NEW] [AI_KNOWLEDGE_BRIDGE.md](file:///c:/Users/ksh00/Documents/GitHub/mswproject/AI_KNOWLEDGE_BRIDGE.md)
+A comprehensive document designed to get any AI up to speed on the project.
+- **Section 1: Project Identity**: Overview of `mswproject`.
+- **Section 2: The Story So Far**: Summarized history of MSW API research, Battle System design, and Visual Novel conversion.
+- **Section 3: Technical Stack**: Details on MSW Lua, Web (HTML/CSS/JS), and DevOps scripts.
+- **Section 4: Current State & Next Steps**: What we are working on right now.
+- **Section 5: AI Collaboration Guide**: Prompt-like instructions for the next AI to read this file and assume the role of a development partner.
+
+## Verification Plan
+
+### Automated Verification
+- I will check the file existence and link integrity.
+- I will verify that the Markdown is properly formatted for readability.
+
+### Manual Verification
+- Ask the user to review the content to ensure all critical context they need for "cross-AI work" is captured.

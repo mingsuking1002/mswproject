@@ -1,0 +1,22 @@
+# 커스텀 규칙 업데이트 (대화 맥락 참조)
+
+사용자가 "이전 대화", "전 대화", "기억" 등을 언급할 때, 막연히 검색하는 대신 우리가 생성한 [text/AI_CONTEXT_EXPORT.md](file:///c:/Users/ksh00/Documents/GitHub/mswproject/text/AI_CONTEXT_EXPORT.md) 파일을 가장 먼저 참조하도록 규칙을 명문화합니다.
+
+## 제안된 변경 사항
+
+### 1. 규칙 파일 수정 ([custom_rules.md](file:///c:/Users/ksh00/Documents/GitHub/mswproject/custom_rules.md))
+
+#### [MODIFY] [custom_rules.md](file:///c:/Users/ksh00/Documents/GitHub/mswproject/custom_rules.md)
+- **통신 규칙 추가**: "이전 대화 확인" 요청 시 [text/AI_CONTEXT_EXPORT.md](file:///c:/Users/ksh00/Documents/GitHub/mswproject/text/AI_CONTEXT_EXPORT.md) 읽기 강제
+- **언어 규칙 강화**: 모든 응답은 무조건 **한글**로 할 것
+
+### 2. 규칙 전파 ([sync_ai.ps1](file:///c:/Users/ksh00/Documents/GitHub/mswproject/_scripts/sync_ai.ps1))
+- 수정된 [custom_rules.md](file:///c:/Users/ksh00/Documents/GitHub/mswproject/custom_rules.md)를 현재 활성화된 모든 Brain 세션에 동기화하여 즉시 적용
+
+## 검증 계획
+
+### 자동 검증
+- [sync_ai.ps1](file:///c:/Users/ksh00/Documents/GitHub/mswproject/_scripts/sync_ai.ps1) 실행 후 다른 세션 폴더의 [custom_rules.md](file:///c:/Users/ksh00/Documents/GitHub/mswproject/custom_rules.md)가 업데이트되었는지 확인
+
+### 수동 검증
+- 사용자가 "전 대화 읽어봐"라고 했을 때 AI가 해당 파일을 읽는지 확인 (시뮬레이션)
