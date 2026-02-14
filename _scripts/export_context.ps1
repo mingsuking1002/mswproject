@@ -115,6 +115,28 @@ foreach ($file in $allBrainFiles) {
     }
 }
 
+# --- 3. Codex Chat Export (Clipboard-based) ---
+# NOTE: Codex는 채팅 로그에 직접 접근할 수 없어서, 사용자가 복사(Ctrl+C)한 텍스트를
+# `export_chat_clipboard.ps1`로 저장한 파일을 여기서 병합합니다.
+$codexChatFiles = Get-ChildItem -Path $outputDir -Filter "CODEX_CHAT_EXPORT_*.md" -File -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime
+
+if ($null -ne $codexChatFiles -and $codexChatFiles.Count -gt 0) {
+    Write-Host "[MERGE] Including Codex chat exports: $($codexChatFiles.Count) file(s)"
+    $exportContent += "`n## Codex Chat Exports`n"
+
+    foreach ($chatFile in $codexChatFiles) {
+        $chatContent = Get-Content -Path $chatFile.FullName -Raw -Encoding UTF8
+        $totalFiles++
+        if (Test-ModuleMatch -Content $chatContent -Modules $Module) {
+            $exportContent += "`n### [Codex] $($chatFile.Name)`n"
+            $exportContent += "``````markdown`n$chatContent`n```````n"
+            $exportContent += "`n---`n"
+            $includedFiles++
+        }
+    }
+}
+
 $exportContent += "`n## Export Stats`n"
 $exportContent += "- Scanned: $totalFiles files`n"
 $exportContent += "- Included: $includedFiles files`n"

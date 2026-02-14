@@ -49,6 +49,20 @@ Codex 전역 스킬 폴더(`%USERPROFILE%\.codex\skills`)로도 복사하려면:
 ./_scripts/sync_codex_skills.ps1 -Force
 ```
 
+### 5. (선택) Codex 대화 내보내기(원문 저장)
+Codex/Chat UI에서 대화 내용을 복사(Ctrl+C)한 뒤 아래 스크립트를 실행하면, 클립보드의 텍스트를 `text/` 폴더에 마크다운으로 저장합니다.
+```powershell
+./_scripts/export_chat_clipboard.ps1
+```
+내보낸 대화를 `text/AI_CONTEXT_EXPORT.md`에도 반영(병합)하려면:
+```powershell
+./_scripts/export_chat_clipboard.ps1 -UpdateAIContextExport
+```
+파일을 바로 열려면:
+```powershell
+./_scripts/export_chat_clipboard.ps1 -Open
+```
+
 ## Codex / Copilot 연동
 `_scripts/.ai_backup` 폴더 안에는 AI가 생성한 모든 문서와 기억이 Markdown 형태로 들어 있습니다.
 VS Code나 Cursor에서 **폴더 전체를 열어두면**, Copilot이나 AI가 이 파일들을 읽고 프로젝트의 문맥(Context)을 이해하는 데 도움을 줍니다.
