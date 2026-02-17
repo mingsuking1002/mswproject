@@ -1,0 +1,226 @@
+@Component
+script MovementComponent extends Component
+
+    property number MoveSpeed = 1.0
+    @Sync
+    property number SpeedMultiplier = 1.0
+    @Sync
+    property boolean CanMove = true
+    @Sync
+    property integer FacingDirection = 1
+
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self._T.ServerInputDirection = Vector2.zero
+    end
+
+    -- 키 입력 이벤트마다 현재 입력 조합을 재평가해 서버로 전달한다.
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        local key = event.key
+        if self:IsMovementKey(key) == false then
+            return
+        end
+
+        self:SubmitMoveInput(self:GetMoveInputClient())
+    end
+
+    @EventSender("Service", "InputService")
+    handler HandleKeyUpEvent(KeyUpEvent event)
+        local key = event.key
+        if self:IsMovementKey(key) == false then
+            return
+        end
+
+        self:SubmitMoveInput(self:GetMoveInputClient())
+    end
+
+    -- 서버에서만 최종 이동을 적용해 클라이언트 변조 입력을 직접 물리에 반영하지 않는다.
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number delta)
+        local moveDirection = self._T.ServerInputDirection
+        if self.CanMove == false then
+            moveDirection = Vector2.zero
+        end
+
+        local finalSpeed = self.MoveSpeed * self.SpeedMultiplier
+        if finalSpeed < 0 then
+            finalSpeed = 0
+        end
+
+        self:ApplyMovementServer(moveDirection, finalSpeed, delta)
+        self:UpdateFacingDirection(moveDirection)
+        self:UpdateStateAnimation(moveDirection)
+    end
+
+    method boolean IsMovementKey(KeyboardKey key)
+        if key == KeyboardKey.W then
+            return true
+        end
+        if key == KeyboardKey.A then
+            return true
+        end
+        if key == KeyboardKey.S then
+            return true
+        end
+        if key == KeyboardKey.D then
+            return true
+        end
+
+        return false
+    end
+
+    -- 서버 공간에서만 입력 상태를 갱신해 권위를 유지한다.
+    @ExecSpace("Server")
+    method void SubmitMoveInput(Vector2 moveDirection)
+        if moveDirection == nil then
+            return
+        end
+
+        if self.Entity == nil or isvalid(self.Entity) == false then
+            return
+        end
+
+        local playerComponent = self.Entity.PlayerComponent
+        if playerComponent ~= nil then
+            if senderUserId ~= nil and senderUserId ~= playerComponent.UserId then
+                return
+            end
+        end
+
+        self._T.ServerInputDirection = self:ClampInputDirection(moveDirection)
+    end
+
+    -- 입력 계산은 클라이언트에서만 수행해 서버 부담을 줄인다.
+    @ExecSpace("ClientOnly")
+    method Vector2 GetMoveInputClient()
+        if self.CanMove == false then
+            return Vector2.zero
+        end
+
+        local x = 0
+        local y = 0
+
+        local upPressed = _InputService:IsKeyPressed(KeyboardKey.W)
+        local downPressed = _InputService:IsKeyPressed(KeyboardKey.S)
+        local leftPressed = _InputService:IsKeyPressed(KeyboardKey.A)
+        local rightPressed = _InputService:IsKeyPressed(KeyboardKey.D)
+
+        if upPressed == true and downPressed == false then
+            y = 1
+        elseif downPressed == true and upPressed == false then
+            y = -1
+        end
+
+        if rightPressed == true and leftPressed == false then
+            x = 1
+        elseif leftPressed == true and rightPressed == false then
+            x = -1
+        end
+
+        local direction = Vector2(x, y)
+        return self:ClampInputDirection(direction)
+    end
+
+    method Vector2 ClampInputDirection(Vector2 inputDirection)
+        if inputDirection == nil then
+            return Vector2.zero
+        end
+
+        local sqrMagnitude = inputDirection:SqrMagnitude()
+        if sqrMagnitude <= 0 then
+            return Vector2.zero
+        end
+
+        return inputDirection:Normalize()
+    end
+
+    -- Rigidbody 우선 사용으로 벽 슬라이드/충돌 처리를 엔진 물리에 위임한다.
+    @ExecSpace("ServerOnly")
+    method void ApplyMovementServer(Vector2 moveDirection, number speed, number delta)
+        local rigidbody = self.Entity.RigidbodyComponent
+        if rigidbody ~= nil and isvalid(rigidbody) == true then
+            rigidbody.MoveVelocity = moveDirection * speed
+            return
+        end
+
+        local transform = self.Entity.TransformComponent
+        if transform == nil or isvalid(transform) == false then
+            return
+        end
+
+        local deltaX = moveDirection.x * speed * delta
+        local deltaY = moveDirection.y * speed * delta
+        transform:Translate(deltaX, deltaY)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void UpdateFacingDirection(Vector2 moveDirection)
+        if moveDirection == nil then
+            return
+        end
+
+        if moveDirection:SqrMagnitude() <= 0 then
+            return
+        end
+
+        local direction = self:ComputeFacingDirection(moveDirection)
+        if direction ~= self.FacingDirection then
+            self.FacingDirection = direction
+        end
+    end
+
+    method integer ComputeFacingDirection(Vector2 direction)
+        local angle = math.deg(math.atan(direction.y, direction.x))
+        if angle < 0 then
+            angle = angle + 360
+        end
+
+        -- 8방향 인덱스(1~8): 우, 우상, 상, 좌상, 좌, 좌하, 하, 우하
+        if angle >= 337.5 or angle < 22.5 then
+            return 1
+        elseif angle < 67.5 then
+            return 2
+        elseif angle < 112.5 then
+            return 3
+        elseif angle < 157.5 then
+            return 4
+        elseif angle < 202.5 then
+            return 5
+        elseif angle < 247.5 then
+            return 6
+        elseif angle < 292.5 then
+            return 7
+        else
+            return 8
+        end
+    end
+
+    -- 상태 전환은 서버에서만 수행해 애니메이션 상태를 단일 기준으로 유지한다.
+    @ExecSpace("ServerOnly")
+    method void UpdateStateAnimation(Vector2 moveDirection)
+        local stateComponent = self.Entity.StateComponent
+        if stateComponent == nil or isvalid(stateComponent) == false then
+            return
+        end
+
+        if moveDirection ~= nil and moveDirection:SqrMagnitude() > 0 then
+            if stateComponent.CurrentStateName ~= "MOVE" then
+                stateComponent:ChangeState("MOVE")
+            end
+            return
+        end
+
+        if stateComponent.CurrentStateName ~= "IDLE" then
+            stateComponent:ChangeState("IDLE")
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        local rigidbody = self.Entity.RigidbodyComponent
+        if rigidbody ~= nil and isvalid(rigidbody) == true then
+            rigidbody.MoveVelocity = Vector2.zero
+        end
+    end
+end

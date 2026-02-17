@@ -32,7 +32,7 @@
             {
               "@type": "MOD.Core.MapComponent",
               "IsInstanceMap": false,
-              "TileMapMode": 0,
+              "TileMapMode": 1,
               "Enable": true
             },
             {
@@ -62,8 +62,14 @@
           "@components": [
             {
               "@type": "MOD.Core.BackgroundComponent",
+              "SolidColor": {
+                "r": 0.549019635,
+                "g": 0.34117648,
+                "b": 0.164705887,
+                "a": 1.0
+              },
               "TemplateRUID": "794ad8421e2543d8a6d2c70307637450",
-              "Type": 1,
+              "Type": 2,
               "Enable": true
             }
           ],
@@ -107,34 +113,32 @@
         }
       },
       {
-        "id": "c9a0927a-51b4-4773-b34f-1a03d602fcdf",
-        "path": "/maps/map01/TileMap",
-        "componentNames": "MOD.Core.TransformComponent,MOD.Core.TileMapComponent",
+        "id": "1c03486e-5943-4a68-9706-f10a659a79b0",
+        "path": "/maps/map01/Map01Bootstrap",
+        "componentNames": "MOD.Core.TransformComponent",
         "jsonString": {
-          "name": "TileMap",
-          "path": "/maps/map01/TileMap",
-          "nameEditable": false,
+          "name": "Map01Bootstrap",
+          "path": "/maps/map01/Map01Bootstrap",
+          "nameEditable": true,
           "enable": true,
           "visible": true,
           "localize": false,
           "displayOrder": 2,
           "pathConstraints": "///",
           "revision": 2,
-          "origin": {
-            "type": "Model",
-            "entry_id": "tilemap",
-            "sub_entity_id": null,
-            "root_entity_id": null,
-            "replaced_model_id": null
-          },
-          "modelId": "tilemap",
+          "modelId": null,
           "@components": [
             {
               "@type": "MOD.Core.TransformComponent",
+              "Rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
               "Position": {
-                "x": -0.225,
-                "y": -0.15,
-                "z": 1000.0
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
               },
               "QuaternionRotation": {
                 "x": 0.0,
@@ -147,17 +151,7 @@
                 "y": 1.0,
                 "z": 1.0
               },
-              "Enable": true
-            },
-            {
-              "@type": "MOD.Core.TileMapComponent",
-              "IsOddGridPosition": false,
-              "SortingLayer": "MapLayer0",
-              "TileMapVersion": 1,
-              "TileSetRUID": {
-                "DataId": ""
-              },
-              "Tiles": [],
+              "ZRotation": 0.0,
               "Enable": true
             }
           ],
@@ -165,14 +159,14 @@
         }
       },
       {
-        "id": "3c6ab2b8-d4d6-457f-afbc-90434c9d64cd",
-        "path": "/maps/map01/HelloWorldText",
-        "componentNames": "MOD.Core.TransformComponent,MOD.Core.TextComponent,MOD.Core.TextRendererComponent",
+        "id": "3d911ce6-76b1-45b6-8044-0939b42a46ce",
+        "path": "/maps/map01/GRProjectileTemplate",
+        "componentNames": "MOD.Core.TransformComponent,MOD.Core.SpriteRendererComponent,MOD.Core.TriggerComponent",
         "jsonString": {
-          "name": "HelloWorldText",
-          "path": "/maps/map01/HelloWorldText",
+          "name": "GRProjectileTemplate",
+          "path": "/maps/map01/GRProjectileTemplate",
           "nameEditable": true,
-          "enable": true,
+          "enable": false,
           "visible": true,
           "localize": false,
           "displayOrder": 3,
@@ -188,8 +182,298 @@
                 "z": 0.0
               },
               "Position": {
+                "x": -20.0,
+                "y": -20.0,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
                 "x": 0.0,
                 "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Scale": {
+                "x": 0.2,
+                "y": 0.2,
+                "z": 1.0
+              },
+              "ZRotation": 0.0,
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.SpriteRendererComponent",
+              "ActionSheet": {},
+              "OrderInLayer": 10,
+              "RenderSetting": 0,
+              "SortingLayer": "MapLayer0",
+              "Color": {
+                "r": 1.0,
+                "g": 0.9,
+                "b": 0.3,
+                "a": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.TriggerComponent",
+              "BoxSize": {
+                "x": 0.3,
+                "y": 0.3
+              },
+              "ColliderOffset": {
+                "x": 0.0,
+                "y": 0.0
+              },
+              "IsLegacy": true,
+              "IsPassive": false,
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "8254c933-7de3-4df1-b6d1-8080a9d397d9",
+        "path": "/maps/map01/GRTimerText",
+        "componentNames": "MOD.Core.TransformComponent,MOD.Core.TextComponent,MOD.Core.TextRendererComponent",
+        "jsonString": {
+          "name": "GRTimerText",
+          "path": "/maps/map01/GRTimerText",
+          "nameEditable": true,
+          "enable": false,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 4,
+          "pathConstraints": "///",
+          "revision": 2,
+          "modelId": null,
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "Position": {
+                "x": -2.026947,
+                "y": 18.1748581,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              "ZRotation": 0.0,
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.TextComponent",
+              "Alignment": 0,
+              "Font": 0,
+              "FontColor": {
+                "r": 1.0,
+                "g": 1.0,
+                "b": 1.0,
+                "a": 1.0
+              },
+              "FontSize": 22,
+              "MaxSize": 40,
+              "MinSize": 10,
+              "OutlineDistance": {
+                "x": 1.0,
+                "y": -1.0
+              },
+              "OverrideSorting": false,
+              "Text": "00:00.00",
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.TextRendererComponent",
+              "Text": "00:00.00",
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "62e66ceb-a7b4-4c0a-bc76-30c947821121",
+        "path": "/maps/map01/GRRankingText",
+        "componentNames": "MOD.Core.TransformComponent,MOD.Core.TextComponent,MOD.Core.TextRendererComponent",
+        "jsonString": {
+          "name": "GRRankingText",
+          "path": "/maps/map01/GRRankingText",
+          "nameEditable": true,
+          "enable": false,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 5,
+          "pathConstraints": "///",
+          "revision": 2,
+          "modelId": null,
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "Position": {
+                "x": -8.45857048,
+                "y": 9.10063648,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              "ZRotation": 0.0,
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.TextComponent",
+              "Alignment": 0,
+              "Font": 0,
+              "FontColor": {
+                "r": 0.85,
+                "g": 0.95,
+                "b": 1.0,
+                "a": 1.0
+              },
+              "FontSize": 14,
+              "MaxSize": 40,
+              "MinSize": 10,
+              "OutlineDistance": {
+                "x": 1.0,
+                "y": -1.0
+              },
+              "OverrideSorting": false,
+              "Text": "[TimeAttack]",
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.TextRendererComponent",
+              "Text": "[TimeAttack]",
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "96bf7d14-cfa7-4826-bf65-e70815168b50",
+        "path": "/maps/map01/GRMyRankText",
+        "componentNames": "MOD.Core.TransformComponent,MOD.Core.TextComponent,MOD.Core.TextRendererComponent",
+        "jsonString": {
+          "name": "GRMyRankText",
+          "path": "/maps/map01/GRMyRankText",
+          "nameEditable": true,
+          "enable": false,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 6,
+          "pathConstraints": "///",
+          "revision": 2,
+          "modelId": null,
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "Position": {
+                "x": -8.436911,
+                "y": 4.59605265,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              "ZRotation": 0.0,
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.TextComponent",
+              "Alignment": 0,
+              "Font": 0,
+              "FontColor": {
+                "r": 1.0,
+                "g": 1.0,
+                "b": 0.7,
+                "a": 1.0
+              },
+              "FontSize": 14,
+              "MaxSize": 40,
+              "MinSize": 10,
+              "OutlineDistance": {
+                "x": 1.0,
+                "y": -1.0
+              },
+              "OverrideSorting": false,
+              "Text": "My Rank: -",
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.TextRendererComponent",
+              "Text": "My Rank: -",
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "125cec07-c537-4205-af8c-47d7220ae9cb",
+        "path": "/maps/map01/GRWeaponWheelRoot",
+        "componentNames": "MOD.Core.TransformComponent,MOD.Core.TextComponent,MOD.Core.TextRendererComponent",
+        "jsonString": {
+          "name": "GRWeaponWheelRoot",
+          "path": "/maps/map01/GRWeaponWheelRoot",
+          "nameEditable": true,
+          "enable": false,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 7,
+          "pathConstraints": "///",
+          "revision": 2,
+          "modelId": null,
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "Position": {
+                "x": 0.0,
+                "y": 3.5,
                 "z": 0.0
               },
               "QuaternionRotation": {
@@ -212,11 +496,11 @@
               "Font": 0,
               "FontColor": {
                 "r": 1.0,
-                "g": 1.0,
-                "b": 1.0,
+                "g": 0.9,
+                "b": 0.3,
                 "a": 1.0
               },
-              "FontSize": 36,
+              "FontSize": 24,
               "MaxSize": 40,
               "MinSize": 10,
               "OutlineDistance": {
@@ -224,13 +508,67 @@
                 "y": -1.0
               },
               "OverrideSorting": false,
-              "Text": "hello 월드",
+              "Text": "WEAPON WHEEL [F]",
               "Enable": true
             },
             {
               "@type": "MOD.Core.TextRendererComponent",
-              "Text": "hello 월드",
+              "Text": "WEAPON WHEEL [F]",
               "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "c5df4a79-36c5-4cd1-b13e-615302933ad0",
+        "path": "/maps/map01/RectTileMap",
+        "componentNames": "MOD.Core.TransformComponent,MOD.Core.RectTileMapComponent",
+        "jsonString": {
+          "name": "RectTileMap",
+          "path": "/maps/map01/RectTileMap",
+          "nameEditable": false,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 8,
+          "pathConstraints": "///",
+          "revision": 1,
+          "origin": {
+            "type": "Model",
+            "entry_id": "recttilemap",
+            "sub_entity_id": null,
+            "root_entity_id": null,
+            "replaced_model_id": null
+          },
+          "modelId": "recttilemap",
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Position": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1000.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.RectTileMapComponent",
+              "SortingLayer": "MapLayer0",
+              "TileSetRUID": null,
+              "Enable": true,
+              "tileMap": []
             }
           ],
           "@version": 1

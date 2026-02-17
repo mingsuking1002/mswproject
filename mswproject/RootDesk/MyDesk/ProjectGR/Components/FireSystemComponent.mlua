@@ -1,0 +1,283 @@
+@Component
+script FireSystemComponent extends Component
+
+    property number FireCooldown = 0.5
+    @Sync
+    property boolean IsFireReady = true
+    @Sync
+    property boolean CanAttack = true
+    property Vector2 MuzzleOffset = Vector2(0.5, 0.2)
+    property string ProjectileModelId = ""
+    property Entity ProjectileTemplateEntity = nil
+
+    property integer BaseWeaponAttack = 10
+    property integer PassiveFlatAttack = 0
+    property number BuffIncreasePercent = 0
+    property number PassiveIncreasePercent = 0
+    property number ProjectileSpeed = 20.0
+    property number ProjectileRange = 15.0
+    property number ProjectileLifetime = 2.0
+    property number ProjectileSpread = 0
+
+    -- 서버 타이머 핸들을 초기화해 연사 상태 복원 누락을 방지한다.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self.IsFireReady = true
+        self._T.FireCooldownTimerId = 0
+    end
+
+    -- 좌클릭 입력은 클라이언트에서 월드 좌표로 변환 후 서버 권위 요청으로 전달한다.
+    @EventSender("Service", "InputService")
+    handler HandleScreenTouchEvent(ScreenTouchEvent event)
+        local touchId = event.TouchId
+        if touchId ~= 1 then
+            return
+        end
+        if self.CanAttack == false or self.IsFireReady == false then
+            return
+        end
+        if _InputService:IsPointerOverUI() == true then
+            return
+        end
+
+        local worldPoint = _UILogic:ScreenToWorldPosition(event.TouchPoint)
+        self:RequestFireServer(worldPoint)
+    end
+
+    -- 서버에서 발사 조건을 재검증해 클라이언트가 우회한 입력을 차단한다.
+    @ExecSpace("Server")
+    method void RequestFireServer(Vector2 targetWorldPosition)
+        if targetWorldPosition == nil then
+            return
+        end
+        if self.Entity == nil or isvalid(self.Entity) == false then
+            return
+        end
+
+        local playerComponent = self.Entity.PlayerComponent
+        if playerComponent ~= nil then
+            if senderUserId ~= nil and senderUserId ~= playerComponent.UserId then
+                return
+            end
+        end
+
+        self:TryFireServer(targetWorldPosition)
+    end
+
+    -- 발사는 잔탄/쿨타임/상태를 모두 만족할 때만 실행해 시스템 간 일관성을 유지한다.
+    @ExecSpace("ServerOnly")
+    method void TryFireServer(Vector2 targetWorldPosition)
+        if self:CanFireServer() == false then
+            return
+        end
+
+        local shooterPosition = self.Entity.TransformComponent.WorldPosition
+        if shooterPosition == nil then
+            return
+        end
+
+        local shooterPosition2D = Vector2(shooterPosition.x, shooterPosition.y)
+        local fireDirection = targetWorldPosition - shooterPosition2D
+        if fireDirection:SqrMagnitude() <= 0 then
+            fireDirection = self:GetFallbackDirection()
+        else
+            fireDirection = fireDirection:Normalize()
+        end
+
+        local reloadComponent = self.Entity:GetComponent("ReloadComponent")
+        if reloadComponent == nil or isvalid(reloadComponent) == false then
+            return
+        end
+        if reloadComponent:ConsumeAmmoOnFire() == false then
+            return
+        end
+
+        self:RotateShooter(fireDirection)
+        self:SpawnProjectileServer(fireDirection, shooterPosition2D)
+        self:StartFireCooldown()
+    end
+
+    -- 조건 판정을 분리해 Weapon/Reload/CC 상태 검증 흐름을 재사용 가능하게 유지한다.
+    @ExecSpace("ServerOnly")
+    method boolean CanFireServer()
+        if self.CanAttack == false then
+            return false
+        end
+        if self.IsFireReady == false then
+            return false
+        end
+        local hasModelId = (self.ProjectileModelId ~= nil and self.ProjectileModelId ~= "")
+        local projectileTemplate = self:ResolveProjectileTemplateEntity()
+        if hasModelId == false and projectileTemplate == nil then
+            return false
+        end
+
+        local reloadComponent = self.Entity:GetComponent("ReloadComponent")
+        if reloadComponent == nil or isvalid(reloadComponent) == false then
+            return false
+        end
+        if reloadComponent.IsReloading == true then
+            return false
+        end
+        if reloadComponent.CurrentAmmo <= 0 then
+            return false
+        end
+        if reloadComponent:IsFireReady() == false then
+            return false
+        end
+
+        return true
+    end
+
+    -- 총구 오프셋을 방향축 기준으로 회전시켜 캐릭터 정면 위치에서 탄이 나오게 한다.
+    @ExecSpace("ServerOnly")
+    method Vector2 CalculateMuzzleWorldPosition(Vector2 direction, Vector2 shooterPosition)
+        local forward = direction
+        local right = Vector2(-forward.y, forward.x)
+        local muzzlePosition = shooterPosition + (forward * self.MuzzleOffset.x) + (right * self.MuzzleOffset.y)
+        return muzzlePosition
+    end
+
+    -- 투사체는 발사 시점 스탯을 복사해 무기 교체 후에도 데미지 변조가 일어나지 않게 한다.
+    @ExecSpace("ServerOnly")
+    method void SpawnProjectileServer(Vector2 direction, Vector2 shooterPosition)
+        local muzzlePosition = self:CalculateMuzzleWorldPosition(direction, shooterPosition)
+        local spawnPosition3D = Vector3(muzzlePosition.x, muzzlePosition.y, 0)
+
+        local parentEntity = self.Entity.CurrentMap
+        if parentEntity == nil or isvalid(parentEntity) == false then
+            parentEntity = self.Entity
+        end
+
+        local projectileEntity = nil
+        if self.ProjectileModelId ~= nil and self.ProjectileModelId ~= "" then
+            projectileEntity = _SpawnService:SpawnByModelId(self.ProjectileModelId, "Projectile", spawnPosition3D, parentEntity)
+        else
+            local templateEntity = self:ResolveProjectileTemplateEntity()
+            if templateEntity == nil or isvalid(templateEntity) == false then
+                return
+            end
+
+            projectileEntity = _SpawnService:SpawnByEntity(templateEntity, "Projectile", spawnPosition3D, parentEntity, true)
+        end
+
+        if projectileEntity == nil or isvalid(projectileEntity) == false then
+            return
+        end
+
+        local triggerComponent = projectileEntity.TriggerComponent
+        if triggerComponent == nil then
+            projectileEntity:AddComponent("MOD.Core.TriggerComponent")
+            triggerComponent = projectileEntity.TriggerComponent
+        end
+        if triggerComponent ~= nil and isvalid(triggerComponent) == true then
+            triggerComponent.BoxSize = Vector2(0.3, 0.3)
+            triggerComponent.IsPassive = false
+        end
+
+        local projectileComponent = projectileEntity:GetComponent("ProjectileComponent")
+        if projectileComponent == nil or isvalid(projectileComponent) == false then
+            projectileComponent = projectileEntity:AddComponent("ProjectileComponent")
+        end
+        if projectileComponent == nil or isvalid(projectileComponent) == false then
+            _EntityService:Destroy(projectileEntity)
+            return
+        end
+
+        projectileComponent.Speed = self.ProjectileSpeed
+        projectileComponent.MaxRange = self.ProjectileRange
+        projectileComponent.Lifetime = self.ProjectileLifetime
+        projectileComponent.Damage = self:CalculateFinalDamage()
+        projectileComponent.Spread = self.ProjectileSpread
+        projectileComponent:InitializeProjectile(direction, muzzlePosition, self.Entity)
+    end
+
+    -- Falls back to a map template entity when ProjectileModelId is empty.
+    @ExecSpace("ServerOnly")
+    method Entity ResolveProjectileTemplateEntity()
+        local templateEntity = self.ProjectileTemplateEntity
+        if templateEntity ~= nil and isvalid(templateEntity) == true then
+            return templateEntity
+        end
+
+        local mapEntity = self.Entity.CurrentMap
+        if mapEntity == nil or isvalid(mapEntity) == false then
+            return nil
+        end
+
+        templateEntity = mapEntity:GetChildByName("GRProjectileTemplate", true)
+        if templateEntity == nil or isvalid(templateEntity) == false then
+            return nil
+        end
+
+        self.ProjectileTemplateEntity = templateEntity
+        return templateEntity
+    end
+
+    -- 캐릭터 회전은 서버에서만 확정해 모든 클라이언트가 동일한 조준 방향을 공유하게 한다.
+    @ExecSpace("ServerOnly")
+    method void RotateShooter(Vector2 direction)
+        local transform = self.Entity.TransformComponent
+        if transform == nil or isvalid(transform) == false then
+            return
+        end
+
+        local angle = math.deg(math.atan(direction.y, direction.x))
+        transform.ZRotation = angle
+    end
+
+    -- 데미지 공식을 서버에서 계산해 발사 요청 패킷으로 수치를 조작할 수 없게 한다.
+    @ExecSpace("ServerOnly")
+    method integer CalculateFinalDamage()
+        local baseDamage = self.BaseWeaponAttack + self.PassiveFlatAttack
+        local buffMultiplier = 1 + (self.BuffIncreasePercent * 0.01)
+        local passiveMultiplier = 1 + (self.PassiveIncreasePercent * 0.01)
+        local finalDamage = baseDamage * buffMultiplier * passiveMultiplier
+        return math.max(math.floor(finalDamage), 0)
+    end
+
+    -- 발사 쿨타임은 별도 타이머로 관리해 연사 판정의 프레임 의존성을 제거한다.
+    @ExecSpace("ServerOnly")
+    method void StartFireCooldown()
+        if self._T.FireCooldownTimerId ~= nil and self._T.FireCooldownTimerId > 0 then
+            _TimerService:ClearTimer(self._T.FireCooldownTimerId)
+            self._T.FireCooldownTimerId = 0
+        end
+
+        self.IsFireReady = false
+
+        local cooldown = math.max(self.FireCooldown, 0)
+        local restoreFireReady = function()
+            self.IsFireReady = true
+            self._T.FireCooldownTimerId = 0
+        end
+
+        self._T.FireCooldownTimerId = _TimerService:SetTimerOnce(restoreFireReady, cooldown)
+    end
+
+    -- 클릭 좌표가 자기 자신과 겹칠 때는 이전 진행 방향을 재사용해 발사를 유지한다.
+    @ExecSpace("ServerOnly")
+    method Vector2 GetFallbackDirection()
+        local transform = self.Entity.TransformComponent
+        if transform == nil or isvalid(transform) == false then
+            return Vector2.right
+        end
+
+        local radian = math.rad(transform.ZRotation)
+        local direction = Vector2(math.cos(radian), math.sin(radian))
+        if direction:SqrMagnitude() <= 0 then
+            return Vector2.right
+        end
+
+        return direction:Normalize()
+    end
+
+    -- 제거 시 쿨타임 타이머를 정리해 월드 정리 후 잘못된 상태 복원이 일어나지 않게 한다.
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self._T.FireCooldownTimerId ~= nil and self._T.FireCooldownTimerId > 0 then
+            _TimerService:ClearTimer(self._T.FireCooldownTimerId)
+            self._T.FireCooldownTimerId = 0
+        end
+    end
+end

@@ -1,0 +1,142 @@
+@Component
+script ProjectileComponent extends Component
+
+    property number Speed = 20.0
+    property number MaxRange = 15.0
+    property number Lifetime = 2.0
+    property integer Damage = 10
+    property number Spread = 0
+
+    property Vector2 MoveDirection = Vector2.right
+    property Vector2 StartPosition = Vector2.zero
+    property Entity OwnerEntity = nil
+
+    -- 서버 시작 시 내부 상태를 초기화해 생성 직후/재사용 시 상태 오염을 막는다.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self._T.ElapsedLifeTime = 0
+        self._T.IsInitialized = false
+        self._T.IsDestroyed = false
+    end
+
+    -- 발사 시점 파라미터를 단일 함수로 설정해 스폰-초기화 순서를 고정한다.
+    @ExecSpace("ServerOnly")
+    method void InitializeProjectile(Vector2 direction, Vector2 spawnPosition, Entity ownerEntity)
+        if direction == nil then
+            direction = Vector2.right
+        end
+        if direction:SqrMagnitude() <= 0 then
+            direction = Vector2.right
+        else
+            direction = direction:Normalize()
+        end
+
+        direction = self:ApplySpread(direction)
+
+        self.MoveDirection = direction
+        self.StartPosition = spawnPosition
+        self.OwnerEntity = ownerEntity
+        self._T.ElapsedLifeTime = 0
+        self._T.IsInitialized = true
+
+        local transform = self.Entity.TransformComponent
+        if transform ~= nil and isvalid(transform) == true then
+            transform.WorldPosition = Vector3(spawnPosition.x, spawnPosition.y, 0)
+            transform.ZRotation = math.deg(math.atan(direction.y, direction.x))
+        end
+    end
+
+    -- 확산각은 발사 시점에 한 번만 반영해 프레임마다 진행 방향이 흔들리지 않게 한다.
+    @ExecSpace("ServerOnly")
+    method Vector2 ApplySpread(Vector2 direction)
+        if self.Spread <= 0 then
+            return direction
+        end
+
+        local randomAngle = _UtilLogic:RandomRealRange(-self.Spread, self.Spread)
+        local radian = math.rad(randomAngle)
+
+        local cosValue = math.cos(radian)
+        local sinValue = math.sin(radian)
+
+        local x = direction.x * cosValue - direction.y * sinValue
+        local y = direction.x * sinValue + direction.y * cosValue
+        return Vector2(x, y):Normalize()
+    end
+
+    -- 투사체 이동/수명/사거리를 서버에서 처리해 판정 일관성과 치트 저항성을 유지한다.
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number delta)
+        if self._T.IsInitialized == false then
+            return
+        end
+        if self._T.IsDestroyed == true then
+            return
+        end
+
+        self._T.ElapsedLifeTime = self._T.ElapsedLifeTime + delta
+        if self._T.ElapsedLifeTime >= self.Lifetime then
+            self:DestroySelf()
+            return
+        end
+
+        local moveDelta = self.MoveDirection * self.Speed * delta
+
+        local rigidbody = self.Entity.RigidbodyComponent
+        if rigidbody ~= nil and isvalid(rigidbody) == true then
+            rigidbody.MoveVelocity = self.MoveDirection * self.Speed
+        else
+            local transform = self.Entity.TransformComponent
+            if transform ~= nil and isvalid(transform) == true then
+                transform:Translate(moveDelta.x, moveDelta.y)
+            end
+        end
+
+        local currentPosition = self.Entity.TransformComponent.WorldPosition
+        if currentPosition ~= nil then
+            local currentPosition2D = Vector2(currentPosition.x, currentPosition.y)
+            if Vector2.Distance(self.StartPosition, currentPosition2D) >= self.MaxRange then
+                self:DestroySelf()
+            end
+        end
+    end
+
+    -- 충돌 처리도 서버에서 수행해 데미지 적용과 소멸 타이밍을 단일 권위로 유지한다.
+    @ExecSpace("ServerOnly")
+    @EventSender("Self")
+    handler HandleTriggerEnterEvent(TriggerEnterEvent event)
+        if self._T.IsDestroyed == true then
+            return
+        end
+
+        local hitEntity = event.TriggerBodyEntity
+        if hitEntity == nil or isvalid(hitEntity) == false then
+            return
+        end
+        if self.OwnerEntity ~= nil and hitEntity == self.OwnerEntity then
+            return
+        end
+
+        local hpSystem = hitEntity:GetComponent("HPSystemComponent")
+        if hpSystem ~= nil and isvalid(hpSystem) == true then
+            hpSystem:ApplyDamage(self.Damage)
+            self:DestroySelf()
+            return
+        end
+
+        self:DestroySelf()
+    end
+
+    -- 파괴 함수 단일화로 다중 경로 충돌 시 이중 Destroy 호출을 방지한다.
+    @ExecSpace("ServerOnly")
+    method void DestroySelf()
+        if self._T.IsDestroyed == true then
+            return
+        end
+
+        self._T.IsDestroyed = true
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            _EntityService:Destroy(self.Entity)
+        end
+    end
+end

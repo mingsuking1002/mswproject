@@ -1,0 +1,23 @@
+{
+  "Id": "",
+  "GameId": "",
+  "EntryKey": "directory://587f268e95294eb5b5f4640f7c8df78c",
+  "ContentType": "x-mod/directory",
+  "Content": "",
+  "Usage": 0,
+  "UsePublish": 1,
+  "UseService": 0,
+  "CoreVersion": "26.1.0.0",
+  "StudioVersion": "",
+  "DynamicLoading": 0,
+  "ContentProto": {
+    "Use": "Json",
+    "Json": {
+      "entry_id": "directory://587f268e95294eb5b5f4640f7c8df78c",
+      "name": "ProjectGR",
+      "lock": false,
+      "folding": false,
+      "nameEditable": true
+    }
+  }
+}

@@ -1,0 +1,311 @@
+@Component
+script TagManagerComponent extends Component
+
+    @Sync
+    property integer CurrentCharIndex = 1
+    property number TagCooldown = 3.0
+    @Sync
+    property boolean IsTagReady = true
+    property number InvincibleTime = 0.5
+    @Sync
+    property boolean IsTagLocked = false
+
+    property table Character1_Data = {}
+    property table Character2_Data = {}
+
+    -- 서버 초기화에서 현재 상태를 캐릭터1 기준 스냅샷으로 저장해 첫 태그 시점 누락을 방지한다.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        if self.CurrentCharIndex ~= 1 and self.CurrentCharIndex ~= 2 then
+            self.CurrentCharIndex = 1
+        end
+
+        self.IsTagReady = true
+        self._T.TagCooldownTimerId = 0
+        self._T.TagInvincibleTimerId = 0
+
+        self.Character1_Data = self:CaptureCurrentCharacterState()
+        self.Character2_Data = self:CloneTable(self.Character1_Data)
+    end
+
+    -- 태그 키 입력은 클라이언트에서 받고 실제 캐릭터 스왑은 서버에서만 수행한다.
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        if event.key ~= KeyboardKey.Q then
+            return
+        end
+        if self.IsTagReady == false then
+            return
+        end
+        if self.IsTagLocked == true then
+            return
+        end
+
+        self:RequestTagServer()
+    end
+
+    -- 서버 요청 진입점에서 소유자 검증을 수행해 타 유저 패킷 위조 요청을 차단한다.
+    @ExecSpace("Server")
+    method void RequestTagServer()
+        if self:IsRequestFromOwner() == false then
+            return
+        end
+        if self:CanTagServer() == false then
+            return
+        end
+
+        self:ExecuteTagServer()
+    end
+
+    -- 태그 실행은 백업→로드→무적→쿨타임 순으로 고정해 상태 경합을 줄인다.
+    @ExecSpace("ServerOnly")
+    method void ExecuteTagServer()
+        local previousIndex = self.CurrentCharIndex
+        local nextIndex = 1
+        if previousIndex == 1 then
+            nextIndex = 2
+        end
+
+        self:SaveCharacterState(previousIndex)
+        self:CancelCurrentReloadBeforeSwap()
+        self:LoadCharacterState(nextIndex)
+
+        self.CurrentCharIndex = nextIndex
+        self:ApplyTagInvincibleWindow()
+        self:StartTagCooldown()
+        self:TriggerEntrySkill(nextIndex)
+    end
+
+    -- 태그 가능 조건을 중앙화해 사망/잠금/교체 메뉴 중복 진입을 막는다.
+    @ExecSpace("ServerOnly")
+    method boolean CanTagServer()
+        if self.IsTagReady == false then
+            return false
+        end
+        if self.IsTagLocked == true then
+            return false
+        end
+
+        local hpComponent = self.Entity:GetComponent("HPSystemComponent")
+        if hpComponent ~= nil and isvalid(hpComponent) == true then
+            if hpComponent.IsDead == true then
+                return false
+            end
+        end
+
+        local weaponSwapComponent = self.Entity:GetComponent("WeaponSwapComponent")
+        if weaponSwapComponent ~= nil and isvalid(weaponSwapComponent) == true then
+            if weaponSwapComponent.IsSwapMenuOpen == true then
+                return false
+            end
+        end
+
+        return true
+    end
+
+    -- 현재 활성 캐릭터 상태를 서버 테이블에 저장해 비활성 캐릭터 상태를 보존한다.
+    @ExecSpace("ServerOnly")
+    method void SaveCharacterState(integer charIndex)
+        local data = self:CaptureCurrentCharacterState()
+        if charIndex == 1 then
+            self.Character1_Data = data
+        else
+            self.Character2_Data = data
+        end
+    end
+
+    -- 스냅샷 구조를 고정해 HP/탄약/무기정보를 한 번에 백업/복원할 수 있게 한다.
+    @ExecSpace("ServerOnly")
+    method table CaptureCurrentCharacterState()
+        local data = {}
+
+        local hpComponent = self.Entity:GetComponent("HPSystemComponent")
+        if hpComponent ~= nil and isvalid(hpComponent) == true then
+            data.HP = hpComponent.CurrentHP
+            data.IsDead = hpComponent.IsDead
+        end
+
+        local weaponSwapComponent = self.Entity:GetComponent("WeaponSwapComponent")
+        if weaponSwapComponent ~= nil and isvalid(weaponSwapComponent) == true then
+            data.WeaponSlot = weaponSwapComponent.CurrentWeaponSlot
+            data.Weapon1_Data = self:CloneTable(weaponSwapComponent.Weapon1_Data)
+            data.Weapon2_Data = self:CloneTable(weaponSwapComponent.Weapon2_Data)
+            data.Weapon3_Data = self:CloneTable(weaponSwapComponent.Weapon3_Data)
+            data.Weapon4_Data = self:CloneTable(weaponSwapComponent.Weapon4_Data)
+        end
+
+        local reloadComponent = self.Entity:GetComponent("ReloadComponent")
+        if reloadComponent ~= nil and isvalid(reloadComponent) == true then
+            data.Ammo1 = reloadComponent:GetSlotAmmo(1)
+            data.Ammo2 = reloadComponent:GetSlotAmmo(2)
+            data.Ammo3 = reloadComponent:GetSlotAmmo(3)
+            data.Ammo4 = reloadComponent:GetSlotAmmo(4)
+        end
+
+        return data
+    end
+
+    -- 저장된 캐릭터 상태를 컴포넌트들에 다시 주입해 태그 전후 전투 상태를 정확히 이어간다.
+    @ExecSpace("ServerOnly")
+    method void LoadCharacterState(integer charIndex)
+        local data = self.Character1_Data
+        if charIndex == 2 then
+            data = self.Character2_Data
+        end
+        if data == nil then
+            return
+        end
+
+        local hpComponent = self.Entity:GetComponent("HPSystemComponent")
+        if hpComponent ~= nil and isvalid(hpComponent) == true then
+            if data.HP ~= nil then
+                hpComponent.CurrentHP = math.max(0, math.min(data.HP, hpComponent.MaxHP))
+            end
+            hpComponent.IsDead = false
+            if hpComponent.BroadcastHPState ~= nil then
+                hpComponent:BroadcastHPState()
+            end
+        end
+
+        local weaponSwapComponent = self.Entity:GetComponent("WeaponSwapComponent")
+        if weaponSwapComponent ~= nil and isvalid(weaponSwapComponent) == true then
+            weaponSwapComponent.Weapon1_Data = self:CloneTable(data.Weapon1_Data)
+            weaponSwapComponent.Weapon2_Data = self:CloneTable(data.Weapon2_Data)
+            weaponSwapComponent.Weapon3_Data = self:CloneTable(data.Weapon3_Data)
+            weaponSwapComponent.Weapon4_Data = self:CloneTable(data.Weapon4_Data)
+        end
+
+        local reloadComponent = self.Entity:GetComponent("ReloadComponent")
+        if reloadComponent ~= nil and isvalid(reloadComponent) == true then
+            if data.Ammo1 ~= nil then reloadComponent:SetSlotAmmo(1, data.Ammo1) end
+            if data.Ammo2 ~= nil then reloadComponent:SetSlotAmmo(2, data.Ammo2) end
+            if data.Ammo3 ~= nil then reloadComponent:SetSlotAmmo(3, data.Ammo3) end
+            if data.Ammo4 ~= nil then reloadComponent:SetSlotAmmo(4, data.Ammo4) end
+        end
+
+        if weaponSwapComponent ~= nil and isvalid(weaponSwapComponent) == true then
+            local slot = data.WeaponSlot
+            if slot == nil then
+                slot = weaponSwapComponent.CurrentWeaponSlot
+            end
+            slot = math.max(1, math.min(slot, weaponSwapComponent.WeaponSlotCount))
+
+            weaponSwapComponent.CurrentWeaponSlot = slot
+            weaponSwapComponent.HighlightedSlot = slot
+            local slotData = weaponSwapComponent:EnsureSlotData(slot)
+            weaponSwapComponent:LoadSlotDataToCombatComponents(slotData, slot)
+        end
+    end
+
+    -- 태그 전 현재 재장전을 끊어 스왑 중 탄약 보너스가 생기는 케이스를 차단한다.
+    @ExecSpace("ServerOnly")
+    method void CancelCurrentReloadBeforeSwap()
+        local reloadComponent = self.Entity:GetComponent("ReloadComponent")
+        if reloadComponent == nil or isvalid(reloadComponent) == false then
+            return
+        end
+
+        reloadComponent:CancelCurrentReload()
+    end
+
+    -- 태그 직후 무적을 별도 타이머로 부여해 교체 프레임 피격으로 인한 억까를 줄인다.
+    @ExecSpace("ServerOnly")
+    method void ApplyTagInvincibleWindow()
+        local hpComponent = self.Entity:GetComponent("HPSystemComponent")
+        if hpComponent == nil or isvalid(hpComponent) == false then
+            return
+        end
+
+        if self._T.TagInvincibleTimerId ~= nil and self._T.TagInvincibleTimerId > 0 then
+            _TimerService:ClearTimer(self._T.TagInvincibleTimerId)
+            self._T.TagInvincibleTimerId = 0
+        end
+
+        hpComponent.IsInvincible = true
+        if hpComponent.BroadcastHPState ~= nil then
+            hpComponent:BroadcastHPState()
+        end
+
+        local releaseInvincible = function()
+            hpComponent.IsInvincible = false
+            self._T.TagInvincibleTimerId = 0
+            if hpComponent.BroadcastHPState ~= nil then
+                hpComponent:BroadcastHPState()
+            end
+        end
+
+        self._T.TagInvincibleTimerId = _TimerService:SetTimerOnce(releaseInvincible, math.max(self.InvincibleTime, 0))
+    end
+
+    -- 태그 쿨타임은 서버 기준으로 관리해 클라이언트 타이머 변조를 무력화한다.
+    @ExecSpace("ServerOnly")
+    method void StartTagCooldown()
+        if self._T.TagCooldownTimerId ~= nil and self._T.TagCooldownTimerId > 0 then
+            _TimerService:ClearTimer(self._T.TagCooldownTimerId)
+            self._T.TagCooldownTimerId = 0
+        end
+
+        self.IsTagReady = false
+
+        local releaseTagCooldown = function()
+            self.IsTagReady = true
+            self._T.TagCooldownTimerId = 0
+        end
+
+        self._T.TagCooldownTimerId = _TimerService:SetTimerOnce(releaseTagCooldown, math.max(self.TagCooldown, 0))
+    end
+
+    -- 엔트리 스킬은 호출 포인트만 남겨 캐릭터별 스킬 확장을 무중단으로 연결한다.
+    @ExecSpace("ServerOnly")
+    method void TriggerEntrySkill(integer charIndex)
+        log("[TagManagerComponent] EntrySkill hook called. charIndex=", charIndex)
+    end
+
+    -- 소유자 검증을 공통화해 태그 요청 보안 체크 누락을 방지한다.
+    @ExecSpace("ServerOnly")
+    method boolean IsRequestFromOwner()
+        if self.Entity == nil or isvalid(self.Entity) == false then
+            return false
+        end
+
+        local playerComponent = self.Entity.PlayerComponent
+        if playerComponent == nil then
+            return true
+        end
+        if senderUserId == nil then
+            return true
+        end
+
+        return senderUserId == playerComponent.UserId
+    end
+
+    -- 깊은 복사를 분리해 캐릭터 A/B 상태가 같은 테이블 참조를 공유하지 않게 한다.
+    method table CloneTable(table source)
+        if source == nil then
+            return {}
+        end
+
+        local copied = {}
+        for key, value in pairs(source) do
+            if type(value) == "table" then
+                copied[key] = self:CloneTable(value)
+            else
+                copied[key] = value
+            end
+        end
+        return copied
+    end
+
+    -- 엔티티 종료 시 태그 타이머를 정리해 제거 이후 콜백 실행을 방지한다.
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self._T.TagCooldownTimerId ~= nil and self._T.TagCooldownTimerId > 0 then
+            _TimerService:ClearTimer(self._T.TagCooldownTimerId)
+            self._T.TagCooldownTimerId = 0
+        end
+        if self._T.TagInvincibleTimerId ~= nil and self._T.TagInvincibleTimerId > 0 then
+            _TimerService:ClearTimer(self._T.TagInvincibleTimerId)
+            self._T.TagInvincibleTimerId = 0
+        end
+    end
+end

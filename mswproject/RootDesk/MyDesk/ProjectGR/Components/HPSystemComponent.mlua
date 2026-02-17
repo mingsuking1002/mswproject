@@ -1,0 +1,276 @@
+@Component
+script HPSystemComponent extends Component
+
+    @Sync
+    property integer MaxHP = 100
+    @Sync
+    property integer CurrentHP = 100
+    property integer DamageReduction = 0
+    @Sync
+    property boolean IsInvincible = false
+    property number InvincibleDuration = 1.0
+    property number CriticalHPRatio = 0.3
+    @Sync
+    property boolean IsDead = false
+    property integer FallbackDamage = 1
+
+    -- 서버 시작 시 체력/무적 상태를 정규화해 초기 동기화 오차를 방지한다.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self.CurrentHP = math.max(0, math.min(self.CurrentHP, self.MaxHP))
+        self.IsInvincible = false
+        self.IsDead = (self.CurrentHP <= 0)
+        self._T.InvincibleTimerId = 0
+    end
+
+    -- 초기 상태를 클라이언트에 즉시 전달해 HUD와 연출 기준값을 통일한다.
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self:BroadcastHPState()
+    end
+
+    -- 피격 판정은 서버에서만 받아 치트 클라이언트가 HP를 직접 조작하지 못하게 한다.
+    @ExecSpace("ServerOnly")
+    @EventSender("Self")
+    handler HandleTriggerEnterEvent(TriggerEnterEvent event)
+        local triggerBodyEntity = event.TriggerBodyEntity
+        local incomingDamage = self:ResolveIncomingDamage(triggerBodyEntity)
+        if incomingDamage <= 0 then
+            return
+        end
+
+        self:ApplyDamage(incomingDamage)
+    end
+
+    -- 데미지 원본 엔티티를 컴포넌트 기반으로 읽어 이후 무기/몬스터 확장에 대응한다.
+    @ExecSpace("ServerOnly")
+    method integer ResolveIncomingDamage(Entity sourceEntity)
+        if sourceEntity == nil or isvalid(sourceEntity) == false then
+            return 0
+        end
+
+        local projectile = sourceEntity:GetComponent("ProjectileComponent")
+        if projectile ~= nil and isvalid(projectile) == true then
+            if projectile.Damage ~= nil then
+                return math.max(math.floor(projectile.Damage), 0)
+            end
+            if projectile.AttackPower ~= nil then
+                return math.max(math.floor(projectile.AttackPower), 0)
+            end
+        end
+
+        local monsterAttack = sourceEntity:GetComponent("MonsterAttackComponent")
+        if monsterAttack ~= nil and isvalid(monsterAttack) == true then
+            if monsterAttack.AttackPower ~= nil then
+                return math.max(math.floor(monsterAttack.AttackPower), 0)
+            end
+        end
+
+        return math.max(self.FallbackDamage, 0)
+    end
+
+    -- 데미지 계산/무적/사망 판정을 한곳에서 처리해 전투 규칙 일관성을 유지한다.
+    @ExecSpace("ServerOnly")
+    method void ApplyDamage(integer rawDamage)
+        if self.IsDead == true then
+            return
+        end
+        if self.IsInvincible == true then
+            return
+        end
+        if rawDamage <= 0 then
+            return
+        end
+
+        local actualDamage = rawDamage - self.DamageReduction
+        if actualDamage < 0 then
+            actualDamage = 0
+        end
+
+        self.CurrentHP = math.max(self.CurrentHP - actualDamage, 0)
+        if actualDamage > 0 then
+            self:StartInvincibleWindow()
+        end
+
+        self:EvaluateDeath()
+        self:BroadcastHPState()
+    end
+
+    -- 무적 해제 시간을 타이머로 고정해 프레임 의존 없는 피격 보호를 보장한다.
+    @ExecSpace("ServerOnly")
+    method void StartInvincibleWindow()
+        if self.InvincibleDuration <= 0 then
+            self.IsInvincible = false
+            return
+        end
+
+        if self._T.InvincibleTimerId ~= nil and self._T.InvincibleTimerId > 0 then
+            _TimerService:ClearTimer(self._T.InvincibleTimerId)
+            self._T.InvincibleTimerId = 0
+        end
+
+        self.IsInvincible = true
+
+        local releaseInvincible = function()
+            self.IsInvincible = false
+            self._T.InvincibleTimerId = 0
+            self:BroadcastHPState()
+        end
+
+        self._T.InvincibleTimerId = _TimerService:SetTimerOnce(releaseInvincible, self.InvincibleDuration)
+    end
+
+    -- 회복은 서버에서 상한선을 강제해 비정상 HP 오버플로를 막는다.
+    @ExecSpace("ServerOnly")
+    method void Heal(integer amount)
+        if amount <= 0 then
+            return
+        end
+        if self.IsDead == true then
+            return
+        end
+
+        self.CurrentHP = math.min(self.CurrentHP + amount, self.MaxHP)
+        self:BroadcastHPState()
+    end
+
+    -- 사망 시 이동 차단과 게임오버 전달을 동기 처리해 상태 경합을 방지한다.
+    @ExecSpace("ServerOnly")
+    method void EvaluateDeath()
+        if self.CurrentHP > 0 then
+            return
+        end
+        if self.IsDead == true then
+            return
+        end
+
+        self.IsDead = true
+        self.IsInvincible = false
+
+        local movementComponent = self.Entity:GetComponent("MovementComponent")
+        if movementComponent ~= nil and isvalid(movementComponent) == true then
+            movementComponent.CanMove = false
+        end
+
+        self:NotifyGameOver()
+    end
+
+    -- GameManager와 느슨하게 연결해 매니저 구조 변경에도 컴포넌트 결합을 낮춘다.
+    @ExecSpace("ServerOnly")
+    method void NotifyGameOver()
+        local gameManager = self.Entity:GetComponent("GameManagerComponent")
+        if gameManager ~= nil and isvalid(gameManager) == true then
+            if gameManager.OnPlayerDead ~= nil then
+                gameManager:OnPlayerDead(self.Entity)
+            end
+            return
+        end
+
+        log_warning("[HPSystemComponent] GameManagerComponent not found. GameOver callback skipped.")
+    end
+
+    -- 서버 기준 HP 상태를 클라이언트 연출 진입점으로 전달해 표시와 판정을 분리한다.
+    @ExecSpace("ServerOnly")
+    method void BroadcastHPState()
+        self:UpdateHPFeedbackClient(self.CurrentHP, self.MaxHP, self.IsInvincible, self.IsDead)
+    end
+
+    -- 클라이언트는 Sync 결과를 받아 HUD/이펙트만 처리해 권위 경계를 유지한다.
+    @ExecSpace("Client")
+    method void UpdateHPFeedbackClient(integer currentHp, integer maxHp, boolean isInvincible, boolean isDead)
+        self:UpdateInvincibleBlink(isInvincible)
+        self:UpdateCriticalWarning(currentHp, maxHp)
+
+        if isDead == true then
+            self:HandleDeadUI()
+        end
+    end
+
+    -- 무적 시 시각 피드백을 제공해 플레이어가 피격 무효 구간을 직관적으로 파악하게 한다.
+    @ExecSpace("ClientOnly")
+    method void UpdateInvincibleBlink(boolean isInvincible)
+        if isInvincible == true then
+            self:StartInvincibleBlink()
+            return
+        end
+
+        self:StopInvincibleBlink()
+    end
+
+    -- 반복 타이머 기반 점멸로 OnUpdate 부하 없이 무적 연출을 구현한다.
+    @ExecSpace("ClientOnly")
+    method void StartInvincibleBlink()
+        if self._T.BlinkTimerId ~= nil and self._T.BlinkTimerId > 0 then
+            return
+        end
+
+        local spriteRenderer = self.Entity.SpriteRendererComponent
+        if spriteRenderer == nil or isvalid(spriteRenderer) == false then
+            return
+        end
+
+        self._T.BlinkVisible = true
+
+        local blinkTick = function()
+            if self.IsInvincible == false then
+                self:StopInvincibleBlink()
+                return
+            end
+
+            self._T.BlinkVisible = not self._T.BlinkVisible
+            if self._T.BlinkVisible == true then
+                spriteRenderer.Color = Color(1, 1, 1, 1)
+            else
+                spriteRenderer.Color = Color(1, 1, 1, 0.35)
+            end
+        end
+
+        self._T.BlinkTimerId = _TimerService:SetTimerRepeat(blinkTick, 0.1, 0.0)
+    end
+
+    -- 점멸 종료 시 색상을 원복해 다른 버프/디버프 렌더링과 충돌을 줄인다.
+    @ExecSpace("ClientOnly")
+    method void StopInvincibleBlink()
+        if self._T.BlinkTimerId ~= nil and self._T.BlinkTimerId > 0 then
+            _TimerService:ClearTimer(self._T.BlinkTimerId)
+            self._T.BlinkTimerId = 0
+        end
+
+        local spriteRenderer = self.Entity.SpriteRendererComponent
+        if spriteRenderer ~= nil and isvalid(spriteRenderer) == true then
+            spriteRenderer.Color = Color.white
+        end
+    end
+
+    -- 위기 상태 플래그를 분리해 HUD 이펙트 연동 시 조건 계산 중복을 제거한다.
+    @ExecSpace("ClientOnly")
+    method void UpdateCriticalWarning(integer currentHp, integer maxHp)
+        if maxHp <= 0 then
+            self._T.IsCritical = false
+            return
+        end
+
+        local hpRatio = currentHp / maxHp
+        self._T.IsCritical = (hpRatio < self.CriticalHPRatio)
+    end
+
+    -- 게임오버 UI는 단발 트리거로 제한해 중복 팝업/사운드 재생을 방지한다.
+    @ExecSpace("ClientOnly")
+    method void HandleDeadUI()
+        if self._T.IsDeadUIOpened == true then
+            return
+        end
+
+        self._T.IsDeadUIOpened = true
+        log("[HPSystemComponent] Game Over UI trigger requested.")
+    end
+
+    -- 월드 정리 시 서버 타이머를 해제해 제거된 엔티티 콜백을 차단한다.
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self._T.InvincibleTimerId ~= nil and self._T.InvincibleTimerId > 0 then
+            _TimerService:ClearTimer(self._T.InvincibleTimerId)
+            self._T.InvincibleTimerId = 0
+        end
+    end
+end

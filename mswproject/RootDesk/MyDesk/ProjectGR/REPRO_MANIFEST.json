@@ -1,0 +1,84 @@
+﻿{
+    "required_files":  [
+                           "RootDesk/MyDesk/ProjectGR/Components/MovementComponent.mlua",
+                           "RootDesk/MyDesk/ProjectGR/Components/CameraFollowComponent.mlua",
+                           "RootDesk/MyDesk/ProjectGR/Components/HPSystemComponent.mlua",
+                           "RootDesk/MyDesk/ProjectGR/Components/ReloadComponent.mlua",
+                           "RootDesk/MyDesk/ProjectGR/Components/FireSystemComponent.mlua",
+                           "RootDesk/MyDesk/ProjectGR/Components/ProjectileComponent.mlua",
+                           "RootDesk/MyDesk/ProjectGR/Components/WeaponSwapComponent.mlua",
+                           "RootDesk/MyDesk/ProjectGR/Components/WeaponWheelUIComponent.mlua",
+                           "RootDesk/MyDesk/ProjectGR/Components/TagManagerComponent.mlua",
+                           "RootDesk/MyDesk/ProjectGR/Components/SpeedrunTimerComponent.mlua",
+                           "RootDesk/MyDesk/ProjectGR/Components/RankingComponent.mlua",
+                           "RootDesk/MyDesk/ProjectGR/Components/RankingUIComponent.mlua",
+                           "RootDesk/MyDesk/ProjectGR/Components/Map01BootstrapComponent.mlua"
+                       ],
+    "required_specs":  [
+                           {
+                               "path":  "작업명세서/SPEC_Movement.md",
+                               "expected_status":  "# 🟢 완료"
+                           },
+                           {
+                               "path":  "작업명세서/SPEC_HPSystem.md",
+                               "expected_status":  "# 🟢 완료"
+                           },
+                           {
+                               "path":  "작업명세서/SPEC_ReloadSystem.md",
+                               "expected_status":  "# 🟢 완료"
+                           },
+                           {
+                               "path":  "작업명세서/SPEC_FireSystem.md",
+                               "expected_status":  "# 🟢 완료"
+                           },
+                           {
+                               "path":  "작업명세서/SPEC_WeaponSwap.md",
+                               "expected_status":  "# 🟢 완료"
+                           },
+                           {
+                               "path":  "작업명세서/SPEC_TagSystem.md",
+                               "expected_status":  "# 🟢 완료"
+                           },
+                           {
+                               "path":  "작업명세서/SPEC_SpeedrunTimer.md",
+                               "expected_status":  "# 🟢 완료"
+                           },
+                           {
+                               "path":  "작업명세서/SPEC_RankingSystem.md",
+                               "expected_status":  "# 🟢 완료"
+                           }
+                       ],
+    "required_doc_sections":  [
+                                  "MovementComponent",
+                                  "CameraFollowComponent",
+                                  "HPSystemComponent",
+                                  "ReloadComponent",
+                                  "FireSystemComponent",
+                                  "ProjectileComponent",
+                                  "WeaponSwapComponent",
+                                  "WeaponWheelUIComponent",
+                                  "TagManagerComponent",
+                                  "SpeedrunTimerComponent",
+                                  "RankingComponent",
+                                  "RankingUIComponent",
+                                  "Map01BootstrapComponent"
+                              ],
+    "documentation_path":  "기획서/4.부록/Code_Documentation.md",
+    "required_agents_pattern":  "project-gr-codex-rules",
+    "required_map_checks":  [
+                                {
+                                    "map_file":  "map/map01.map",
+                                    "entity_paths":  [
+                                                         "/maps/map01/Map01Bootstrap",
+                                                         "/maps/map01/GRProjectileTemplate",
+                                                         "/maps/map01/GRTimerText",
+                                                         "/maps/map01/GRRankingText",
+                                                         "/maps/map01/GRMyRankText",
+                                                         "/maps/map01/GRWeaponWheelRoot"
+                                                     ],
+                                    "component_names":  [
+                                                            "Map01BootstrapComponent"
+                                                        ]
+                                }
+                            ]
+}

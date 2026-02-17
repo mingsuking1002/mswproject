@@ -1,0 +1,232 @@
+@Component
+script Map01BootstrapComponent extends Component
+
+    property string TargetMapName = "map01"
+    property string ProjectileTemplateName = "GRProjectileTemplate"
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self._T.ConfiguredUserMap = {}
+        log("[Map01Bootstrap] OnBeginPlay in map: ", tostring(self.Entity.CurrentMapName))
+        self:ConfigureCurrentMapUsers()
+    end
+
+    -- Applies setup for users already present in map01 when this component starts.
+    @ExecSpace("ServerOnly")
+    method void ConfigureCurrentMapUsers()
+        local userEntities = _UserService.UserEntities
+        if userEntities == nil then
+            return
+        end
+
+        for _, userEntity in pairs(userEntities) do
+            self:ConfigurePlayerIfInTargetMap(userEntity)
+        end
+    end
+
+    -- Configures newly entered users with the same bootstrap path.
+    @ExecSpace("ServerOnly")
+    @EventSender("Service", "UserService")
+    handler HandleUserEnterEvent(UserEnterEvent event)
+        if event == nil then
+            return
+        end
+
+        local userEntity = _UserService:GetUserEntityByUserId(event.UserId)
+        self:ConfigurePlayerIfInTargetMap(userEntity)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ConfigurePlayerIfInTargetMap(Entity playerEntity)
+        if playerEntity == nil or isvalid(playerEntity) == false then
+            return
+        end
+        if playerEntity.PlayerComponent == nil then
+            return
+        end
+        if playerEntity.CurrentMapName ~= self.TargetMapName then
+            return
+        end
+
+        local userId = playerEntity.PlayerComponent.UserId
+        if userId == nil or userId == "" then
+            userId = playerEntity.Id
+        end
+        if userId == nil then
+            return
+        end
+
+        if self._T.ConfiguredUserMap[userId] == true then
+            self:RebindRuntimeReferences(playerEntity)
+            return
+        end
+
+        self:ConfigurePlayer(playerEntity)
+        log("[Map01Bootstrap] Configured user: ", tostring(userId))
+        self._T.ConfiguredUserMap[userId] = true
+    end
+
+    -- Adds required gameplay components once and injects default values.
+    @ExecSpace("ServerOnly")
+    method void ConfigurePlayer(Entity playerEntity)
+        local movementComponent = self:AddOrGetComponent(playerEntity, "MovementComponent")
+        local cameraComponent = self:AddOrGetComponent(playerEntity, "CameraFollowComponent")
+        local hpComponent = self:AddOrGetComponent(playerEntity, "HPSystemComponent")
+        local reloadComponent = self:AddOrGetComponent(playerEntity, "ReloadComponent")
+        local fireComponent = self:AddOrGetComponent(playerEntity, "FireSystemComponent")
+        local weaponSwapComponent = self:AddOrGetComponent(playerEntity, "WeaponSwapComponent")
+        local wheelComponent = self:AddOrGetComponent(playerEntity, "WeaponWheelUIComponent")
+        local tagComponent = self:AddOrGetComponent(playerEntity, "TagManagerComponent")
+        local timerComponent = self:AddOrGetComponent(playerEntity, "SpeedrunTimerComponent")
+        local rankingComponent = self:AddOrGetComponent(playerEntity, "RankingComponent")
+        local rankingUIComponent = self:AddOrGetComponent(playerEntity, "RankingUIComponent")
+
+        if movementComponent ~= nil and isvalid(movementComponent) == true then
+            movementComponent.MoveSpeed = 4.0
+            movementComponent.SpeedMultiplier = 1.0
+            movementComponent.CanMove = true
+        end
+
+        if cameraComponent ~= nil and isvalid(cameraComponent) == true then
+            cameraComponent.MapBoundsMin = Vector2(-100, -100)
+            cameraComponent.MapBoundsMax = Vector2(100, 100)
+        end
+
+        if hpComponent ~= nil and isvalid(hpComponent) == true then
+            hpComponent.MaxHP = 100
+            hpComponent.CurrentHP = 100
+            hpComponent.IsDead = false
+            hpComponent.IsInvincible = false
+        end
+
+        if reloadComponent ~= nil and isvalid(reloadComponent) == true then
+            reloadComponent.MaxAmmo = 12
+            reloadComponent.ReloadTime = 1.2
+            reloadComponent.FireRate = 0.35
+            reloadComponent.CurrentWeaponSlot = 1
+            reloadComponent.CurrentAmmo = 12
+        end
+
+        if fireComponent ~= nil and isvalid(fireComponent) == true then
+            fireComponent.ProjectileModelId = ""
+            fireComponent.FireCooldown = 0.35
+            fireComponent.ProjectileSpeed = 25.0
+            fireComponent.ProjectileRange = 20.0
+            fireComponent.ProjectileLifetime = 2.0
+            fireComponent.BaseWeaponAttack = 10
+            fireComponent.CanAttack = true
+        end
+
+        if weaponSwapComponent ~= nil and isvalid(weaponSwapComponent) == true then
+            self:SeedWeaponSlots(weaponSwapComponent)
+        end
+
+        if tagComponent ~= nil and isvalid(tagComponent) == true then
+            tagComponent.TagCooldown = 3.0
+            tagComponent.IsTagLocked = false
+        end
+
+        if timerComponent ~= nil and isvalid(timerComponent) == true then
+            timerComponent.CurrentStageId = 1
+        end
+
+        if rankingComponent ~= nil and isvalid(rankingComponent) == true then
+            rankingComponent.MinimumValidTime = 3.0
+        end
+
+        self:RebindRuntimeReferences(playerEntity)
+
+        if weaponSwapComponent ~= nil and isvalid(weaponSwapComponent) == true then
+            if weaponSwapComponent.ApplyWeaponSlot ~= nil then
+                weaponSwapComponent:ApplyWeaponSlot(1)
+            end
+        end
+
+        if reloadComponent ~= nil and isvalid(reloadComponent) == true then
+            reloadComponent:SetSlotAmmo(1, 12)
+            reloadComponent:SetSlotAmmo(2, 8)
+            reloadComponent:SetSlotAmmo(3, 30)
+            reloadComponent:SetSlotAmmo(4, 4)
+        end
+    end
+
+    -- Rebinds runtime references that must stay map-authoritative on server.
+    @ExecSpace("ServerOnly")
+    method void RebindRuntimeReferences(Entity playerEntity)
+        local projectileTemplate = self:FindMapEntityByName(self.ProjectileTemplateName)
+
+        local fireComponent = playerEntity:GetComponent("FireSystemComponent")
+        if fireComponent ~= nil and isvalid(fireComponent) == true then
+            fireComponent.ProjectileTemplateEntity = projectileTemplate
+            fireComponent.ProjectileModelId = ""
+        end
+    end
+
+    -- Seeds predictable weapon slot defaults for playtest in map01.
+    @ExecSpace("ServerOnly")
+    method void SeedWeaponSlots(Component weaponSwapComponent)
+        weaponSwapComponent.Weapon1_Data = self:BuildWeaponData("Pistol", 12, 1.2, 0.35, 0.35, 10, 25.0, 20.0, 2.0, 0)
+        weaponSwapComponent.Weapon2_Data = self:BuildWeaponData("Shotgun", 8, 1.8, 0.8, 0.8, 24, 18.0, 10.0, 1.2, 8)
+        weaponSwapComponent.Weapon3_Data = self:BuildWeaponData("SMG", 30, 1.6, 0.1, 0.1, 6, 28.0, 16.0, 1.0, 4)
+        weaponSwapComponent.Weapon4_Data = self:BuildWeaponData("Sniper", 4, 2.2, 1.1, 1.1, 45, 36.0, 40.0, 2.8, 1)
+        weaponSwapComponent.CurrentWeaponSlot = 1
+        weaponSwapComponent.HighlightedSlot = 1
+    end
+
+    method table BuildWeaponData(string weaponId, integer maxAmmo, number reloadTime, number fireRate, number fireCooldown, integer attack, number speed, number range, number lifeTime, number spread)
+        local data = {}
+        data.WeaponId = weaponId
+        data.MaxAmmo = maxAmmo
+        data.CurrentAmmo = maxAmmo
+        data.ReloadTime = reloadTime
+        data.FireRate = fireRate
+        data.FireCooldown = fireCooldown
+        data.BaseWeaponAttack = attack
+        data.ProjectileModelId = ""
+        data.ProjectileSpeed = speed
+        data.ProjectileRange = range
+        data.ProjectileLifetime = lifeTime
+        data.ProjectileSpread = spread
+        return data
+    end
+
+    method Entity FindMapEntityByName(string entityName)
+        if entityName == nil or entityName == "" then
+            return nil
+        end
+
+        local mapEntity = self.Entity.CurrentMap
+        if mapEntity == nil or isvalid(mapEntity) == false then
+            return nil
+        end
+
+        local targetEntity = mapEntity:GetChildByName(entityName, true)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        return targetEntity
+    end
+
+    method Component AddOrGetComponent(Entity targetEntity, string typeName)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+        if typeName == nil or typeName == "" then
+            return nil
+        end
+
+        local existing = targetEntity:GetComponent(typeName)
+        if existing ~= nil and isvalid(existing) == true then
+            return existing
+        end
+
+        local added = targetEntity:AddComponent(typeName)
+        if added == nil or isvalid(added) == false then
+            log_warning("[Map01BootstrapComponent] Failed to add component: ", typeName)
+            return nil
+        end
+
+        return added
+    end
+end

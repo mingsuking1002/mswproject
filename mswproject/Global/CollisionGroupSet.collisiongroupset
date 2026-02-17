@@ -1,67 +1,114 @@
-{
-  "Id": "",
-  "GameId": "",
-  "EntryKey": "collisiongroupset://unique",
-  "ContentType": "x-mod/collisiongroupset",
-  "Content": "",
-  "Usage": 0,
-  "UsePublish": 1,
-  "UseService": 0,
-  "CoreVersion": "26.1.0.0",
-  "StudioVersion": "0.1.0.0",
-  "DynamicLoading": 0,
-  "ContentProto": {
-    "Use": "Json",
-    "Json": {
-      "Groups": [
-        {
-          "Id": "4557c2e7772d411289de5cd1f6d1f86d",
-          "Name": "Default"
-        },
-        {
-          "Id": "MOD@TriggerBox",
-          "Name": "TriggerBox"
-        },
-        {
-          "Id": "MOD@HitBox",
-          "Name": "HitBox"
-        },
-        {
-          "Id": "MOD@Interaction",
-          "Name": "Interaction"
-        },
-        {
-          "Id": "MOD@Portal",
-          "Name": "Portal"
-        },
-        {
-          "Id": "MOD@Climbable",
-          "Name": "Climbable"
-        }
-      ],
-      "Matrix": {
-        "4557c2e7772d411289de5cd1f6d1f86d": [
-          "4557c2e7772d411289de5cd1f6d1f86d"
-        ],
-        "MOD@TriggerBox": [
-          "MOD@TriggerBox"
-        ],
-        "MOD@HitBox": [
-          "MOD@HitBox"
-        ],
-        "MOD@Interaction": [
-          "MOD@Interaction"
-        ],
-        "MOD@Portal": [
-          "MOD@Portal"
-        ],
-        "MOD@Climbable": [
-          "MOD@Climbable"
-        ]
-      },
-      "worldCoreVersion": "26.1.0.0",
-      "worldStudioVersion": "0.1.0.0",
-      "useService": 0
-    }
-  }
+﻿{
+    "Id":  "",
+    "GameId":  "",
+    "EntryKey":  "collisiongroupset://unique",
+    "ContentType":  "x-mod/collisiongroupset",
+    "Content":  "",
+    "Usage":  0,
+    "UsePublish":  1,
+    "UseService":  0,
+    "CoreVersion":  "26.1.0.0",
+    "StudioVersion":  "0.1.0.0",
+    "DynamicLoading":  0,
+    "ContentProto":  {
+                         "Use":  "Json",
+                         "Json":  {
+                                      "Groups":  [
+                                                     {
+                                                         "Id":  "4557c2e7772d411289de5cd1f6d1f86d",
+                                                         "Name":  "Default"
+                                                     },
+                                                     {
+                                                         "Id":  "MOD@TriggerBox",
+                                                         "Name":  "TriggerBox"
+                                                     },
+                                                     {
+                                                         "Id":  "MOD@HitBox",
+                                                         "Name":  "HitBox"
+                                                     },
+                                                     {
+                                                         "Id":  "MOD@Interaction",
+                                                         "Name":  "Interaction"
+                                                     },
+                                                     {
+                                                         "Id":  "MOD@Portal",
+                                                         "Name":  "Portal"
+                                                     },
+                                                     {
+                                                         "Id":  "MOD@Climbable",
+                                                         "Name":  "Climbable"
+                                                     },
+                                                     {
+                                                         "Id":  "GR@Player",
+                                                         "Name":  "Player"
+                                                     },
+                                                     {
+                                                         "Id":  "GR@Enemy",
+                                                         "Name":  "Enemy"
+                                                     },
+                                                     {
+                                                         "Id":  "GR@PlayerProjectile",
+                                                         "Name":  "PlayerProjectile"
+                                                     },
+                                                     {
+                                                         "Id":  "GR@EnemyProjectile",
+                                                         "Name":  "EnemyProjectile"
+                                                     },
+                                                     {
+                                                         "Id":  "GR@Terrain",
+                                                         "Name":  "Terrain"
+                                                     }
+                                                 ],
+                                      "Matrix":  {
+                                                     "4557c2e7772d411289de5cd1f6d1f86d":  [
+                                                                                              "4557c2e7772d411289de5cd1f6d1f86d"
+                                                                                          ],
+                                                     "MOD@TriggerBox":  [
+                                                                            "MOD@TriggerBox"
+                                                                        ],
+                                                     "MOD@HitBox":  [
+                                                                        "MOD@HitBox"
+                                                                    ],
+                                                     "MOD@Interaction":  [
+                                                                             "MOD@Interaction"
+                                                                         ],
+                                                     "MOD@Portal":  [
+                                                                        "MOD@Portal"
+                                                                    ],
+                                                     "MOD@Climbable":  [
+                                                                           "MOD@Climbable"
+                                                                       ],
+                                                     "GR@Player":  [
+                                                                       "GR@Player",
+                                                                       "GR@Enemy",
+                                                                       "GR@EnemyProjectile",
+                                                                       "GR@Terrain"
+                                                                   ],
+                                                     "GR@Enemy":  [
+                                                                      "GR@Enemy",
+                                                                      "GR@Player",
+                                                                      "GR@PlayerProjectile",
+                                                                      "GR@Terrain"
+                                                                  ],
+                                                     "GR@PlayerProjectile":  [
+                                                                                 "GR@PlayerProjectile",
+                                                                                 "GR@Enemy",
+                                                                                 "GR@Terrain"
+                                                                             ],
+                                                     "GR@EnemyProjectile":  [
+                                                                                "GR@EnemyProjectile",
+                                                                                "GR@Player"
+                                                                            ],
+                                                     "GR@Terrain":  [
+                                                                        "GR@Terrain",
+                                                                        "GR@Player",
+                                                                        "GR@Enemy",
+                                                                        "GR@PlayerProjectile"
+                                                                    ]
+                                                 },
+                                      "worldCoreVersion":  "26.1.0.0",
+                                      "worldStudioVersion":  "0.1.0.0",
+                                      "useService":  0
+                                  }
+                     }
 }

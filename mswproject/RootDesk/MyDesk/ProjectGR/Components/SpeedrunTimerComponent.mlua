@@ -1,0 +1,258 @@
+@Component
+script SpeedrunTimerComponent extends Component
+
+    @Sync
+    property number ElapsedTime = 0.0
+    @Sync
+    property boolean IsRunning = false
+    property integer CurrentStageId = 1
+    @Sync
+    property number BestTime = -1
+
+    property string DataStorageName = "SpeedrunTimerStorage"
+    property Entity TimerTextEntity = nil
+    property string TimerTextPath = "/ui/DefaultGroup/GRTimerText"
+
+    -- 서버 초기화에서 타이머 상태를 리셋하고 최고 기록을 선로딩한다.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self.ElapsedTime = 0.0
+        self.IsRunning = false
+        self._T.ExternalPauseMap = {}
+        self:LoadBestTimeFromStorage()
+    end
+
+    -- 시작 시 클라이언트 UI 업데이트 루프를 붙여 Sync 시간을 HUD에 반영한다.
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self:StartClientTimerTextLoop()
+    end
+
+    -- 시간 누적은 서버에서만 진행해 타이머 위변조를 방지한다.
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number delta)
+        if self.IsRunning == false then
+            return
+        end
+        if self:IsExternallyPaused() == true then
+            return
+        end
+
+        self.ElapsedTime = self.ElapsedTime + delta
+    end
+
+    -- 게임 이벤트에서 타이머 시작 시 호출하는 공용 진입점이다.
+    @ExecSpace("ServerOnly")
+    method void StartRun()
+        self.ElapsedTime = 0.0
+        self.IsRunning = true
+    end
+
+    -- 일시정지 요청을 분리해 UI/상점/무기교체 등 다중 원인을 동시에 처리한다.
+    @ExecSpace("ServerOnly")
+    method void SetExternalPauseState(string reason, boolean paused)
+        if reason == nil or reason == "" then
+            return
+        end
+
+        self._T.ExternalPauseMap[reason] = paused
+    end
+
+    -- 외부 일시정지 상태를 매 프레임 합산해 단일 bool 동기화 충돌을 피한다.
+    @ExecSpace("ServerOnly")
+    method boolean IsExternallyPaused()
+        local weaponSwapComponent = self.Entity:GetComponent("WeaponSwapComponent")
+        if weaponSwapComponent ~= nil and isvalid(weaponSwapComponent) == true then
+            if weaponSwapComponent.IsSwapMenuOpen == true then
+                return true
+            end
+        end
+
+        for _, paused in pairs(self._T.ExternalPauseMap) do
+            if paused == true then
+                return true
+            end
+        end
+
+        return false
+    end
+
+    -- 클리어 시 정지/기록 갱신/랭킹 전달을 한 번에 처리해 결과 시점 일관성을 보장한다.
+    @ExecSpace("ServerOnly")
+    method void CompleteRun()
+        if self.IsRunning == false then
+            return
+        end
+
+        self.IsRunning = false
+        self:UpdateBestTimeAndSave()
+        self:NotifyRankingSystem()
+    end
+
+    -- 사망 재시작 시 상태를 초기화해 이전 런의 시간 잔존을 제거한다.
+    @ExecSpace("ServerOnly")
+    method void ResetRun()
+        self.ElapsedTime = 0.0
+        self.IsRunning = false
+    end
+
+    -- 기록 갱신 조건을 서버에서만 비교해 비정상 로컬 기록 반영을 막는다.
+    @ExecSpace("ServerOnly")
+    method void UpdateBestTimeAndSave()
+        if self.BestTime < 0 or self.ElapsedTime < self.BestTime then
+            self.BestTime = self.ElapsedTime
+            self:SaveBestTimeToStorage()
+            self:PlayNewRecordFeedbackClient()
+        end
+    end
+
+    -- DataStorage 키를 스테이지 단위로 분리해 스테이지별 최고 기록을 독립 보관한다.
+    @ExecSpace("ServerOnly")
+    method string GetBestTimeStorageKey()
+        return "Stage_" .. tostring(self.CurrentStageId) .. "_BestTime"
+    end
+
+    -- 기록 저장은 문자열로 통일해 DataStorage 타입 변환 이슈를 단순화한다.
+    @ExecSpace("ServerOnly")
+    method void SaveBestTimeToStorage()
+        local dataStorage = _DataStorageService:GetGlobalDataStorage(self.DataStorageName)
+        if dataStorage == nil then
+            return
+        end
+
+        local key = self:GetBestTimeStorageKey()
+        dataStorage:SetAndWait(key, tostring(self.BestTime))
+    end
+
+    -- 기록 로드는 실패 시 -1로 유지해 최초 클리어 분기를 명확히 유지한다.
+    @ExecSpace("ServerOnly")
+    method void LoadBestTimeFromStorage()
+        local dataStorage = _DataStorageService:GetGlobalDataStorage(self.DataStorageName)
+        if dataStorage == nil then
+            self.BestTime = -1
+            return
+        end
+
+        local key = self:GetBestTimeStorageKey()
+        local errorCode, value = dataStorage:GetAndWait(key)
+        if errorCode ~= 0 or value == nil or value == "" then
+            self.BestTime = -1
+            return
+        end
+
+        local parsed = tonumber(value)
+        if parsed == nil then
+            self.BestTime = -1
+            return
+        end
+
+        self.BestTime = parsed
+    end
+
+    -- 랭킹 전달 포인트를 분리해 RankingComponent 미부착 환경에서도 타이머가 독립 동작하게 한다.
+    @ExecSpace("ServerOnly")
+    method void NotifyRankingSystem()
+        local rankingComponent = self.Entity:GetComponent("RankingComponent")
+        if rankingComponent == nil or isvalid(rankingComponent) == false then
+            return
+        end
+
+        rankingComponent:SubmitTimeAttackResult(self.ElapsedTime, self.CurrentStageId)
+    end
+
+    -- 신기록 UI 연출은 클라이언트에서만 실행해 서버 로직을 순수하게 유지한다.
+    @ExecSpace("Client")
+    method void PlayNewRecordFeedbackClient()
+        log("[SpeedrunTimerComponent] New Record!")
+    end
+
+    -- 클라이언트 반복 타이머로 Sync된 시간을 텍스트에 반영해 HUD를 지속 업데이트한다.
+    @ExecSpace("Client")
+    method void StartClientTimerTextLoop()
+        if self._T.ClientTextTimerId ~= nil and self._T.ClientTextTimerId > 0 then
+            return
+        end
+
+        local updateText = function()
+            local textEntity = self:ResolveTimerTextEntityClient()
+            local textComponent = nil
+            if textEntity ~= nil and isvalid(textEntity) == true then
+                textComponent = textEntity.TextComponent
+            end
+            if textComponent == nil then
+                return
+            end
+
+            textComponent.Text = self:FormatElapsedTime(self.ElapsedTime)
+        end
+
+        self._T.ClientTextTimerId = _TimerService:SetTimerRepeat(updateText, 0.05, 0.0)
+    end
+
+    -- Resolves timer text from UI path so HUD binding does not depend on map entities.
+    @ExecSpace("ClientOnly")
+    method Entity ResolveTimerTextEntityClient()
+        local current = self.TimerTextEntity
+        if current ~= nil and isvalid(current) == true then
+            if current.Path == self.TimerTextPath then
+                return current
+            end
+        end
+
+        if self.TimerTextPath == nil or self.TimerTextPath == "" then
+            return current
+        end
+
+        local resolved = _EntityService:GetEntityByPath(self.TimerTextPath)
+        if resolved == nil or isvalid(resolved) == false then
+            return current
+        end
+
+        self.TimerTextEntity = resolved
+        return resolved
+    end
+
+    -- 표시 포맷을 함수화해 타이머/랭킹 UI에서 동일 문자열 포맷을 재사용한다.
+    method string FormatElapsedTime(number elapsed)
+        local totalMs = math.floor(elapsed * 1000)
+        if totalMs < 0 then
+            totalMs = 0
+        end
+
+        local minutes = math.floor(totalMs / 60000)
+        local seconds = math.floor((totalMs % 60000) / 1000)
+        local centiseconds = math.floor((totalMs % 1000) / 10)
+
+        local minuteText = tostring(minutes)
+        if minutes < 10 then
+            minuteText = "0" .. minuteText
+        end
+
+        local secondText = tostring(seconds)
+        if seconds < 10 then
+            secondText = "0" .. secondText
+        end
+
+        local centiText = tostring(centiseconds)
+        if centiseconds < 10 then
+            centiText = "0" .. centiText
+        end
+
+        return minuteText .. ":" .. secondText .. "." .. centiText
+    end
+
+    -- 종료 시 클라이언트 텍스트 타이머를 정리해 맵 이탈 후 UI 갱신 콜백 잔존을 방지한다.
+    @ExecSpace("ClientOnly")
+    method void StopClientTimerTextLoop()
+        if self._T.ClientTextTimerId ~= nil and self._T.ClientTextTimerId > 0 then
+            _TimerService:ClearTimer(self._T.ClientTextTimerId)
+            self._T.ClientTextTimerId = 0
+        end
+    end
+
+    -- EndPlay에서 클라이언트 UI 타이머를 종료해 세션 종료 후 로그 스팸을 차단한다.
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        self:StopClientTimerTextLoop()
+    end
+end

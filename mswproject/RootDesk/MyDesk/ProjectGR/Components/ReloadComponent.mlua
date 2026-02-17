@@ -1,0 +1,254 @@
+@Component
+script ReloadComponent extends Component
+
+    property integer MaxAmmo = 30
+    @Sync
+    property integer CurrentAmmo = 30
+    property number ReloadTime = 1.5
+    @Sync
+    property boolean IsReloading = false
+    property number FireRate = 0.5
+    @Sync
+    property integer CurrentWeaponSlot = 1
+    property integer WeaponSlotCount = 4
+
+    -- 서버에서 슬롯별 탄약/타이머 버퍼를 초기화해 무기 교체 시 상태 손실을 방지한다.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self.CurrentAmmo = math.max(0, math.min(self.CurrentAmmo, self.MaxAmmo))
+        self.IsReloading = false
+        self.CurrentWeaponSlot = math.max(1, self.CurrentWeaponSlot)
+
+        self._T.AmmoBySlot = {}
+        self._T.ReloadTimerBySlot = {}
+        self._T.ReloadEndTimeBySlot = {}
+        self._T.NextFireReadyTimeBySlot = {}
+
+        local slotCount = math.max(self.WeaponSlotCount, 1)
+        for slot = 1, slotCount do
+            self._T.AmmoBySlot[slot] = self.MaxAmmo
+            self._T.ReloadTimerBySlot[slot] = 0
+            self._T.ReloadEndTimeBySlot[slot] = 0
+            self._T.NextFireReadyTimeBySlot[slot] = 0
+        end
+
+        self._T.AmmoBySlot[self.CurrentWeaponSlot] = self.CurrentAmmo
+    end
+
+    -- R키 입력은 클라이언트에서 받고 실제 재장전 시작은 서버 검증 후 실행한다.
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        local key = event.key
+        if key ~= KeyboardKey.R then
+            return
+        end
+
+        self:RequestReloadServer()
+    end
+
+    -- 재장전 요청은 서버에서만 승인해 잔탄/상태 변조를 차단한다.
+    @ExecSpace("Server")
+    method void RequestReloadServer()
+        if self.Entity == nil or isvalid(self.Entity) == false then
+            return
+        end
+
+        local playerComponent = self.Entity.PlayerComponent
+        if playerComponent ~= nil then
+            if senderUserId ~= nil and senderUserId ~= playerComponent.UserId then
+                return
+            end
+        end
+
+        self:StartReloadForSlot(self.CurrentWeaponSlot)
+    end
+
+    -- 조건 만족 시에만 재장전을 시작해 불필요한 모션/네트워크 이벤트를 줄인다.
+    @ExecSpace("ServerOnly")
+    method void StartReloadForSlot(integer slot)
+        if self:IsValidSlot(slot) == false then
+            return
+        end
+        if self:IsReloadingInSlot(slot) == true then
+            return
+        end
+
+        local ammo = self._T.AmmoBySlot[slot]
+        if ammo == nil then
+            ammo = self.MaxAmmo
+            self._T.AmmoBySlot[slot] = ammo
+        end
+        if ammo >= self.MaxAmmo then
+            return
+        end
+
+        if slot == self.CurrentWeaponSlot then
+            self.IsReloading = true
+        end
+
+        local delay = math.max(self.ReloadTime, 0)
+        self._T.ReloadEndTimeBySlot[slot] = _UtilLogic.ServerElapsedSeconds + delay
+
+        local completeReload = function()
+            self:CompleteReload(slot)
+        end
+
+        self._T.ReloadTimerBySlot[slot] = _TimerService:SetTimerOnce(completeReload, delay)
+    end
+
+    -- 완료 시점에만 탄약을 채워 중간 교체/취소 시 탄약 이득이 생기지 않게 한다.
+    @ExecSpace("ServerOnly")
+    method void CompleteReload(integer slot)
+        if self:IsValidSlot(slot) == false then
+            return
+        end
+
+        self._T.ReloadTimerBySlot[slot] = 0
+        self._T.ReloadEndTimeBySlot[slot] = 0
+        self._T.AmmoBySlot[slot] = self.MaxAmmo
+
+        if slot == self.CurrentWeaponSlot then
+            self.CurrentAmmo = self.MaxAmmo
+            self.IsReloading = false
+        end
+    end
+
+    -- 태그/무기 교체 시 재장전을 즉시 끊어 명세의 리스크 규칙을 일관되게 적용한다.
+    @ExecSpace("ServerOnly")
+    method void CancelReloadForSlot(integer slot)
+        if self:IsValidSlot(slot) == false then
+            return
+        end
+
+        local timerId = self._T.ReloadTimerBySlot[slot]
+        if timerId ~= nil and timerId > 0 then
+            _TimerService:ClearTimer(timerId)
+        end
+
+        self._T.ReloadTimerBySlot[slot] = 0
+        self._T.ReloadEndTimeBySlot[slot] = 0
+
+        if slot == self.CurrentWeaponSlot then
+            self.IsReloading = false
+        end
+    end
+
+    -- 외부 시스템에서 태그/교체 시 호출할 공용 취소 진입점이다.
+    @ExecSpace("ServerOnly")
+    method void CancelCurrentReload()
+        self:CancelReloadForSlot(self.CurrentWeaponSlot)
+    end
+
+    -- 슬롯 전환 시 현재 잔탄을 저장/로드해 무기별 탄약 상태를 독립적으로 유지한다.
+    @ExecSpace("ServerOnly")
+    method void SetCurrentWeaponSlot(integer slot)
+        if self:IsValidSlot(slot) == false then
+            return
+        end
+        if slot == self.CurrentWeaponSlot then
+            return
+        end
+
+        local prevSlot = self.CurrentWeaponSlot
+        self._T.AmmoBySlot[prevSlot] = self.CurrentAmmo
+
+        self:CancelReloadForSlot(prevSlot)
+
+        self.CurrentWeaponSlot = slot
+        self.CurrentAmmo = self._T.AmmoBySlot[slot]
+        if self.CurrentAmmo == nil then
+            self.CurrentAmmo = self.MaxAmmo
+            self._T.AmmoBySlot[slot] = self.MaxAmmo
+        end
+
+        self.IsReloading = self:IsReloadingInSlot(slot)
+    end
+
+    -- 발사 시 잔탄과 슬롯별 발사 쿨타임을 동시에 갱신해 백그라운드 쿨타임 요구사항을 충족한다.
+    @ExecSpace("ServerOnly")
+    method boolean ConsumeAmmoOnFire()
+        if self.IsReloading == true then
+            return false
+        end
+        if self:IsFireReady() == false then
+            return false
+        end
+        if self.CurrentAmmo <= 0 then
+            return false
+        end
+
+        self.CurrentAmmo = self.CurrentAmmo - 1
+        self._T.AmmoBySlot[self.CurrentWeaponSlot] = self.CurrentAmmo
+        self._T.NextFireReadyTimeBySlot[self.CurrentWeaponSlot] = _UtilLogic.ServerElapsedSeconds + math.max(self.FireRate, 0)
+        return true
+    end
+
+    -- 서버 기준 시간으로 쿨타임 준비 여부를 계산해 클라이언트 속도핵 영향을 차단한다.
+    @ExecSpace("ServerOnly")
+    method boolean IsFireReady()
+        local readyTime = self._T.NextFireReadyTimeBySlot[self.CurrentWeaponSlot]
+        if readyTime == nil then
+            return true
+        end
+
+        return _UtilLogic.ServerElapsedSeconds >= readyTime
+    end
+
+    -- 슬롯 유효성 검사를 공통화해 잘못된 인덱스로 인한 테이블 오염을 막는다.
+    method boolean IsValidSlot(integer slot)
+        if slot < 1 then
+            return false
+        end
+
+        return slot <= math.max(self.WeaponSlotCount, 1)
+    end
+
+    -- 슬롯별 재장전 여부 판정을 분리해 현재 슬롯 UI 상태 계산에 재사용한다.
+    method boolean IsReloadingInSlot(integer slot)
+        local timerId = self._T.ReloadTimerBySlot[slot]
+        return (timerId ~= nil and timerId > 0)
+    end
+
+    -- 외부 컴포넌트가 슬롯 탄약을 조회할 수 있게 열어 WeaponSwap 연동 결합을 낮춘다.
+    @ExecSpace("ServerOnly")
+    method integer GetSlotAmmo(integer slot)
+        if self:IsValidSlot(slot) == false then
+            return 0
+        end
+
+        local ammo = self._T.AmmoBySlot[slot]
+        if ammo == nil then
+            ammo = self.MaxAmmo
+        end
+        return ammo
+    end
+
+    -- 슬롯 탄약 설정을 중앙화해 직접 테이블 접근으로 인한 상태 불일치를 방지한다.
+    @ExecSpace("ServerOnly")
+    method void SetSlotAmmo(integer slot, integer ammo)
+        if self:IsValidSlot(slot) == false then
+            return
+        end
+
+        local clampedAmmo = math.max(0, math.min(ammo, self.MaxAmmo))
+        self._T.AmmoBySlot[slot] = clampedAmmo
+
+        if slot == self.CurrentWeaponSlot then
+            self.CurrentAmmo = clampedAmmo
+        end
+    end
+
+    -- 엔티티 제거 시 슬롯별 타이머를 일괄 해제해 고아 콜백을 방지한다.
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        local slotCount = math.max(self.WeaponSlotCount, 1)
+        for slot = 1, slotCount do
+            local timerId = self._T.ReloadTimerBySlot[slot]
+            if timerId ~= nil and timerId > 0 then
+                _TimerService:ClearTimer(timerId)
+            end
+            self._T.ReloadTimerBySlot[slot] = 0
+            self._T.ReloadEndTimeBySlot[slot] = 0
+        end
+    end
+end
