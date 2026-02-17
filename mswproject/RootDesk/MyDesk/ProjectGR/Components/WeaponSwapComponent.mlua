@@ -14,6 +14,7 @@ script WeaponSwapComponent extends Component
     property integer HighlightedSlot = 1
     @Sync
     property boolean IsGameLogicPaused = false
+    property boolean AllowSwapMenu = true
 
     -- 서버 시작 시 슬롯 데이터를 정규화해 교체 직후 nil 참조를 예방한다.
     @ExecSpace("ServerOnly")
@@ -297,6 +298,10 @@ script WeaponSwapComponent extends Component
     -- 오픈 가능 조건을 중앙화해 사망 상태에서 메뉴가 열리는 예외를 차단한다.
     @ExecSpace("ServerOnly")
     method boolean CanOpenSwapMenu()
+        if self.AllowSwapMenu == false then
+            return false
+        end
+
         if self.IsSwapMenuOpen == true then
             return false
         end

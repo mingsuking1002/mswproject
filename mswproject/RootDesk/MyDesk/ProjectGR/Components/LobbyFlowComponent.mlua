@@ -1,0 +1,401 @@
+@Component
+script LobbyFlowComponent extends Component
+
+    @Sync
+    property boolean IsLobbyActive = true
+    property boolean EnableLobbyFlow = true
+    property boolean UseMapSplit = false
+    property string LobbyMapName = "map01"
+    property string InGameMapName = "map01"
+    property Vector2 InGameSpawnPosition = Vector2(0, 0)
+
+    property boolean AutoOpenRankingOnLobby = true
+    property integer LobbyRankingTab = 1
+    property boolean AutoStartTimerWhenGameStart = true
+    property boolean ResetTimerWhenLobbyActive = true
+
+    property boolean HideRankingDuringGameplay = true
+    property boolean HideTimerDuringLobby = true
+    property boolean HideCombatHUDInLobby = true
+
+    property string StartButtonPath = "/ui/DefaultGroup/GRStartButton"
+    property string RankingTextPath = "/ui/DefaultGroup/GRRankingText"
+    property string MyRankTextPath = "/ui/DefaultGroup/GRMyRankText"
+    property string TimerTextPath = "/ui/DefaultGroup/GRTimerText"
+    property string AttackButtonPath = "/ui/DefaultGroup/Button_Attack"
+    property string JumpButtonPath = "/ui/DefaultGroup/Button_Jump"
+    property string JoystickPath = "/ui/DefaultGroup/UIJoystick"
+    property number ClientUiPollInterval = 0.2
+    property number StartButtonBindRetryInterval = 0.25
+    property integer StartButtonBindRetryMaxAttempts = 40
+    property boolean UseButtonPressedFallback = true
+    property boolean EnableKeyboardStartFallback = true
+
+    -- Initializes with a predictable lobby state so first frame behavior is deterministic.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self.IsLobbyActive = (self.EnableLobbyFlow == true)
+    end
+
+    -- Applies state authority on spawn to avoid race conditions with late client UI load.
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self:ApplyInitialServerState()
+    end
+
+    -- Keeps map-split flow stable when the player re-enters maps.
+    @ExecSpace("ServerOnly")
+    method void OnMapEnter()
+        if self.EnableLobbyFlow == false then
+            return
+        end
+        if self.UseMapSplit == false then
+            return
+        end
+
+        local currentMapName = self.Entity.CurrentMapName
+        if currentMapName == self.LobbyMapName then
+            self:SetLobbyStateServer(true)
+            return
+        end
+
+        if self.InGameMapName ~= nil and self.InGameMapName ~= "" then
+            if currentMapName == self.InGameMapName then
+                self:SetLobbyStateServer(false)
+            end
+        end
+    end
+
+    -- Polls client UI state with low frequency so late-loaded UI can still bind safely.
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number delta)
+        if self.EnableLobbyFlow == false then
+            return
+        end
+
+        if self._T.ClientUiPollAccumulator == nil then
+            self._T.ClientUiPollAccumulator = 0
+        end
+
+        self._T.ClientUiPollAccumulator += delta
+        if self._T.ClientUiPollAccumulator < math.max(self.ClientUiPollInterval, 0.05) then
+            return
+        end
+        self._T.ClientUiPollAccumulator = 0
+
+        local isButtonBound = self:BindStartButtonClient()
+        if isButtonBound == false then
+            self:ScheduleStartButtonBindRetryClient()
+        end
+
+        if self._T.LastAppliedLobbyState == nil or self._T.LastAppliedLobbyState ~= self.IsLobbyActive then
+            self:ApplyLobbyUIClient(self.IsLobbyActive)
+        end
+    end
+
+    -- Validates owner input before changing authoritative gameplay state.
+    @ExecSpace("Server")
+    method void RequestStartGameServer()
+        if self.EnableLobbyFlow == false then
+            return
+        end
+        if self:IsRequestFromOwner() == false then
+            return
+        end
+        if self.IsLobbyActive == false then
+            return
+        end
+
+        log("[LobbyFlowComponent] Start game accepted. user=", tostring(self.Entity.PlayerComponent.UserId))
+        self:SetLobbyStateServer(false)
+        self:MoveOwnerToInGameMapIfNeeded()
+    end
+
+    -- Provides a temporary non-UI start path while button/input routing is being stabilized.
+    @EventSender("Service", "InputService")
+    handler HandleLobbyStartKeyDownEvent(KeyDownEvent event)
+        if self.EnableKeyboardStartFallback == false then
+            return
+        end
+        if self.EnableLobbyFlow == false then
+            return
+        end
+        if self.IsLobbyActive == false then
+            return
+        end
+
+        local key = event.key
+        if key == KeyboardKey.Return or key == KeyboardKey.Space then
+            log("[LobbyFlowComponent] Keyboard start fallback used.")
+            self:RequestStartGameServer()
+        end
+    end
+
+    -- Avoids stale event handlers when entity/session ends.
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        local buttonEntity = self._T.StartButtonEntity
+        if buttonEntity ~= nil and isvalid(buttonEntity) == true then
+            local clickHandler = self._T.StartButtonClickHandler
+            if clickHandler ~= nil then
+                buttonEntity:DisconnectEvent("ButtonClickEvent", clickHandler)
+            end
+
+            local pressedHandler = self._T.StartButtonPressedHandler
+            if pressedHandler ~= nil then
+                buttonEntity:DisconnectEvent("ButtonPressedEvent", pressedHandler)
+            end
+        end
+
+        if self._T.BindRetryTimerId ~= nil and self._T.BindRetryTimerId > 0 then
+            _TimerService:ClearTimer(self._T.BindRetryTimerId)
+            self._T.BindRetryTimerId = 0
+        end
+
+        self._T.StartButtonEntity = nil
+        self._T.StartButtonClickHandler = nil
+        self._T.StartButtonPressedHandler = nil
+        self._T.BindRetryAttempt = 0
+        self._T.ClientUiPollAccumulator = 0
+        self._T.LastAppliedLobbyState = nil
+    end
+
+    -- Called by UI click; server validates ownership and transitions state.
+    @ExecSpace("ClientOnly")
+    method void OnStartButtonClickedClient(any event)
+        log("[LobbyFlowComponent] Start button input received.")
+        self:RequestStartGameServer()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyInitialServerState()
+        if self.EnableLobbyFlow == false then
+            self:SetLobbyStateServer(false)
+            return
+        end
+
+        if self.UseMapSplit == true then
+            if self.Entity.CurrentMapName == self.LobbyMapName then
+                self:SetLobbyStateServer(true)
+            else
+                self:SetLobbyStateServer(false)
+            end
+            return
+        end
+
+        self:SetLobbyStateServer(true)
+    end
+
+    -- Centralized authority switch for combat/timer flow.
+    @ExecSpace("ServerOnly")
+    method void SetLobbyStateServer(boolean isLobby)
+        self.IsLobbyActive = isLobby
+
+        local movementComponent = self.Entity:GetComponent("MovementComponent")
+        if movementComponent ~= nil and isvalid(movementComponent) == true then
+            movementComponent.CanMove = (isLobby == false)
+        end
+
+        local fireComponent = self.Entity:GetComponent("FireSystemComponent")
+        if fireComponent ~= nil and isvalid(fireComponent) == true then
+            fireComponent.CanAttack = (isLobby == false)
+        end
+
+        local weaponSwapComponent = self.Entity:GetComponent("WeaponSwapComponent")
+        if weaponSwapComponent ~= nil and isvalid(weaponSwapComponent) == true then
+            weaponSwapComponent.AllowSwapMenu = (isLobby == false)
+            if isLobby == true and weaponSwapComponent.IsSwapMenuOpen == true then
+                weaponSwapComponent.IsSwapMenuOpen = false
+                weaponSwapComponent.IsGameLogicPaused = false
+            end
+        end
+
+        local timerComponent = self.Entity:GetComponent("SpeedrunTimerComponent")
+        if timerComponent ~= nil and isvalid(timerComponent) == true then
+            timerComponent:SetExternalPauseState("LOBBY_FLOW", isLobby)
+
+            if isLobby == true and self.ResetTimerWhenLobbyActive == true then
+                timerComponent:ResetRun()
+            end
+            if isLobby == false and self.AutoStartTimerWhenGameStart == true then
+                if timerComponent.IsRunning == false then
+                    timerComponent:StartRun()
+                end
+            end
+        end
+
+        self:ApplyLobbyUIClient(isLobby)
+    end
+
+    -- Keeps map split optional so same-scene flow remains default.
+    @ExecSpace("ServerOnly")
+    method void MoveOwnerToInGameMapIfNeeded()
+        if self.UseMapSplit == false then
+            return
+        end
+        if self.InGameMapName == nil or self.InGameMapName == "" then
+            return
+        end
+        if self.Entity.CurrentMapName == self.InGameMapName then
+            return
+        end
+
+        local playerComponent = self.Entity.PlayerComponent
+        if playerComponent == nil then
+            return
+        end
+
+        playerComponent:MoveToMapPosition(self.InGameMapName, self.InGameSpawnPosition)
+    end
+
+    -- Applies UI-only state change on each client from authoritative server transitions.
+    @ExecSpace("Client")
+    method void ApplyLobbyUIClient(boolean isLobby)
+        local isButtonBound = self:BindStartButtonClient()
+        if isButtonBound == false then
+            self:ScheduleStartButtonBindRetryClient()
+        end
+
+        self:SetEntityEnableByPath(self.StartButtonPath, isLobby)
+
+        local rankingVisible = isLobby
+        if self.HideRankingDuringGameplay == false then
+            rankingVisible = true
+        end
+        self:SetEntityEnableByPath(self.RankingTextPath, rankingVisible)
+        self:SetEntityEnableByPath(self.MyRankTextPath, rankingVisible)
+
+        local timerVisible = (isLobby == false)
+        if self.HideTimerDuringLobby == false then
+            timerVisible = true
+        end
+        self:SetEntityEnableByPath(self.TimerTextPath, timerVisible)
+
+        local combatHudVisible = (isLobby == false)
+        if self.HideCombatHUDInLobby == false then
+            combatHudVisible = true
+        end
+        self:SetEntityEnableByPath(self.AttackButtonPath, combatHudVisible)
+        self:SetEntityEnableByPath(self.JumpButtonPath, combatHudVisible)
+        self:SetEntityEnableByPath(self.JoystickPath, combatHudVisible)
+
+        if isLobby == true and self.AutoOpenRankingOnLobby == true then
+            local rankingUIComponent = self.Entity:GetComponent("RankingUIComponent")
+            if rankingUIComponent ~= nil and isvalid(rankingUIComponent) == true then
+                rankingUIComponent:OpenTab(self.LobbyRankingTab)
+            end
+        end
+
+        self._T.LastAppliedLobbyState = isLobby
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean BindStartButtonClient()
+        if self._T.StartButtonClickHandler ~= nil then
+            local currentButton = self._T.StartButtonEntity
+            if currentButton ~= nil and isvalid(currentButton) == true then
+                return true
+            end
+
+            self._T.StartButtonEntity = nil
+            self._T.StartButtonClickHandler = nil
+            self._T.StartButtonPressedHandler = nil
+        end
+
+        local startButtonEntity = self:ResolveEntityByPath(self.StartButtonPath)
+        if startButtonEntity == nil then
+            return false
+        end
+
+        local clickCallback = function(event)
+            self:OnStartButtonClickedClient(event)
+        end
+        local clickHandler = startButtonEntity:ConnectEvent("ButtonClickEvent", clickCallback)
+        if clickHandler == nil then
+            return false
+        end
+
+        local pressedHandler = nil
+        if self.UseButtonPressedFallback == true then
+            local pressedCallback = function(event)
+                self:OnStartButtonClickedClient(event)
+            end
+            pressedHandler = startButtonEntity:ConnectEvent("ButtonPressedEvent", pressedCallback)
+        end
+
+        self._T.StartButtonEntity = startButtonEntity
+        self._T.StartButtonClickHandler = clickHandler
+        self._T.StartButtonPressedHandler = pressedHandler
+        log("[LobbyFlowComponent] Start button bound: ", tostring(self.StartButtonPath))
+        return true
+    end
+
+    -- Retries UI binding with bounded repeats so delayed UI init does not deadlock start flow.
+    @ExecSpace("ClientOnly")
+    method void ScheduleStartButtonBindRetryClient()
+        if self._T.BindRetryTimerId ~= nil and self._T.BindRetryTimerId > 0 then
+            return
+        end
+
+        self._T.BindRetryAttempt = 0
+        local bindRetry = function()
+            self._T.BindRetryAttempt = self._T.BindRetryAttempt + 1
+
+            local isBound = self:BindStartButtonClient()
+            if isBound == true then
+                if self._T.BindRetryTimerId ~= nil and self._T.BindRetryTimerId > 0 then
+                    _TimerService:ClearTimer(self._T.BindRetryTimerId)
+                end
+                self._T.BindRetryTimerId = 0
+                self._T.BindRetryAttempt = 0
+                self:ApplyLobbyUIClient(self.IsLobbyActive)
+                return
+            end
+
+            if self._T.BindRetryAttempt >= math.max(self.StartButtonBindRetryMaxAttempts, 1) then
+                if self._T.BindRetryTimerId ~= nil and self._T.BindRetryTimerId > 0 then
+                    _TimerService:ClearTimer(self._T.BindRetryTimerId)
+                end
+                self._T.BindRetryTimerId = 0
+                log_warning("[LobbyFlowComponent] Start button bind timeout: ", tostring(self.StartButtonPath))
+            end
+        end
+        self._T.BindRetryTimerId = _TimerService:SetTimerRepeat(bindRetry, math.max(self.StartButtonBindRetryInterval, 0.05), 0.0)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetEntityEnableByPath(string entityPath, boolean enabled)
+        local targetEntity = self:ResolveEntityByPath(entityPath)
+        if targetEntity == nil then
+            return
+        end
+
+        targetEntity.Enable = enabled
+    end
+
+    method Entity ResolveEntityByPath(string entityPath)
+        if entityPath == nil or entityPath == "" then
+            return nil
+        end
+
+        local targetEntity = _EntityService:GetEntityByPath(entityPath)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        return targetEntity
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean IsRequestFromOwner()
+        local playerComponent = self.Entity.PlayerComponent
+        if playerComponent == nil then
+            return true
+        end
+        if senderUserId == nil then
+            return true
+        end
+
+        return senderUserId == playerComponent.UserId
+    end
+end

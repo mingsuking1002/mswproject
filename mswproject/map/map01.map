@@ -115,7 +115,7 @@
       {
         "id": "1c03486e-5943-4a68-9706-f10a659a79b0",
         "path": "/maps/map01/Map01Bootstrap",
-        "componentNames": "MOD.Core.TransformComponent",
+        "componentNames": "MOD.Core.TransformComponent,script.Map01BootstrapComponent",
         "jsonString": {
           "name": "Map01Bootstrap",
           "path": "/maps/map01/Map01Bootstrap",
@@ -153,6 +153,19 @@
               },
               "ZRotation": 0.0,
               "Enable": true
+            },
+            {
+              "@type": "script.Map01BootstrapComponent",
+              "Enable": true,
+              "TargetMapName": "map01",
+              "ProjectileTemplateName": "GRProjectileTemplate",
+              "EnableLobbyMapSplit": true,
+              "LobbyMapName": "lobby",
+              "InGameMapName": "map01",
+              "InGameSpawnPosition": {
+                "x": 0.0,
+                "y": 0.0
+              }
             }
           ],
           "@version": 1
@@ -224,7 +237,7 @@
                 "x": 0.0,
                 "y": 0.0
               },
-              "IsLegacy": true,
+              "IsLegacy": false,
               "IsPassive": false,
               "Enable": true
             }

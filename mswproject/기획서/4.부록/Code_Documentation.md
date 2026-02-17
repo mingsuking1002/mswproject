@@ -181,7 +181,7 @@
 
 ## [WeaponSwapComponent]
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/WeaponSwapComponent.mlua`
-- **수정일:** `2026-02-18`
+- **수정일:** `2026-02-17`
 
 ### Properties
 | 이름 | 타입 | 설명 |
@@ -195,6 +195,7 @@
 | `Weapon4_Data` | table | 슬롯4 무기 데이터 |
 | `HighlightedSlot` | integer | 메뉴 하이라이트 슬롯 (Sync) |
 | `IsGameLogicPaused` | boolean | 메뉴 중 게임 로직 정지 플래그 (Sync) |
+| `AllowSwapMenu` | boolean | 메뉴 오픈 허용 여부 (로비 게이트 연동) |
 
 ### Functions
 | 함수명 | 파라미터 | 리턴값 | 설명 |
@@ -214,7 +215,7 @@
 | `SetCombatInputLocked` | `boolean isLocked` | void | 이동/공격 입력 잠금 |
 | `UpdateSwapUIClient` | `boolean isOpen`, `integer highlightedSlot` | void | 클라이언트 방사형 메뉴 UI 갱신 |
 | `IsRequestFromOwner` | void | `boolean` | 서버 요청 소유자 검증 |
-| `CanOpenSwapMenu` | void | `boolean` | 메뉴 오픈 가능 여부 검사 |
+| `CanOpenSwapMenu` | void | `boolean` | 메뉴 오픈 가능 여부 검사 (AllowSwapMenu 포함) |
 | `MapKeyToSlot` | `KeyboardKey key` | `integer` | WASD 입력을 슬롯으로 매핑 |
 | `IsValidSlot` | `integer slot` | `boolean` | 슬롯 유효성 검사 |
 | `GetSlotData` | `integer slot` | `table` | 슬롯 데이터 조회 |
@@ -373,6 +374,60 @@
 | `ResolveUIEntitiesClient` | void | void | Resolve ranking text entities from UI paths |
 | `ResolveTextEntityByPath` | `Entity currentEntity`, `string targetPath` | `Entity` | Shared resolver for UI text entities |
 
+## [LobbyFlowComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/LobbyFlowComponent.mlua`
+- **수정일:** `2026-02-17`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `IsLobbyActive` | boolean | 현재 로비 상태 여부 (Sync) |
+| `EnableLobbyFlow` | boolean | 랭킹-시작 버튼 게이트 기능 사용 여부 |
+| `UseMapSplit` | boolean | 로비/인게임 맵 분리 사용 여부 |
+| `LobbyMapName` | string | 로비 맵 이름 |
+| `InGameMapName` | string | 인게임 맵 이름 |
+| `InGameSpawnPosition` | Vector2 | 인게임 진입 위치 |
+| `AutoOpenRankingOnLobby` | boolean | 로비 진입 시 랭킹 자동 조회 여부 |
+| `LobbyRankingTab` | integer | 로비에서 열 랭킹 탭 (1=TimeAttack, 2=Infinite) |
+| `AutoStartTimerWhenGameStart` | boolean | 시작 버튼 이후 타이머 자동 시작 여부 |
+| `ResetTimerWhenLobbyActive` | boolean | 로비 상태 복귀 시 타이머 리셋 여부 |
+| `HideRankingDuringGameplay` | boolean | 인게임에서 랭킹 UI 숨김 여부 |
+| `HideTimerDuringLobby` | boolean | 로비에서 타이머 UI 숨김 여부 |
+| `HideCombatHUDInLobby` | boolean | 로비에서 조작 HUD 숨김 여부 |
+| `StartButtonPath` | string | 시작 버튼 UI 경로 |
+| `RankingTextPath` | string | 랭킹 텍스트 UI 경로 |
+| `MyRankTextPath` | string | 내 순위 텍스트 UI 경로 |
+| `TimerTextPath` | string | 타이머 텍스트 UI 경로 |
+| `AttackButtonPath` | string | 공격 버튼 UI 경로 |
+| `JumpButtonPath` | string | 점프 버튼 UI 경로 |
+| `JoystickPath` | string | 조이스틱 UI 경로 |
+| `ClientUiPollInterval` | number | 클라이언트 UI 동기화 폴링 주기 |
+| `StartButtonBindRetryInterval` | number | 시작 버튼 바인딩 재시도 간격 |
+| `StartButtonBindRetryMaxAttempts` | integer | 시작 버튼 바인딩 최대 재시도 횟수 |
+| `UseButtonPressedFallback` | boolean | 클릭 이벤트 미수신 시 Pressed 이벤트 폴백 사용 여부 |
+| `EnableKeyboardStartFallback` | boolean | Enter/Space 키 시작 폴백 사용 여부 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `OnInitialize` | void | void | 초기 로비 상태 설정 |
+| `OnBeginPlay` | void | void | 초기 서버/클라이언트 상태 적용 |
+| `OnMapEnter` | void | void | 맵 분리 시 로비/인게임 상태 자동 동기화 |
+| `OnUpdate` | `number delta` | void | 클라이언트 UI 상태 폴링 및 바인딩 복구 |
+| `RequestStartGameServer` | void | void | 시작 버튼 서버 요청 처리 |
+| `HandleLobbyStartKeyDownEvent` | `KeyDownEvent event` | void | Enter/Space 키로 시작 요청 처리 |
+| `OnStartButtonClickedClient` | `any event` | void | 시작 버튼 클릭/프레스 입력 처리 |
+| `ApplyInitialServerState` | void | void | 초기 상태 분기(로비/인게임) |
+| `SetLobbyStateServer` | `boolean isLobby` | void | 이동/공격/무기교체/타이머 상태 전환 |
+| `MoveOwnerToInGameMapIfNeeded` | void | void | 맵 분리 모드에서 인게임 맵 이동 |
+| `ApplyLobbyUIClient` | `boolean isLobby` | void | 로비/인게임 UI 가시성 전환 |
+| `BindStartButtonClient` | void | `boolean` | 시작 버튼 클릭/프레스 이벤트 바인딩 |
+| `ScheduleStartButtonBindRetryClient` | void | void | UI 지연 로딩 시 바인딩 재시도 타이머 시작 |
+| `SetEntityEnableByPath` | `string entityPath`, `boolean enabled` | void | 경로 기반 UI 활성 상태 변경 |
+| `ResolveEntityByPath` | `string entityPath` | `Entity` | 경로 기반 엔티티 조회 |
+| `IsRequestFromOwner` | void | `boolean` | 요청 소유자 검증 |
+| `OnEndPlay` | void | void | 클릭 이벤트 해제 |
+
 ## [Map01BootstrapComponent]
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Map01BootstrapComponent.mlua`
 - **수정일:** `2026-02-17`
@@ -382,6 +437,10 @@
 |---|---|---|
 | `TargetMapName` | string | 자동 설정을 적용할 맵 이름 |
 | `ProjectileTemplateName` | string | 발사 템플릿 엔티티 이름 |
+| `EnableLobbyMapSplit` | boolean | 로비/인게임 맵 분리 설정 주입 여부 |
+| `LobbyMapName` | string | 분리 모드 로비 맵 이름 |
+| `InGameMapName` | string | 분리 모드 인게임 맵 이름 |
+| `InGameSpawnPosition` | Vector2 | 인게임 맵 이동 목표 좌표 |
 
 ### Functions
 | 함수명 | 파라미터 | 리턴값 | 설명 |
@@ -389,8 +448,8 @@
 | `OnBeginPlay` | void | void | 맵 내 기존 유저를 즉시 설정 |
 | `HandleUserEnterEvent` | `UserEnterEvent event` | void | 새로 입장한 유저 자동 설정 |
 | `ConfigureCurrentMapUsers` | void | void | 현재 맵 유저 전체 순회 |
-| `ConfigurePlayerIfInTargetMap` | `Entity playerEntity` | void | map01 유저 필터링 후 설정 진입 |
-| `ConfigurePlayer` | `Entity playerEntity` | void | 전투/이동/UI 컴포넌트 자동 부착 및 초기값 주입 |
+| `ConfigurePlayerIfInTargetMap` | `Entity playerEntity` | void | TargetMapName 일치 유저 필터링 후 설정 진입 |
+| `ConfigurePlayer` | `Entity playerEntity` | void | 전투/이동/UI/로비 흐름 컴포넌트 자동 부착 및 씬분리 값 주입 |
 | `RebindRuntimeReferences` | `Entity playerEntity` | void | Rebind server-authoritative projectile template reference |
 | `SeedWeaponSlots` | `Component weaponSwapComponent` | void | 4개 슬롯 기본 무기 데이터 주입 |
 | `BuildWeaponData` | 무기 스펙 파라미터 | `table` | 슬롯 데이터 테이블 생성 |

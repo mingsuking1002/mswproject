@@ -3,6 +3,10 @@ script Map01BootstrapComponent extends Component
 
     property string TargetMapName = "map01"
     property string ProjectileTemplateName = "GRProjectileTemplate"
+    property boolean EnableLobbyMapSplit = false
+    property string LobbyMapName = "map01"
+    property string InGameMapName = "map01"
+    property Vector2 InGameSpawnPosition = Vector2(0, 0)
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -11,7 +15,7 @@ script Map01BootstrapComponent extends Component
         self:ConfigureCurrentMapUsers()
     end
 
-    -- Applies setup for users already present in map01 when this component starts.
+    -- Applies setup for users already present in target map when this component starts.
     @ExecSpace("ServerOnly")
     method void ConfigureCurrentMapUsers()
         local userEntities = _UserService.UserEntities
@@ -58,6 +62,13 @@ script Map01BootstrapComponent extends Component
 
         if self._T.ConfiguredUserMap[userId] == true then
             self:RebindRuntimeReferences(playerEntity)
+
+            local lobbyFlowComponent = playerEntity:GetComponent("LobbyFlowComponent")
+            if lobbyFlowComponent ~= nil and isvalid(lobbyFlowComponent) == true then
+                if lobbyFlowComponent.ApplyInitialServerState ~= nil then
+                    lobbyFlowComponent:ApplyInitialServerState()
+                end
+            end
             return
         end
 
@@ -80,6 +91,7 @@ script Map01BootstrapComponent extends Component
         local timerComponent = self:AddOrGetComponent(playerEntity, "SpeedrunTimerComponent")
         local rankingComponent = self:AddOrGetComponent(playerEntity, "RankingComponent")
         local rankingUIComponent = self:AddOrGetComponent(playerEntity, "RankingUIComponent")
+        local lobbyFlowComponent = self:AddOrGetComponent(playerEntity, "LobbyFlowComponent")
 
         if movementComponent ~= nil and isvalid(movementComponent) == true then
             movementComponent.MoveSpeed = 4.0
@@ -134,7 +146,35 @@ script Map01BootstrapComponent extends Component
             rankingComponent.MinimumValidTime = 3.0
         end
 
+        if lobbyFlowComponent ~= nil and isvalid(lobbyFlowComponent) == true then
+            if self.EnableLobbyMapSplit == true then
+                lobbyFlowComponent.EnableLobbyFlow = true
+                lobbyFlowComponent.UseMapSplit = true
+
+                if self.LobbyMapName ~= nil and self.LobbyMapName ~= "" then
+                    lobbyFlowComponent.LobbyMapName = self.LobbyMapName
+                end
+                if self.InGameMapName ~= nil and self.InGameMapName ~= "" then
+                    lobbyFlowComponent.InGameMapName = self.InGameMapName
+                end
+                lobbyFlowComponent.InGameSpawnPosition = self.InGameSpawnPosition
+            else
+                if lobbyFlowComponent.LobbyMapName == nil or lobbyFlowComponent.LobbyMapName == "" then
+                    lobbyFlowComponent.LobbyMapName = self.TargetMapName
+                end
+                if lobbyFlowComponent.InGameMapName == nil or lobbyFlowComponent.InGameMapName == "" then
+                    lobbyFlowComponent.InGameMapName = self.TargetMapName
+                end
+            end
+        end
+
         self:RebindRuntimeReferences(playerEntity)
+
+        if lobbyFlowComponent ~= nil and isvalid(lobbyFlowComponent) == true then
+            if lobbyFlowComponent.ApplyInitialServerState ~= nil then
+                lobbyFlowComponent:ApplyInitialServerState()
+            end
+        end
 
         if weaponSwapComponent ~= nil and isvalid(weaponSwapComponent) == true then
             if weaponSwapComponent.ApplyWeaponSlot ~= nil then
@@ -162,7 +202,7 @@ script Map01BootstrapComponent extends Component
         end
     end
 
-    -- Seeds predictable weapon slot defaults for playtest in map01.
+    -- Seeds predictable weapon slot defaults for playtest.
     @ExecSpace("ServerOnly")
     method void SeedWeaponSlots(Component weaponSwapComponent)
         weaponSwapComponent.Weapon1_Data = self:BuildWeaponData("Pistol", 12, 1.2, 0.35, 0.35, 10, 25.0, 20.0, 2.0, 0)

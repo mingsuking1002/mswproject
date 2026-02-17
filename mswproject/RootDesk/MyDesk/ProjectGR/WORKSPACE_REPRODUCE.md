@@ -16,8 +16,17 @@ SPEC 상태 자동 보정까지 하려면:
 powershell -ExecutionPolicy Bypass -File _scripts/repro_projectgr_workspace.ps1 -Fix
 ```
 
-## 3. Required Component Files
-다음 컴포넌트 파일이 모두 존재해야 합니다.
+## 2.1 Script Format Requirement
+Project GR 스크립트는 `.mlua` 기반입니다. 따라서 `Global/WorldConfig.config`에서 아래 값이 필요합니다.
+
+- `UseExtendedScriptFormat = true`
+
+변경 후 Maker에서 아래 순서로 반영하세요.
+1. `Reimport All`
+2. Maker 재시작
+
+## 3. Required Files
+다음 컴포넌트/맵 파일이 모두 존재해야 합니다.
 
 - `mswproject/RootDesk/MyDesk/ProjectGR/Components/MovementComponent.mlua`
 - `mswproject/RootDesk/MyDesk/ProjectGR/Components/CameraFollowComponent.mlua`
@@ -31,27 +40,36 @@ powershell -ExecutionPolicy Bypass -File _scripts/repro_projectgr_workspace.ps1 
 - `mswproject/RootDesk/MyDesk/ProjectGR/Components/SpeedrunTimerComponent.mlua`
 - `mswproject/RootDesk/MyDesk/ProjectGR/Components/RankingComponent.mlua`
 - `mswproject/RootDesk/MyDesk/ProjectGR/Components/RankingUIComponent.mlua`
+- `mswproject/RootDesk/MyDesk/ProjectGR/Components/LobbyFlowComponent.mlua`
+- `mswproject/RootDesk/MyDesk/ProjectGR/Components/Map01BootstrapComponent.mlua`
+- `mswproject/map/lobby.map`
 
 ## 4. Workspace Binding Checklist
 Maker에서 실제 플레이 재현을 위해 아래 바인딩을 확인합니다.
 
 - `DefaultPlayer`(또는 플레이어 엔티티)에 핵심 컴포넌트 부착:
-`MovementComponent`, `CameraFollowComponent`, `HPSystemComponent`, `ReloadComponent`, `FireSystemComponent`, `WeaponSwapComponent`, `WeaponWheelUIComponent`, `TagManagerComponent`, `SpeedrunTimerComponent`, `RankingComponent`, `RankingUIComponent`
+`MovementComponent`, `CameraFollowComponent`, `HPSystemComponent`, `ReloadComponent`, `FireSystemComponent`, `WeaponSwapComponent`, `WeaponWheelUIComponent`, `TagManagerComponent`, `SpeedrunTimerComponent`, `RankingComponent`, `RankingUIComponent`, `LobbyFlowComponent`
+- `/maps/lobby/LobbyBootstrap`에 `Map01BootstrapComponent` 부착
+- `/maps/map01/Map01Bootstrap`에 `Map01BootstrapComponent` 부착
 - `FireSystemComponent.ProjectileModelId`에 실제 투사체 모델 ID 설정
 - 투사체 모델 엔티티에 `ProjectileComponent` 포함
 - `WeaponWheelUIComponent.WheelRoot`를 실제 방사형 메뉴 UI 엔티티에 연결
 - `SpeedrunTimerComponent.TimerTextEntity`를 타이머 텍스트 UI 엔티티에 연결
 - `RankingUIComponent.RankingTextEntity`, `RankingUIComponent.MyRankTextEntity`를 랭킹 UI 텍스트 엔티티에 연결
+- `LobbyFlowComponent.StartButtonPath`가 `/ui/DefaultGroup/GRStartButton`를 가리키는지 확인
 
 ## 5. Acceptance
 아래가 모두 만족되면 재현 성공입니다.
 
 - `_scripts/repro_projectgr_workspace.ps1` 결과가 `PASS`
+- `Global/WorldConfig.config`의 `UseExtendedScriptFormat`이 `true`
 - `작업명세서/SPEC_*.md` 8개 상태가 모두 `# 🟢 완료`
-- `기획서/4.부록/Code_Documentation.md`에 12개 컴포넌트 섹션 존재
+- `기획서/4.부록/Code_Documentation.md`에 14개 컴포넌트 섹션 존재
 
-## 6. map01 Direct Setup (Applied)
-`map01.map` already includes direct runtime bootstrap wiring:
+## 6. Split Scene Setup (Applied)
+`lobby.map` and `map01.map` include split-scene runtime bootstrap wiring:
+
+- `/maps/lobby/LobbyBootstrap` with `Map01BootstrapComponent`
 
 - `/maps/map01/Map01Bootstrap` with `Map01BootstrapComponent`
 - `/maps/map01/GRProjectileTemplate`
@@ -60,7 +78,9 @@ Maker에서 실제 플레이 재현을 위해 아래 바인딩을 확인합니�
 - `/maps/map01/GRMyRankText`
 - `/maps/map01/GRWeaponWheelRoot`
 
-At play start, `Map01BootstrapComponent` auto-adds Project GR components to player entities in `map01` and binds references without manual property binding.
+At play start in `lobby`, `Map01BootstrapComponent` auto-adds Project GR components and applies split flow (`LobbyMapName=lobby`, `InGameMapName=map01`).
+When `GAME START` is pressed, `LobbyFlowComponent` moves the user to `map01`.
+`DefaultGroup.ui` also includes `/ui/DefaultGroup/GRStartButton` for lobby start flow.
 
 ## 7. Maker Runbook (Phase 2/3)
 Follow this exact order in Maker.
@@ -68,10 +88,10 @@ Follow this exact order in Maker.
 ### 7.1 Open/Refresh
 1. Close Maker completely.
 2. Re-open the world from local workspace.
-3. Open `map01`.
+3. Open `lobby`.
 
 ### 7.2 Visual Setup (Manual in Maker)
-1. Select `/maps/map01/GRProjectileTemplate`.
+1. Switch to `map01`, then select `/maps/map01/GRProjectileTemplate`.
 2. Confirm components exist:
 - `ProjectileComponent`
 - `SpriteRendererComponent`
@@ -95,14 +115,26 @@ Follow this exact order in Maker.
 4. Save settings.
 
 ### 7.5 Runtime Verification (Play)
-1. Play from `map01`.
-2. Check movement with `WASD`.
-3. Check fire with touch/click.
-4. Check reload with `R`.
-5. Check weapon wheel with `F`.
-6. Check tag switch with `Q`.
+1. Play from `lobby`.
+2. Confirm ranking text is visible and `GAME START` button is visible.
+3. Click `GAME START`; user moves to `map01`.
+4. In `map01`, movement/attack HUD becomes active.
+5. Check movement with `WASD`.
+6. Check fire with touch/click.
+7. Check reload with `R`.
+8. Check weapon wheel with `F`.
+9. Check tag switch with `Q`.
 
-### 7.6 If Nothing Applies
+### 7.6 Lobby/InGame Flow Tuning
+`LobbyFlowComponent` supports future tuning without code edits:
+
+- `UseMapSplit = false`: same map에서 랭킹 로비 -> 시작 버튼 -> 즉시 전투 전환
+- `UseMapSplit = true`: `LobbyMapName`/`InGameMapName` 분리 후 시작 버튼 시 인게임 맵 이동
+- `InGameSpawnPosition`: 맵 분리 모드에서 시작 위치 지정
+- `HideRankingDuringGameplay`, `HideTimerDuringLobby`, `HideCombatHUDInLobby`: UI 가시성 정책 조정
+
+### 7.7 If Nothing Applies
 1. Open console and confirm logs containing `Map01Bootstrap`.
-2. If no bootstrap logs appear, verify the entity `/maps/map01/Map01Bootstrap` exists and has `Map01BootstrapComponent`.
-3. Re-save `map01`, restart Maker, and play again.
+2. If no bootstrap logs appear in lobby, verify `/maps/lobby/LobbyBootstrap` has `Map01BootstrapComponent`.
+3. If start transition fails, verify `/maps/map01/Map01Bootstrap` has `Map01BootstrapComponent`.
+4. Re-save both `lobby` and `map01`, restart Maker, and play again.

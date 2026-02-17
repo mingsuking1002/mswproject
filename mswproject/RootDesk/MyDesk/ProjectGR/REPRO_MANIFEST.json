@@ -12,7 +12,9 @@
                            "RootDesk/MyDesk/ProjectGR/Components/SpeedrunTimerComponent.mlua",
                            "RootDesk/MyDesk/ProjectGR/Components/RankingComponent.mlua",
                            "RootDesk/MyDesk/ProjectGR/Components/RankingUIComponent.mlua",
-                           "RootDesk/MyDesk/ProjectGR/Components/Map01BootstrapComponent.mlua"
+                           "RootDesk/MyDesk/ProjectGR/Components/LobbyFlowComponent.mlua",
+                           "RootDesk/MyDesk/ProjectGR/Components/Map01BootstrapComponent.mlua",
+                           "map/lobby.map"
                        ],
     "required_specs":  [
                            {
@@ -61,6 +63,7 @@
                                   "SpeedrunTimerComponent",
                                   "RankingComponent",
                                   "RankingUIComponent",
+                                  "LobbyFlowComponent",
                                   "Map01BootstrapComponent"
                               ],
     "documentation_path":  "기획서/4.부록/Code_Documentation.md",
@@ -75,6 +78,15 @@
                                                          "/maps/map01/GRRankingText",
                                                          "/maps/map01/GRMyRankText",
                                                          "/maps/map01/GRWeaponWheelRoot"
+                                                     ],
+                                    "component_names":  [
+                                                            "Map01BootstrapComponent"
+                                                        ]
+                                },
+                                {
+                                    "map_file":  "map/lobby.map",
+                                    "entity_paths":  [
+                                                         "/maps/lobby/LobbyBootstrap"
                                                      ],
                                     "component_names":  [
                                                             "Map01BootstrapComponent"

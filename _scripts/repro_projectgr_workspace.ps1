@@ -34,6 +34,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $projectRoot = Join-Path $repoRoot "mswproject"
 $manifestPath = Join-Path $projectRoot "RootDesk\MyDesk\ProjectGR\REPRO_MANIFEST.json"
 $agentsPath = Join-Path $repoRoot "AGENTS.md"
+$worldConfigPath = Join-Path $projectRoot "Global\WorldConfig.config"
 
 if (-not (Test-Path -Path $manifestPath)) {
     throw "Manifest not found: $manifestPath"
@@ -59,6 +60,22 @@ foreach ($relativePath in $manifest.required_files) {
     if (-not (Test-Path -Path $fullPath)) {
         $missing.Add($relativePath)
     }
+}
+
+if (Test-Path -Path $worldConfigPath) {
+    try {
+        $worldConfig = Get-Content -Path $worldConfigPath -Encoding UTF8 -Raw | ConvertFrom-Json
+        $useExtendedScriptFormat = $worldConfig.ContentProto.Json.UseExtendedScriptFormat
+        if ($useExtendedScriptFormat -ne $true) {
+            $invalid.Add("Global/WorldConfig.config (UseExtendedScriptFormat must be true for ProjectGR .mlua scripts)")
+        }
+    }
+    catch {
+        $invalid.Add(("Global/WorldConfig.config (invalid json: {0})" -f $_.Exception.Message))
+    }
+}
+else {
+    $missing.Add("Global/WorldConfig.config")
 }
 
 if ($null -ne $manifest.required_map_checks) {
