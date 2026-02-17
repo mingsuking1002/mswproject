@@ -23,7 +23,7 @@
           "nameEditable": true,
           "enable": true,
           "visible": true,
-          "localize": false,
+          "localize": true,
           "displayOrder": 2,
           "pathConstraints": "//",
           "revision": 1,
@@ -121,7 +121,7 @@
           "nameEditable": true,
           "enable": true,
           "visible": true,
-          "localize": false,
+          "localize": true,
           "displayOrder": 0,
           "pathConstraints": "///",
           "revision": 1,
@@ -147,20 +147,20 @@
               },
               "MobileOnly": false,
               "OffsetMax": {
-                "x": 106.593887,
-                "y": -24.3493462
+                "x": 106.5,
+                "y": -24.0
               },
               "OffsetMin": {
-                "x": -106.593887,
-                "y": -103.65065
+                "x": -106.5,
+                "y": -104.0
               },
               "Pivot": {
                 "x": 0.5,
                 "y": 0.5
               },
               "RectSize": {
-                "x": 213.187775,
-                "y": 79.30131
+                "x": 213.0,
+                "y": 80.0
               },
               "UIMode": 1,
               "UIScale": {

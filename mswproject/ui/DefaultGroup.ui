@@ -23,7 +23,7 @@
           "nameEditable": true,
           "enable": true,
           "visible": true,
-          "localize": false,
+          "localize": true,
           "displayOrder": 0,
           "pathConstraints": "//",
           "revision": 1,
@@ -49,11 +49,11 @@
               },
               "MobileOnly": false,
               "OffsetMax": {
-                "x": 1.52587891E-05,
+                "x": 3.81469727E-06,
                 "y": 0.0
               },
               "OffsetMin": {
-                "x": 1.52587891E-05,
+                "x": 3.81469727E-06,
                 "y": 0.0
               },
               "Pivot": {
@@ -72,7 +72,7 @@
               },
               "UIVersion": 2,
               "anchoredPosition": {
-                "x": 1.52587891E-05,
+                "x": 3.81469727E-06,
                 "y": 0.0
               },
               "Position": {
@@ -121,7 +121,7 @@
           "nameEditable": true,
           "enable": true,
           "visible": true,
-          "localize": false,
+          "localize": true,
           "displayOrder": 0,
           "pathConstraints": "///",
           "revision": 1,
@@ -308,7 +308,7 @@
           "nameEditable": true,
           "enable": true,
           "visible": true,
-          "localize": false,
+          "localize": true,
           "displayOrder": 0,
           "pathConstraints": "////",
           "revision": 1,
@@ -447,7 +447,7 @@
           "nameEditable": true,
           "enable": true,
           "visible": true,
-          "localize": false,
+          "localize": true,
           "displayOrder": 1,
           "pathConstraints": "///",
           "revision": 1,
@@ -634,7 +634,7 @@
           "nameEditable": true,
           "enable": true,
           "visible": true,
-          "localize": false,
+          "localize": true,
           "displayOrder": 0,
           "pathConstraints": "////",
           "revision": 1,
@@ -773,7 +773,7 @@
           "nameEditable": true,
           "enable": true,
           "visible": true,
-          "localize": false,
+          "localize": true,
           "displayOrder": 2,
           "pathConstraints": "///",
           "revision": 1,
@@ -918,7 +918,7 @@
           "nameEditable": true,
           "enable": true,
           "visible": true,
-          "localize": false,
+          "localize": true,
           "displayOrder": 3,
           "pathConstraints": "///",
           "revision": 1,
