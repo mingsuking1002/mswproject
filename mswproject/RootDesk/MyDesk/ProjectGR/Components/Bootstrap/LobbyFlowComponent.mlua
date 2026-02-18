@@ -36,10 +36,12 @@ script LobbyFlowComponent extends Component
     method void OnMapEnter(Entity enteredMap)
         self:BindStartButtonClient()
 
-        local mapName = self:GetMapNameSafe(enteredMap)
-        if self:IsInGameMapName(mapName) == true then
-            self:ApplyLobbyUIClient(false)
-            return
+        if self.UseMapSplit == true then
+            local mapName = self:GetMapNameSafe(enteredMap)
+            if self:IsInGameMapName(mapName) == true then
+                self:ApplyLobbyUIClient(false)
+                return
+            end
         end
 
         local isLobby = self:ResolveEffectiveLobbyStateClient()
