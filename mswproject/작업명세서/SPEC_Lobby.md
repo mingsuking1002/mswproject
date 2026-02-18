@@ -6,10 +6,10 @@
 | 항목 | 내용 |
 |---|---|
 | **Component Name** | `LobbyFlowComponent` (Bootstrap 레이어) |
-| **기능 요약** | 로비에서 랭킹 UI 표시 + GAME START 버튼 → MAP01 맵 전환 |
+| **기능 요약** | 로비에서 랭킹 UI 표시 + GAME START 버튼으로 `IsLobbyActive` 전환, 필요 시 맵 이동 |
 | **기획서 참조** | `기획서/1.핵심 시스템/[시스템] 랭킹 시스템 기획.md` |
-| **연관 SPEC** | `SPEC_RankingSystem.md` (데이터/UI 컴포넌트) |
-| **모듈화 규칙** | `SPEC_ModularRefactor.md` 준수 (`_GRUtil` 사용, Bootstrap 레이어) |
+| **연관 SPEC** | `SPEC_RankingSystem.md`, `SPEC_LobbyUIFix.md`, `SPEC_ModularRefactor.md` |
+| **모듈화 규칙** | `GRUtilModule:BootstrapUtil()` 반환을 `self._T.GRUtil`에 캐시해 사용 |
 
 ---
 
@@ -17,10 +17,10 @@
 
 | 포함 | 미포함 |
 |---|---|
-| 로비 맵 진입 시 UI 초기화 | 인게임 전투 로직 |
-| 랭킹 UI 표시 (RankingUIComponent 호출) | 랭킹 데이터 저장/조회 (SPEC_RankingSystem) |
-| GAME START 버튼 클릭 → MAP01 이동 | MAP01 내 게임플레이 (별도 SPEC) |
-| 맵 전환 시 UI 가시성 전환 | GameOver → 로비 복귀 (추후 확장) |
+| 로비 상태(`IsLobbyActive`) 권위 제어 | 인게임 전투 로직 |
+| 시작/랭킹 UI 가시성 제어 | 랭킹 저장/정렬 알고리즘 |
+| GAME START 버튼 클릭 서버 라우팅 | GameOver 세부 연출 |
+| `UseMapSplit` 기반 선택적 맵 이동 | 리소스(스프라이트/사운드) 제작 |
 
 ---
 
@@ -28,11 +28,11 @@
 
 | 처리 단계 | 실행 공간 | 설명 |
 |---|---|---|
-| 로비 상태 플래그 | `[server only]` | `IsLobbyActive` — Sync로 클라에 전파 |
-| 랭킹 데이터 요청 | `[client → server]` | 로비 진입 시 자동 요청 |
-| UI 가시성 제어 | `[client only]` | 로비/인게임 상태별 일괄 전환 |
-| GAME START 처리 | `[client]` → `[server]` | 버튼 클릭 → 서버 검증 → 맵 이동 |
-| 맵 이동 | `[server only]` | `_RoomService:MoveUserToStaticRoom` 서버 권위 |
+| 로비 상태 플래그 | `[server only]` | `IsLobbyActive` 변경 및 Sync 전파 |
+| 시작 버튼 입력 | `[client only]` | `GRStartButton` 클릭 이벤트만 허용 |
+| 시작 요청 처리 | `[server]` | 소유자 검증 후 `SetLobbyStateServer(false)` |
+| UI 가시성 적용 | `[client only]` | `ApplyLobbyUIClient(isLobby)` 단일 책임 |
+| 맵 이동(옵션) | `[server only]` | `UseMapSplit=true`일 때만 `_RoomService:MoveUserToStaticRoom` |
 
 ---
 
@@ -43,27 +43,27 @@
 | Property Name | Type | Sync | Default | 설명 |
 |---|---|---|---|---|
 | `IsLobbyActive` | `boolean` | `@Sync` | `true` | 현재 로비 상태 여부 |
-| `UseMapSplit` | `boolean` | `None` | `true` | lobby↔map01 맵 분리 사용 |
-| `LobbyMapName` | `string` | `None` | `"lobby"` | 로비 맵 이름 |
-| `InGameMapName` | `string` | `None` | `"map01"` | 인게임 맵 이름 |
+| `UseMapSplit` | `boolean` | `None` | `false` | 맵 분리 이동 사용 여부 (`false`면 상태 전환만 수행) |
+| `LobbyMapName` | `string` | `None` | `"games"` | 로비 맵 이름 |
+| `InGameMapName` | `string` | `None` | `"games"` | 인게임 맵 이름 |
 | `AutoOpenRankingOnLobby` | `boolean` | `None` | `true` | 로비 진입 시 랭킹 자동 조회 |
-| `LobbyRankingTab` | `integer` | `None` | `1` | 로비에서 기본 열릴 랭킹 탭 (1=타임어택) |
+| `LobbyRankingTab` | `integer` | `None` | `1` | 로비 기본 랭킹 탭 (1=타임어택) |
 | `StartButtonPath` | `string` | `None` | `"/ui/DefaultGroup/GRStartButton"` | 시작 버튼 UI 경로 |
-| `RankingTextPath` | `string` | `None` | `"/ui/DefaultGroup/GRRankingText"` | 랭킹 텍스트 UI 경로 |
-| `MyRankTextPath` | `string` | `None` | `"/ui/DefaultGroup/GRMyRankText"` | 내 순위 텍스트 UI 경로 |
-| `UIRootPath` | `string` | `None` | `"/ui/DefaultGroup"` | UI 그룹 루트 |
+| `RankingTextPath` | `string` | `None` | `"/ui/DefaultGroup/GRRankingText"` | 랭킹 텍스트 경로 |
+| `MyRankTextPath` | `string` | `None` | `"/ui/DefaultGroup/GRMyRankText"` | 내 순위 텍스트 경로 |
+| `UIRootPath` | `string` | `None` | `"/ui/DefaultGroup"` | UI 루트 경로 |
 
 ---
 
 ## 5. UI 엔티티 배치
 
-> 모든 UI는 `/ui/DefaultGroup/` 단일 소스 (SPEC_LobbyUIFix §3 확정)
+> UI 단일 기준 경로: `/ui/DefaultGroup/`
 
-| 엔티티 | 위치 | 초기 상태 | 로비 | 인게임 |
-|---|---|---|---|---|
-| `GRStartButton` | `/ui/DefaultGroup/` | `enable: true` | ✅ 표시 | ❌ 숨김 |
-| `GRRankingText` | `/ui/DefaultGroup/` | `enable: true` | ✅ 표시 | ❌ 숨김 |
-| `GRMyRankText` | `/ui/DefaultGroup/` | `enable: true` | ✅ 표시 | ❌ 숨김 |
+| 엔티티 | 초기 상태 | 로비(`IsLobbyActive=true`) | 인게임(`IsLobbyActive=false`) |
+|---|---|---|---|
+| `GRStartButton` | `enable: true` | ✅ 표시 | ❌ 숨김 |
+| `GRRankingText` | `enable: true` | ✅ 표시 | ❌ 숨김 |
+| `GRMyRankText` | `enable: true` | ✅ 표시 | ❌ 숨김 |
 
 ---
 
@@ -74,48 +74,41 @@
 ```
 Player 접속
 → Map01BootstrapComponent.ConfigurePlayer()
-  → LobbyFlowComponent 추가 (IsLobbyActive = true, UseMapSplit = true)
-→ [서버] ApplyInitialServerState()
-  → IsLobbyActive = true 확인
-  → 이동/공격 잠금 (_GRUtil.TrySetCanMove(false), CanAttack = false)
+  → LobbyFlowComponent 추가 (IsLobbyActive=true, UseMapSplit=false)
+→ [서버] SetLobbyStateServer(true)
+  → 이동/공격 잠금 적용
 → [클라이언트] ApplyLobbyUIClient(true)
-  → GRStartButton: Enable = true
-  → GRRankingText: Enable = true
-  → GRMyRankText: Enable = true
-→ AutoOpenRankingOnLobby == true 이면:
-  → RankingUIComponent.OpenTab(self.LobbyRankingTab)
-  → RankingComponent.RequestRankingDataServer(tab, displayCount)
+  → Start/Ranking/MyRank 표시
+→ AutoOpenRankingOnLobby=true 이면 랭킹 탭 자동 오픈/요청
 ```
 
 ### 6-2. GAME START 버튼 클릭
 
 ```
-Client: GRStartButton 클릭 이벤트
+Client: GRStartButton 클릭
 → OnStartButtonClickedClient()
-  → 디바운스 체크 (연타 방지)
-  → RequestStartGameServer() [서버 RPC]
+  → 디바운스 체크
+  → RequestStartGameServer(requestUserId)
 
 Server: RequestStartGameServer()
-  → IsLobbyActive == true 확인 (이미 시작됨이면 무시)
+  → 소유자 검증
   → SetLobbyStateServer(false)
-    → IsLobbyActive = false (Sync → 클라이언트)
+    → IsLobbyActive=false (Sync)
     → 이동/공격 잠금 해제
-  → UseMapSplit == true 이면:
-    → _RoomService:MoveUserToStaticRoom(userId, InGameMapName)
+  → UseMapSplit=true 이면 MoveUserToInGameMapByUserId()
 
 Client: OnSyncProperty("IsLobbyActive", false)
-  → ApplyLobbyUIClient(false)
-    → GRStartButton: Enable = false (숨김)
-    → GRRankingText: Enable = false (숨김)
-    → GRMyRankText: Enable = false (숨김)
+→ ApplyLobbyUIClient(false)
+  → Start/Ranking/MyRank 숨김
 ```
 
-### 6-3. MAP01 진입
+### 6-3. 맵 진입 시 안전 재적용
 
 ```
-Client: OnMapEnter(map01)
-  → 안전장치: ApplyLobbyUIClient(false) 재호출
-  → 인게임 UI 표시 (HUD, 타이머 등 — 다른 SPEC 관할)
+Client: OnMapEnter(enteredMap)
+→ BindStartButtonClient() 재시도
+→ UseMapSplit=true이고 enteredMap이 인게임이면 ApplyLobbyUIClient(false)
+→ 그 외에는 ResolveEffectiveLobbyStateClient() 기준으로 UI 재적용
 ```
 
 ---
@@ -124,51 +117,55 @@ Client: OnMapEnter(map01)
 
 | 컴포넌트 | 레이어 | 연동 방식 |
 |---|---|---|
-| `Map01BootstrapComponent` | Bootstrap | `ConfigurePlayer`에서 LobbyFlow 속성 주입 |
-| `RankingComponent` | Meta | 로비 진입 시 `RequestRankingDataServer` 호출 |
-| `RankingUIComponent` | UI | 로비 진입 시 `OpenTab` → 랭킹 데이터 표시 |
-| `MovementComponent` | Core | 로비: `CanMove = false` / 인게임: `true` |
-| `FireSystemComponent` | Combat | 로비: `CanAttack = false` / 인게임: `true` |
-| `GRUtilModule` | Core | `_GRUtil.TrySetCanMove`, `_GRUtil.ResolveComponent` 사용 |
+| `Map01BootstrapComponent` | Bootstrap | 플레이어 생성 시 LobbyFlow 속성 주입 |
+| `RankingComponent` | Meta | 로비 진입 시 랭킹 스냅샷 요청 |
+| `RankingUIComponent` | UI | 로비 탭 오픈/표시 제어 |
+| `MovementComponent` | Core | 로비 상태에서 `CanMove=false` |
+| `FireSystemComponent` | Combat | 로비 상태에서 `CanAttack=false` |
+| `GRUtilModule` | Core | `self._T.GRUtil` 경유로 안전한 컴포넌트 접근 |
 
 ---
 
-## 8. 맵 전환 API
+## 8. 맵 전환 API (옵션)
 
 ```lua
--- 서버에서 호출
--- lobby → map01
-_RoomService:MoveUserToStaticRoom(userId, self.InGameMapName)
+-- UseMapSplit=false (기본): 상태 전환만 수행, 맵 이동은 생략
 
--- map01 → lobby (GameOver 시, 추후 구현)
+-- UseMapSplit=true: 서버에서 명시적으로 이동
+_RoomService:MoveUserToStaticRoom(userId, self.InGameMapName)
 _RoomService:MoveUserToStaticRoom(userId, self.LobbyMapName)
 ```
-
-> ⚠️ RoomService API는 버전에 따라 다를 수 있으므로 문서 확인 후 사용. 현재 구현은 `MoveUserToStaticRoom` 기준.
 
 ---
 
 ## 9. 주의 사항
 
-- **UI 가시성 단일 책임**: `LobbyFlowComponent`만 GR UI 엔티티의 Enable/Visible 제어
-- **입력**: 버튼 클릭만 허용 (키보드 폴백 없음)
-- **OnMapEnter 안전장치**: Sync 도착 전 UI 잔상 방지를 위해 맵 진입 시 클라이언트 측 UI 강제 재적용
-- **`_GRUtil` 의존**: 중복 유틸 함수 대신 글로벌 테이블 사용 (SPEC_ModularRefactor 준수)
+- UI 가시성 제어는 `LobbyFlowComponent` 단일 책임으로 유지한다.
+- 시작 입력은 `GRStartButton` 클릭만 허용한다.
+- `OnMapEnter`에서 UI를 즉시 재적용해 Sync 타이밍 경합을 흡수한다.
+- 공통 유틸은 글로벌 직접 참조가 아니라 `self._T.GRUtil` 캐시를 표준으로 사용한다.
 
 ---
 
 ## 10. Codex 구현 체크리스트
 
-- [x] `@Component` 어트리뷰트, Bootstrap 레이어
-- [x] `@Sync property boolean IsLobbyActive`
-- [x] 밸런스/경로 수치 전부 `property`
-- [x] `[server only]` 맵 이동 / `[client only]` UI 제어 분리
-- [x] `_GRUtil.ResolveComponent`, `_GRUtil.TrySetCanMove` 사용 (중복 유틸 금지)
-- [x] 버튼 클릭만 허용, 키보드 폴백 없음
-- [x] `OnMapEnter` 클라이언트 분기로 UI 즉시 갱신
-- [x] `nil`/`isvalid` 방어 + `pcall` 보호
-- [x] `기획서/4.부록/Code_Documentation.md` 업데이트
-- [x] 완료 후 상태 `🟢 완료`로 변경
+- [x] `@Component` 어트리뷰트, Bootstrap 레이어 반영
+- [x] `@Sync property boolean IsLobbyActive` 반영
+- [x] `UseMapSplit=false`, `LobbyMapName/InGameMapName="games"` 기본값 반영
+- [x] 버튼 클릭 이벤트만 시작 입력으로 허용
+- [x] `[server only]` 상태 전환 / `[client only]` UI 제어 분리
+- [x] `self._T.GRUtil.ResolveComponent`, `self._T.GRUtil.TrySetCanMove` 경유 사용
+- [x] `OnMapEnter` 클라이언트 UI 재적용 로직 반영
+- [x] `nil`/`isvalid` 방어 + `pcall` 보호 반영
+- [x] `기획서/4.부록/Code_Documentation.md`와 동기화
+- [x] 상태 `🟢 완료` 유지
+
+---
+
+## 11. Maker 수동 백로그
+
+- [ ] `GRStartButton` 클릭 시 로비 UI 숨김/인게임 UI 전환을 Maker Play에서 최종 확인
+- [ ] `UseMapSplit=true` 임시 설정 시 room 이동 경로(`games`, `map://games`, `/maps/games`)를 Maker Play에서 확인
 
 ---
 
@@ -180,3 +177,4 @@ _RoomService:MoveUserToStaticRoom(userId, self.LobbyMapName)
 | **담당자** | Codex |
 | **작성일** | 2026-02-18 |
 | **상태** | 🟢 완료 |
+

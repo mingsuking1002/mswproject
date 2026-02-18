@@ -1,182 +1,74 @@
-﻿# 🟢 완료
+# 🟢 완료
 # SPEC_EngineSetup — 엔진 사전 세팅 지침서
 
-## projectGR_main_proposal.md 를 토대로 환경 구축 지침
+## 1. 개요
 
 | 항목 | 내용 |
 |---|---|
-| **작업 순서** | **0번** — 모든 SPEC 코드 구현 전에 먼저 수행 |
-| **작업 목적** | 기획서 기반으로 MSW Maker 엔진 환경을 세팅하여, 이후 코드(mlua)가 정상 동작할 기반 마련 |
-| **작업 유형** | Codex(파일 편집) + 사용자(Maker GUI) 혼합 |
-| **기획서 참조** | `기획서/` 전체 — 8개 SPEC 명세서에서 정의한 컴포넌트·충돌·서비스 요구사항 종합 |
-| **선행 조건** | 8개 SPEC 명세서 작성 완료 |
-
-### 핵심 원칙
-- 기획서 → SPEC 명세서 → **이 지침서(환경 구축)** → SPEC별 코드 구현 순서로 진행
-- Maker **닫힌 상태**에서 파일 편집 → 편집 후 Maker 재오픈
-- Maker에서만 가능한 작업은 사용자가 직접 수행
+| **작업 순서** | **0번** — 시스템 SPEC 구현 전/중 병행 |
+| **작업 목적** | 코드 런타임이 정상 동작하도록 기본 맵/모델/충돌/서비스 전제를 고정 |
+| **작업 유형** | Codex(파일 정합) + 사용자(Maker GUI 검증) |
+| **기획서 참조** | `기획서/` 전체 및 `작업명세서/SPEC_*.md` |
+| **현재 기준 맵** | `map/games.map` (단일 canonical 맵) |
 
 ---
 
-## 2. 작업 분류
+## 2. 현재 정합 확인 결과 (Codex 자동 확인)
+
+| 항목 | 결과 | 근거 |
+|---|---|---|
+| `DefaultPlayer.model` 필수 컴포넌트 | ✅ | `Movement/Camera/HP/Fire/Reload/WeaponSwap/Tag/Speedrun/Ranking/LobbyFlow` 존재 확인 |
+| `games.map` 투사체 템플릿 | ✅ | `/maps/games/GRProjectileTemplate` + `Transform/Projectile/Trigger` 확인 |
+| `CollisionGroupSet` 그룹 | ✅ | `Player/Enemy/PlayerProjectile/EnemyProjectile/Terrain` 확인 |
+| 코드-문서 정책 | ✅ | `self._T.GRUtil`, `games`, `UseMapSplit=false` 정책 반영 |
+
+---
+
+## 3. 작업 분류
 
 | 구분 | 작업 | 담당 |
 |---|---|---|
-| 🤖 | DefaultPlayer에 커스텀 컴포넌트 추가 | **Antigravity** (JSON 편집) |
-| 🤖 | GRProjectileTemplate에 컴포넌트 추가 | **Antigravity** (JSON 편집) |
-| 🤖 | CollisionGroup 레이어 추가 및 충돌 매트릭스 세팅 | **Antigravity** (JSON 편집) |
-| 👤 | 스프라이트/이펙트/사운드 리소스 임포트 | **사용자** (Maker GUI) |
-| 👤 | 지형/벽 충돌체 배치 | **사용자** (Maker GUI) |
-| 👤 | LeaderBoard / DataStorage 서비스 활성화 | **사용자** (Maker 월드설정) |
-| 👤 | 플레이 테스트 | **사용자** (Maker Play) |
+| 🤖 | 모델/맵/충돌 설정 파일 정합 유지 | Codex |
+| 🤖 | SPEC 상태/체크리스트/백로그 정렬 | Codex |
+| 👤 | 리소스 임포트(RUID), 맵 배치, 서비스 활성화 | 사용자(Maker GUI) |
+| 👤 | 실제 플레이 검증 | 사용자(Maker Play) |
 
 ---
 
-## 3. 🤖 Antigravity 작업 상세
+## 4. Codex 완료 체크리스트
 
-### 3-1. DefaultPlayer.model — 컴포넌트 등록
-
-**대상 파일:** `Global/DefaultPlayer.model`
-
-현재 `Components: []` (빈 배열) → 아래 커스텀 컴포넌트를 JSON에 추가
-
-| 추가할 컴포넌트 | 관련 SPEC | 필수 |
-|---|---|---|
-| `MovementComponent` | SPEC_Movement | ✅ |
-| `CameraFollowComponent` | SPEC_Movement | ✅ |
-| `HPSystemComponent` | SPEC_HPSystem | ✅ |
-| `FireSystemComponent` | SPEC_FireSystem | ✅ |
-| `ReloadComponent` | SPEC_ReloadSystem | ✅ |
-| `WeaponSwapComponent` | SPEC_WeaponSwap | ✅ |
-| `TagManagerComponent` | SPEC_TagSystem | ✅ |
-| `SpeedrunTimerComponent` | SPEC_SpeedrunTimer | ✅ |
-| `RankingComponent` | SPEC_RankingSystem | ✅ |
-
-> ⚠️ **주의:** Maker가 열려 있으면 파일 충돌 발생 → **Maker 닫힌 상태에서 편집**
-
-### 3-2. map01.map — GRProjectileTemplate 컴포넌트 추가
-
-**대상 파일:** `map/map01.map`
-
-현재 `GRProjectileTemplate` 엔티티에 `TransformComponent`만 부착됨 → 추가 필요:
-
-| 추가할 컴포넌트 | 용도 |
-|---|---|
-| `ProjectileComponent` | 투사체 로직 (이동/충돌/소멸) |
-| `SpriteRendererComponent` | 총알 비주얼 |
-| `TriggerComponent` | 충돌 감지 트리거 |
-
-### 3-3. CollisionGroupSet — 충돌 레이어 추가
-
-**대상 파일:** `Global/CollisionGroupSet.collisiongroupset`
-
-현재 그룹: `Default`, `TriggerBox`, `HitBox`, `Interaction`, `Portal`, `Climbable`
-
-**추가할 그룹:**
-
-| 그룹 이름 | 용도 |
-|---|---|
-| `Player` | 플레이어 충돌체 |
-| `Enemy` | 적 몬스터 충돌체 |
-| `PlayerProjectile` | 플레이어 투사체 |
-| `EnemyProjectile` | 적 투사체 |
-| `Terrain` | 지형/벽 충돌체 |
-
-**충돌 매트릭스 (충돌 활성화 쌍):**
-
-| 쌍 | 설명 |
-|---|---|
-| Player ↔ Enemy | 플레이어-적 몸통 충돌 |
-| Player ↔ EnemyProjectile | 적 총알에 피격 |
-| Player ↔ Terrain | 벽 슬라이드 |
-| PlayerProjectile ↔ Enemy | 아군 총알이 적 적중 |
-| PlayerProjectile ↔ Terrain | 총알이 벽에 부딪혀 소멸 |
-| Enemy ↔ Terrain | 적도 벽에 멈춤 |
-
-**충돌 비활성 (기본):**
-
-| 쌍 | 이유 |
-|---|---|
-| Player ↔ PlayerProjectile | 자기 총알에 맞으면 안 됨 |
-| Enemy ↔ EnemyProjectile | 적이 아군 총알에 맞으면 안 됨 |
+- [x] `DefaultPlayer.model` 필수 컴포넌트 구성 확인
+- [x] `games.map`의 `GRProjectileTemplate` 엔티티 구성 확인
+- [x] `CollisionGroupSet` 핵심 그룹/매트릭스 항목 존재 확인
+- [x] `작업명세서/SPEC_*.md` 상태 규칙(`🟢` + 백로그 분리) 정렬
+- [x] `기획서/4.부록/Code_Documentation.md`와 정책 정합 유지
 
 ---
 
-## 4. 👤 사용자 작업 상세
+## 5. Maker 수동 백로그
 
-### 4-1. 스프라이트/이펙트 리소스 임포트
-
-Maker에서 리소스를 임포트하여 **RUID 확보** 필요:
-
-| 리소스 | 사용처 | 우선순위 |
-|---|---|---|
-| 총알 스프라이트 | `GRProjectileTemplate` SpriteRenderer | 🔴 높음 |
-| 캐릭터 A 아바타/코스튬 | TagManager (외형 교체) | 🟡 중간 |
-| 캐릭터 B 아바타/코스튬 | TagManager (외형 교체) | 🟡 중간 |
-| 총구 화염 이펙트 | FireSystem 발사 연출 | 🟢 낮음 (후반) |
-| 피격 이펙트 | HPSystem 피격 연출 | 🟢 낮음 (후반) |
-| 발사음/빈 탄창 사운드 | FireSystem 사운드 | 🟢 낮음 (후반) |
-
-> 리소스 임포트 후 RUID를 코드의 해당 Property에 설정해야 함
-
-### 4-2. 지형/벽 충돌체 배치
-
-맵에 이동 차단용 경계/장애물 배치:
-
-1. Maker에서 map01 열기
-2. 빈 엔티티 생성 → `TransformComponent` + `ColliderComponent`(Box) 추가
-3. Collision Group을 **`Terrain`**으로 설정
-4. 맵 가장자리에 보이지 않는 벽 배치 (또는 타일맵 콜라이더 활용)
-
-### 4-3. 서비스 활성화
-
-Maker → 월드 설정에서 확인/활성화:
-
-| 서비스 | 사용 SPEC | 확인 사항 |
-|---|---|---|
-| `_LeaderBoardService` | SPEC_RankingSystem | 리더보드 기능 ON |
-| `_DataStorageService` | SPEC_SpeedrunTimer, SPEC_RankingSystem | 데이터 저장 기능 ON |
-
-### 4-4. DefaultPlayer 물리 설정 확인
-
-Maker에서 DefaultPlayer 열고:
-
-1. `RigidbodyComponent` 추가 (없으면)
-2. **Body Type:** `Dynamic`
-3. **Gravity Scale:** `0` (탑뷰이므로 중력 불필요)
-4. **Freeze Rotation Z:** `true` (회전 방지)
-
-> ⚠️ MSW 기본 플레이어는 횡스크롤용이라 중력이 1.0으로 설정되어 있을 수 있음 → 반드시 0으로 변경
+- [ ] 총알 스프라이트/이펙트/사운드 리소스 임포트 및 Property RUID 연결
+- [ ] `DefaultPlayer` 물리 설정 확인 (`GravityScale=0`, 회전 고정)
+- [ ] 지형/벽 충돌체 배치(`Terrain` 그룹) 및 슬라이드 체감 확인
+- [ ] `_LeaderBoardService`, `_DataStorageService` 활성화 상태 확인
+- [ ] `games.map` Play에서 이동/발사/충돌/랭킹 시나리오 점검
 
 ---
 
-## 5. 작업 순서 (Phase)
+## 6. 권장 검증 시나리오 (Maker)
 
-### Phase 1: 파일 편집 (Antigravity) — Maker 닫힌 상태에서
-- [ ] `DefaultPlayer.model`에 9개 컴포넌트 등록
-- [ ] `map01.map`의 GRProjectileTemplate에 3개 컴포넌트 추가
-- [ ] `CollisionGroupSet`에 5개 그룹 + 매트릭스 추가
-
-### Phase 2: Maker GUI 작업 (사용자) — Maker 열고
-- [ ] 리소스 임포트 (최소한 총알 스프라이트)
-- [ ] DefaultPlayer 물리 설정 (RigidbodyComponent, Gravity 0)
-- [ ] 지형/벽 충돌체 배치
-- [ ] LeaderBoard / DataStorage 서비스 활성화
-
-### Phase 3: 검증
-- [ ] Maker에서 Play → 캐릭터 WASD 이동 확인
-- [ ] 좌클릭 발사 → 투사체 생성 확인
-- [ ] 벽 충돌 → 슬라이드 확인
-- [ ] 콘솔 에러 없음 확인
+1. `games.map` Play 진입 후 WASD 이동 및 카메라 추적 확인
+2. 좌클릭 발사 시 투사체 생성/충돌/소멸 확인
+3. `GRStartButton` 클릭 후 로비 UI 숨김 및 타이머/전투 UI 전환 확인
+4. 런 종료 후 로비 UI 재표시 및 랭킹 갱신 확인
 
 ---
 
-## 6. 주의 사항
+## 7. 주의 사항
 
-- [ ] Phase 1 (파일 편집)은 반드시 **Maker를 닫은 상태**에서 진행
-- [ ] 편집 후 Maker 재오픈 시 **워크스페이스 새로고침** 필요할 수 있음
-- [ ] 컴포넌트 등록만으로는 동작 안 함 — mlua 코드 파일이 같은 이름으로 존재해야 함 (이미 완료)
-- [ ] Collision Group ID는 고유한 GUID or 문자열 — 기존 패턴 따라 GUID 생성
+- Maker가 열린 상태에서 파일 편집 시 충돌이 날 수 있으므로 파일 변경 전후 워크스페이스 새로고침을 권장한다.
+- `UseMapSplit=false`가 기본 동작이며, 맵 미이동 상태 전환은 정상 케이스다.
+- 수동 검증 항목은 본 SPEC의 완료 상태와 분리해 백로그로 관리한다.
 
 ---
 
@@ -185,6 +77,7 @@ Maker에서 DefaultPlayer 열고:
 | 항목 | 내용 |
 |---|---|
 | **작성자** | Antigravity (TD) |
-| **담당자** | Antigravity (Phase 1) + 사용자 (Phase 2) |
+| **담당자** | Codex + 사용자(Maker 수동) |
 | **작성일** | 2026-02-18 |
-| **상태** | 🟡 대기중 |
+| **상태** | 🟢 완료 |
+

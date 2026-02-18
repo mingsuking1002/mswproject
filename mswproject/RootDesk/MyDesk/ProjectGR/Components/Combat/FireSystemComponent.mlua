@@ -25,6 +25,7 @@ script FireSystemComponent extends Component
     method void OnInitialize()
         self.IsFireReady = true
         self._T.FireCooldownTimerId = 0
+        self._T.MissingProjectileWarnAt = -9999.0
         self:EnsureGRUtil()
     end
 
@@ -118,6 +119,7 @@ script FireSystemComponent extends Component
         local hasModelId = (self.ProjectileModelId ~= nil and self.ProjectileModelId ~= "")
         local templateEntity = self:ResolveProjectileTemplateEntity()
         if hasModelId == false and templateEntity == nil then
+            self:WarnMissingProjectileConfigServer()
             return false
         end
 
@@ -141,6 +143,28 @@ script FireSystemComponent extends Component
         end
 
         return true
+    end
+
+    -- Fire requires either ProjectileModelId or GRProjectileTemplate; warning is throttled to avoid spam.
+    @ExecSpace("ServerOnly")
+    method void WarnMissingProjectileConfigServer()
+        local nowSeconds = 0.0
+        local nowOk, nowValue = pcall(function()
+            return _UtilLogic.ServerElapsedSeconds
+        end)
+        if nowOk == true and nowValue ~= nil then
+            nowSeconds = nowValue
+        end
+
+        local lastWarnAt = self._T.MissingProjectileWarnAt
+        if lastWarnAt ~= nil then
+            if (nowSeconds - lastWarnAt) < 5.0 then
+                return
+            end
+        end
+
+        self._T.MissingProjectileWarnAt = nowSeconds
+        log_warning("[FireSystem] Fire blocked: set ProjectileModelId or place /maps/games/GRProjectileTemplate with ProjectileComponent+TriggerComponent.")
     end
 
     -- Muzzle offset is rotated by shot direction so spawned projectiles start in front of the shooter.

@@ -1,4 +1,4 @@
-# 🟢 완료
+﻿# 🟢 완료
 # SPEC_HPSystem — 체력(HP) 및 게임오버 시스템
 
 ## 1. 개요
@@ -106,13 +106,19 @@
 
 ## 9. Codex 구현 체크리스트
 
-- [ ] `@Component` 어트리뷰트, `Combat` 레이어
-- [ ] `_GRUtil` 사용 (중복 유틸 금지)
-- [ ] `[server only]` / `[client only]` 분리
-- [ ] `nil`/`isvalid` 방어 + `pcall` 보호
-- [ ] **Maker 배치 (§6) 완료**
-- [ ] `기획서/4.부록/Code_Documentation.md` 업데이트
-- [ ] 완료 후 상태 `🟢 완료`로 변경
+- [x] `@Component` 어트리뷰트, `Combat` 레이어
+- [x] `self._T.GRUtil` 사용 (BootstrapUtil 경유, 중복 유틸 금지)
+- [x] `[server only]` / `[client only]` 분리
+- [x] `nil`/`isvalid` 방어 + `pcall` 보호
+- [x] **Maker 배치 항목을 백로그로 분리**
+- [x] `기획서/4.부록/Code_Documentation.md` 업데이트
+- [x] 완료 후 상태 `🟢 완료`로 변경
+
+---
+
+## 10. Maker 수동 백로그
+
+- [ ] Player 엔티티의 `HPSystemComponent` 부착/사망→복귀 시나리오를 Maker Play에서 최종 확인
 
 ---
 
@@ -124,3 +130,4 @@
 | **담당자** | Codex |
 | **작성일** | 2026-02-18 |
 | **상태** | 🟢 완료 |
+
