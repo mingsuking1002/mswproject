@@ -255,15 +255,67 @@ script WeaponSwapComponent extends Component
     -- 메뉴 열림 중에는 이동/공격을 동시에 잠가 시간정지 대체 플래그를 구현한다.
     @ExecSpace("ServerOnly")
     method void SetCombatInputLocked(boolean isLocked)
-        local movementComponent = self.Entity:GetComponent("MovementComponent")
-        if movementComponent ~= nil and isvalid(movementComponent) == true then
-            movementComponent.CanMove = (isLocked == false)
-        end
+        self:TrySetMovementCanMove(isLocked == false)
 
         local fireComponent = self.Entity:GetComponent("FireSystemComponent")
         if fireComponent ~= nil and isvalid(fireComponent) == true then
             fireComponent.CanAttack = (isLocked == false)
         end
+    end
+
+    -- Resolves custom movement component first to avoid native MovementComponent name collisions.
+    method Component ResolveProjectMovementComponent()
+        local prefixed = self.Entity:GetComponent("script.MovementComponent")
+        if self:CanWriteComponentField(prefixed, "CanMove") == true then
+            return prefixed
+        end
+
+        local plain = self.Entity:GetComponent("MovementComponent")
+        if self:CanWriteComponentField(plain, "CanMove") == true then
+            return plain
+        end
+
+        return nil
+    end
+
+    -- Protects movement lock writes from runtime exceptions when wrong component type is returned.
+    method boolean TrySetMovementCanMove(boolean canMove)
+        local movementComponent = self:ResolveProjectMovementComponent()
+        if movementComponent == nil then
+            return false
+        end
+
+        local ok, _ = pcall(function()
+            movementComponent.CanMove = canMove
+        end)
+        if ok == false then
+            log_warning("[WeaponSwapComponent] Failed to set MovementComponent.CanMove")
+            return false
+        end
+
+        return true
+    end
+
+    -- Uses read+write probe so nil-valued fields are still recognized while missing fields are rejected.
+    method boolean CanWriteComponentField(any targetComponent, string fieldName)
+        if targetComponent == nil or isvalid(targetComponent) == false then
+            return false
+        end
+        if fieldName == nil or fieldName == "" then
+            return false
+        end
+
+        local readOk, readValue = pcall(function()
+            return targetComponent[fieldName]
+        end)
+        if readOk == false then
+            return false
+        end
+
+        local writeOk, _ = pcall(function()
+            targetComponent[fieldName] = readValue
+        end)
+        return writeOk
     end
 
     -- UI 갱신은 클라이언트 전용 호출로 분리해 서버 UI 참조 결합을 줄인다.
@@ -359,3 +411,5 @@ script WeaponSwapComponent extends Component
         end
     end
 end
+
+

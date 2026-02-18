@@ -5,6 +5,10 @@ script SpeedrunTimerComponent extends Component
     property number ElapsedTime = 0.0
     @Sync
     property boolean IsRunning = false
+    @Sync
+    property boolean IsCountdownRunning = false
+    @Sync
+    property integer CountdownRemaining = 0
     property integer CurrentStageId = 1
     @Sync
     property number BestTime = -1
@@ -12,23 +16,33 @@ script SpeedrunTimerComponent extends Component
     property string DataStorageName = "SpeedrunTimerStorage"
     property Entity TimerTextEntity = nil
     property string TimerTextPath = "/ui/DefaultGroup/GRTimerText"
+    property string TimerTextFallbackPath = "/maps/map01/GRTimerText"
+    property boolean EnableStartCountdown = true
+    property integer StartCountdownSeconds = 3
+    property boolean LockCombatDuringCountdown = true
+    property string CountdownPauseReason = "RUN_COUNTDOWN"
+    property string CountdownReadyPrefix = "READY "
+    property string CountdownGoText = "GO!"
 
-    -- 서버 초기화에서 타이머 상태를 리셋하고 최고 기록을 선로딩한다.
+    -- Initializes timer and pause state once so server and clients start from deterministic values.
     @ExecSpace("ServerOnly")
     method void OnInitialize()
         self.ElapsedTime = 0.0
         self.IsRunning = false
+        self.IsCountdownRunning = false
+        self.CountdownRemaining = 0
         self._T.ExternalPauseMap = {}
+        self._T.CountdownTimerId = 0
         self:LoadBestTimeFromStorage()
     end
 
-    -- 시작 시 클라이언트 UI 업데이트 루프를 붙여 Sync 시간을 HUD에 반영한다.
+    -- Starts the client HUD text updater from server authority so late UI load can still recover.
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
         self:StartClientTimerTextLoop()
     end
 
-    -- 시간 누적은 서버에서만 진행해 타이머 위변조를 방지한다.
+    -- Accumulates elapsed time only on server to keep ranking validation cheat-resistant.
     @ExecSpace("ServerOnly")
     method void OnUpdate(number delta)
         if self.IsRunning == false then
@@ -41,24 +55,159 @@ script SpeedrunTimerComponent extends Component
         self.ElapsedTime = self.ElapsedTime + delta
     end
 
-    -- 게임 이벤트에서 타이머 시작 시 호출하는 공용 진입점이다.
+    -- Immediate run start is kept for fallback and tests where countdown is intentionally disabled.
     @ExecSpace("ServerOnly")
     method void StartRun()
+        self:CancelCountdown()
         self.ElapsedTime = 0.0
         self.IsRunning = true
     end
 
-    -- 일시정지 요청을 분리해 UI/상점/무기교체 등 다중 원인을 동시에 처리한다.
+    -- Runs a server-authoritative countdown and starts timer on completion.
+    @ExecSpace("ServerOnly")
+    method void StartRunWithCountdown()
+        self:CancelCountdown()
+        self.ElapsedTime = 0.0
+        self.IsRunning = false
+
+        local countdownSeconds = math.max(self.StartCountdownSeconds, 0)
+        if self.EnableStartCountdown == false or countdownSeconds <= 0 then
+            self:StartRun()
+            return
+        end
+
+        self.IsCountdownRunning = true
+        self.CountdownRemaining = countdownSeconds
+        self:SetExternalPauseState(self.CountdownPauseReason, true)
+        self:ApplyCountdownCombatLockServer(true)
+        self:PlayCountdownFeedbackClient(self.CountdownRemaining)
+
+        local countdownTick = function()
+            if self.IsCountdownRunning == false then
+                self:CancelCountdown()
+                return
+            end
+
+            self.CountdownRemaining = self.CountdownRemaining - 1
+            if self.CountdownRemaining > 0 then
+                self:PlayCountdownFeedbackClient(self.CountdownRemaining)
+                return
+            end
+
+            self:CancelCountdown()
+            self:StartRun()
+            self:PlayCountdownGoFeedbackClient()
+        end
+
+        self._T.CountdownTimerId = _TimerService:SetTimerRepeat(countdownTick, 1.0, 1.0)
+    end
+
+    -- Centralized countdown cleanup prevents lock-release misses on cancel/restart/death.
+    @ExecSpace("ServerOnly")
+    method void CancelCountdown()
+        if self._T.CountdownTimerId ~= nil and self._T.CountdownTimerId > 0 then
+            _TimerService:ClearTimer(self._T.CountdownTimerId)
+            self._T.CountdownTimerId = 0
+        end
+
+        self.IsCountdownRunning = false
+        self.CountdownRemaining = 0
+        self:SetExternalPauseState(self.CountdownPauseReason, false)
+        self:ApplyCountdownCombatLockServer(false)
+    end
+
+    -- Locks only combat movement/attack during countdown while respecting lobby lock precedence.
+    @ExecSpace("ServerOnly")
+    method void ApplyCountdownCombatLockServer(boolean isLocked)
+        if self.LockCombatDuringCountdown == false then
+            return
+        end
+
+        local allowCombat = (isLocked == false)
+        local lobbyFlowComponent = self.Entity:GetComponent("LobbyFlowComponent")
+        if lobbyFlowComponent ~= nil and isvalid(lobbyFlowComponent) == true then
+            if lobbyFlowComponent.IsLobbyActive == true then
+                allowCombat = false
+            end
+        end
+
+        self:TrySetMovementCanMove(allowCombat)
+
+        local fireComponent = self.Entity:GetComponent("FireSystemComponent")
+        if fireComponent ~= nil and isvalid(fireComponent) == true then
+            fireComponent.CanAttack = allowCombat
+        end
+    end
+
+    -- Resolves custom movement component first to avoid native MovementComponent name collisions.
+    method Component ResolveProjectMovementComponent()
+        local prefixed = self.Entity:GetComponent("script.MovementComponent")
+        if self:CanWriteComponentField(prefixed, "CanMove") == true then
+            return prefixed
+        end
+
+        local plain = self.Entity:GetComponent("MovementComponent")
+        if self:CanWriteComponentField(plain, "CanMove") == true then
+            return plain
+        end
+
+        return nil
+    end
+
+    -- Protects countdown movement lock writes from runtime exceptions.
+    method boolean TrySetMovementCanMove(boolean canMove)
+        local movementComponent = self:ResolveProjectMovementComponent()
+        if movementComponent == nil then
+            return false
+        end
+
+        local ok, _ = pcall(function()
+            movementComponent.CanMove = canMove
+        end)
+        if ok == false then
+            log_warning("[SpeedrunTimerComponent] Failed to set MovementComponent.CanMove")
+            return false
+        end
+
+        return true
+    end
+
+    -- Uses read+write probe so nil-valued fields are still recognized while missing fields are rejected.
+    method boolean CanWriteComponentField(any targetComponent, string fieldName)
+        if targetComponent == nil or isvalid(targetComponent) == false then
+            return false
+        end
+        if fieldName == nil or fieldName == "" then
+            return false
+        end
+
+        local readOk, readValue = pcall(function()
+            return targetComponent[fieldName]
+        end)
+        if readOk == false then
+            return false
+        end
+
+        local writeOk, _ = pcall(function()
+            targetComponent[fieldName] = readValue
+        end)
+        return writeOk
+    end
+
+    -- External pause reasons are merged so multiple UI/gameplay systems can pause timer safely.
     @ExecSpace("ServerOnly")
     method void SetExternalPauseState(string reason, boolean paused)
         if reason == nil or reason == "" then
             return
         end
+        if self._T.ExternalPauseMap == nil then
+            self._T.ExternalPauseMap = {}
+        end
 
         self._T.ExternalPauseMap[reason] = paused
     end
 
-    -- 외부 일시정지 상태를 매 프레임 합산해 단일 bool 동기화 충돌을 피한다.
+    -- Resolves any active pause reason to a single bool and includes weapon swap menu state.
     @ExecSpace("ServerOnly")
     method boolean IsExternallyPaused()
         local weaponSwapComponent = self.Entity:GetComponent("WeaponSwapComponent")
@@ -66,6 +215,10 @@ script SpeedrunTimerComponent extends Component
             if weaponSwapComponent.IsSwapMenuOpen == true then
                 return true
             end
+        end
+
+        if self._T.ExternalPauseMap == nil then
+            return false
         end
 
         for _, paused in pairs(self._T.ExternalPauseMap) do
@@ -77,9 +230,13 @@ script SpeedrunTimerComponent extends Component
         return false
     end
 
-    -- 클리어 시 정지/기록 갱신/랭킹 전달을 한 번에 처리해 결과 시점 일관성을 보장한다.
+    -- Completes current run once, updates best time, and submits ranking.
     @ExecSpace("ServerOnly")
     method void CompleteRun()
+        if self.IsCountdownRunning == true then
+            self:CancelCountdown()
+        end
+
         if self.IsRunning == false then
             return
         end
@@ -89,14 +246,15 @@ script SpeedrunTimerComponent extends Component
         self:NotifyRankingSystem()
     end
 
-    -- 사망 재시작 시 상태를 초기화해 이전 런의 시간 잔존을 제거한다.
+    -- Full reset returns component to idle pre-run state.
     @ExecSpace("ServerOnly")
     method void ResetRun()
+        self:CancelCountdown()
         self.ElapsedTime = 0.0
         self.IsRunning = false
     end
 
-    -- 기록 갱신 조건을 서버에서만 비교해 비정상 로컬 기록 반영을 막는다.
+    -- Updates stage best time only when current run improved.
     @ExecSpace("ServerOnly")
     method void UpdateBestTimeAndSave()
         if self.BestTime < 0 or self.ElapsedTime < self.BestTime then
@@ -106,13 +264,13 @@ script SpeedrunTimerComponent extends Component
         end
     end
 
-    -- DataStorage 키를 스테이지 단위로 분리해 스테이지별 최고 기록을 독립 보관한다.
+    -- Stage key format is fixed to keep storage compatibility across versions.
     @ExecSpace("ServerOnly")
     method string GetBestTimeStorageKey()
         return "Stage_" .. tostring(self.CurrentStageId) .. "_BestTime"
     end
 
-    -- 기록 저장은 문자열로 통일해 DataStorage 타입 변환 이슈를 단순화한다.
+    -- Stores best time into GlobalDataStorage.
     @ExecSpace("ServerOnly")
     method void SaveBestTimeToStorage()
         local dataStorage = _DataStorageService:GetGlobalDataStorage(self.DataStorageName)
@@ -124,7 +282,7 @@ script SpeedrunTimerComponent extends Component
         dataStorage:SetAndWait(key, tostring(self.BestTime))
     end
 
-    -- 기록 로드는 실패 시 -1로 유지해 최초 클리어 분기를 명확히 유지한다.
+    -- Loads best time from GlobalDataStorage and falls back to -1 on any parse/load failure.
     @ExecSpace("ServerOnly")
     method void LoadBestTimeFromStorage()
         local dataStorage = _DataStorageService:GetGlobalDataStorage(self.DataStorageName)
@@ -149,7 +307,7 @@ script SpeedrunTimerComponent extends Component
         self.BestTime = parsed
     end
 
-    -- 랭킹 전달 포인트를 분리해 RankingComponent 미부착 환경에서도 타이머가 독립 동작하게 한다.
+    -- Sends final elapsed time to RankingComponent; server keeps submission authority.
     @ExecSpace("ServerOnly")
     method void NotifyRankingSystem()
         local rankingComponent = self.Entity:GetComponent("RankingComponent")
@@ -160,13 +318,27 @@ script SpeedrunTimerComponent extends Component
         rankingComponent:SubmitTimeAttackResult(self.ElapsedTime, self.CurrentStageId)
     end
 
-    -- 신기록 UI 연출은 클라이언트에서만 실행해 서버 로직을 순수하게 유지한다.
+    -- New-record feedback hook for future VFX/SFX expansion.
     @ExecSpace("Client")
     method void PlayNewRecordFeedbackClient()
         log("[SpeedrunTimerComponent] New Record!")
     end
 
-    -- 클라이언트 반복 타이머로 Sync된 시간을 텍스트에 반영해 HUD를 지속 업데이트한다.
+    -- Countdown per-second feedback is client-side only.
+    @ExecSpace("Client")
+    method void PlayCountdownFeedbackClient(integer remaining)
+        log("[SpeedrunTimerComponent] Countdown: ", remaining)
+        self:RefreshTimerTextClient()
+    end
+
+    -- Countdown finish feedback hook.
+    @ExecSpace("Client")
+    method void PlayCountdownGoFeedbackClient()
+        log("[SpeedrunTimerComponent] ", self.CountdownGoText)
+        self:RefreshTimerTextClient()
+    end
+
+    -- Client text loop reflects either countdown text or elapsed timer text.
     @ExecSpace("Client")
     method void StartClientTimerTextLoop()
         if self._T.ClientTextTimerId ~= nil and self._T.ClientTextTimerId > 0 then
@@ -183,10 +355,56 @@ script SpeedrunTimerComponent extends Component
                 return
             end
 
+            if self.IsCountdownRunning == true or self.IsRunning == true then
+                self:TrySetTimerTextVisibleClient(true)
+            end
+
+            if self.IsCountdownRunning == true then
+                textComponent.Text = self:BuildCountdownText(self.CountdownRemaining)
+                return
+            end
+
             textComponent.Text = self:FormatElapsedTime(self.ElapsedTime)
         end
 
+        updateText()
         self._T.ClientTextTimerId = _TimerService:SetTimerRepeat(updateText, 0.05, 0.0)
+    end
+
+    -- Sync 수신 시 즉시 텍스트를 갱신해 루프 지연/미시작 상황에서도 카운트다운 문구를 보장한다.
+    @ExecSpace("ClientOnly")
+    method void OnSyncProperty(string propertyName, any value)
+        if propertyName == "IsCountdownRunning" or propertyName == "CountdownRemaining" then
+            self:RefreshTimerTextClient()
+            return
+        end
+        if propertyName == "ElapsedTime" and self.IsCountdownRunning == false then
+            self:RefreshTimerTextClient()
+            return
+        end
+    end
+
+    @ExecSpace("Client")
+    method void RefreshTimerTextClient()
+        local textEntity = self:ResolveTimerTextEntityClient()
+        if textEntity == nil or isvalid(textEntity) == false then
+            return
+        end
+        local textComponent = textEntity.TextComponent
+        if textComponent == nil then
+            return
+        end
+
+        if self.IsCountdownRunning == true or self.IsRunning == true then
+            self:TrySetTimerTextVisibleClient(true)
+        end
+
+        if self.IsCountdownRunning == true then
+            textComponent.Text = self:BuildCountdownText(self.CountdownRemaining)
+            return
+        end
+
+        textComponent.Text = self:FormatElapsedTime(self.ElapsedTime)
     end
 
     -- Resolves timer text from UI path so HUD binding does not depend on map entities.
@@ -194,25 +412,67 @@ script SpeedrunTimerComponent extends Component
     method Entity ResolveTimerTextEntityClient()
         local current = self.TimerTextEntity
         if current ~= nil and isvalid(current) == true then
-            if current.Path == self.TimerTextPath then
+            if current.Path == self.TimerTextPath or current.Path == self.TimerTextFallbackPath then
                 return current
             end
         end
 
-        if self.TimerTextPath == nil or self.TimerTextPath == "" then
-            return current
+        if self.TimerTextPath ~= nil and self.TimerTextPath ~= "" then
+            local resolved = _EntityService:GetEntityByPath(self.TimerTextPath)
+            if resolved ~= nil and isvalid(resolved) == true then
+                self.TimerTextEntity = resolved
+                return resolved
+            end
         end
 
-        local resolved = _EntityService:GetEntityByPath(self.TimerTextPath)
-        if resolved == nil or isvalid(resolved) == false then
-            return current
+        if self.TimerTextFallbackPath ~= nil and self.TimerTextFallbackPath ~= "" then
+            local fallback = _EntityService:GetEntityByPath(self.TimerTextFallbackPath)
+            if fallback ~= nil and isvalid(fallback) == true then
+                self.TimerTextEntity = fallback
+                return fallback
+            end
         end
 
-        self.TimerTextEntity = resolved
-        return resolved
+        if self._T.TimerTextMissingWarned ~= true then
+            self._T.TimerTextMissingWarned = true
+            log_warning("[SpeedrunTimerComponent] Timer text entity not found. path=", tostring(self.TimerTextPath), ", fallback=", tostring(self.TimerTextFallbackPath))
+        end
+        return current
     end
 
-    -- 표시 포맷을 함수화해 타이머/랭킹 UI에서 동일 문자열 포맷을 재사용한다.
+    -- 타이머 카운트다운/진행 중에는 UI 토글 상태와 관계없이 타이머 텍스트를 강제 표시한다.
+    @ExecSpace("ClientOnly")
+    method void TrySetTimerTextVisibleClient(boolean visible)
+        local textEntity = self:ResolveTimerTextEntityClient()
+        if textEntity == nil or isvalid(textEntity) == false then
+            return
+        end
+
+        pcall(function()
+            textEntity.Enable = visible
+        end)
+        pcall(function()
+            textEntity.Visible = visible
+        end)
+
+        local textComponent = textEntity.TextComponent
+        if textComponent ~= nil and isvalid(textComponent) == true then
+            pcall(function()
+                textComponent.Enable = visible
+            end)
+        end
+    end
+
+    -- Countdown text is centralized so UI copy changes do not affect timer logic.
+    method string BuildCountdownText(integer remaining)
+        if remaining <= 0 then
+            return self.CountdownGoText
+        end
+
+        return self.CountdownReadyPrefix .. tostring(remaining)
+    end
+
+    -- Shared time formatter for timer HUD and ranking display.
     method string FormatElapsedTime(number elapsed)
         local totalMs = math.floor(elapsed * 1000)
         if totalMs < 0 then
@@ -241,7 +501,7 @@ script SpeedrunTimerComponent extends Component
         return minuteText .. ":" .. secondText .. "." .. centiText
     end
 
-    -- 종료 시 클라이언트 텍스트 타이머를 정리해 맵 이탈 후 UI 갱신 콜백 잔존을 방지한다.
+    -- Stops client loop to avoid stale callbacks after entity unload.
     @ExecSpace("ClientOnly")
     method void StopClientTimerTextLoop()
         if self._T.ClientTextTimerId ~= nil and self._T.ClientTextTimerId > 0 then
@@ -250,9 +510,22 @@ script SpeedrunTimerComponent extends Component
         end
     end
 
-    -- EndPlay에서 클라이언트 UI 타이머를 종료해 세션 종료 후 로그 스팸을 차단한다.
+    -- Client cleanup for HUD timer loop.
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
         self:StopClientTimerTextLoop()
     end
+
+    -- Server cleanup for countdown timer loop.
+    @ExecSpace("ServerOnly")
+    method void OnDestroy()
+        if self._T.CountdownTimerId ~= nil and self._T.CountdownTimerId > 0 then
+            _TimerService:ClearTimer(self._T.CountdownTimerId)
+            self._T.CountdownTimerId = 0
+        end
+    end
 end
+
+
+
+

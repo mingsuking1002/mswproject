@@ -14,7 +14,7 @@ script HPSystemComponent extends Component
     property boolean IsDead = false
     property integer FallbackDamage = 1
 
-    -- 서버 시작 시 체력/무적 상태를 정규화해 초기 동기화 오차를 방지한다.
+    -- Server initializes HP state once to avoid first-frame sync races.
     @ExecSpace("ServerOnly")
     method void OnInitialize()
         self.CurrentHP = math.max(0, math.min(self.CurrentHP, self.MaxHP))
@@ -23,13 +23,13 @@ script HPSystemComponent extends Component
         self._T.InvincibleTimerId = 0
     end
 
-    -- 초기 상태를 클라이언트에 즉시 전달해 HUD와 연출 기준값을 통일한다.
+    -- Broadcasts initial HP state so UI can render immediately on begin play.
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
         self:BroadcastHPState()
     end
 
-    -- 피격 판정은 서버에서만 받아 치트 클라이언트가 HP를 직접 조작하지 못하게 한다.
+    -- Damage intake remains server authoritative and resolves incoming source safely.
     @ExecSpace("ServerOnly")
     @EventSender("Self")
     handler HandleTriggerEnterEvent(TriggerEnterEvent event)
@@ -42,7 +42,7 @@ script HPSystemComponent extends Component
         self:ApplyDamage(incomingDamage)
     end
 
-    -- 데미지 원본 엔티티를 컴포넌트 기반으로 읽어 이후 무기/몬스터 확장에 대응한다.
+    -- Reads damage from known attack components with safe fallbacks.
     @ExecSpace("ServerOnly")
     method integer ResolveIncomingDamage(Entity sourceEntity)
         if sourceEntity == nil or isvalid(sourceEntity) == false then
@@ -69,7 +69,7 @@ script HPSystemComponent extends Component
         return math.max(self.FallbackDamage, 0)
     end
 
-    -- 데미지 계산/무적/사망 판정을 한곳에서 처리해 전투 규칙 일관성을 유지한다.
+    -- Applies HP damage with invincible and death checks in one authoritative path.
     @ExecSpace("ServerOnly")
     method void ApplyDamage(integer rawDamage)
         if self.IsDead == true then
@@ -96,7 +96,7 @@ script HPSystemComponent extends Component
         self:BroadcastHPState()
     end
 
-    -- 무적 해제 시간을 타이머로 고정해 프레임 의존 없는 피격 보호를 보장한다.
+    -- Uses timer-based invincibility window instead of frame polling.
     @ExecSpace("ServerOnly")
     method void StartInvincibleWindow()
         if self.InvincibleDuration <= 0 then
@@ -120,7 +120,7 @@ script HPSystemComponent extends Component
         self._T.InvincibleTimerId = _TimerService:SetTimerOnce(releaseInvincible, self.InvincibleDuration)
     end
 
-    -- 회복은 서버에서 상한선을 강제해 비정상 HP 오버플로를 막는다.
+    -- Healing is validated on server and clamped to MaxHP.
     @ExecSpace("ServerOnly")
     method void Heal(integer amount)
         if amount <= 0 then
@@ -134,7 +134,22 @@ script HPSystemComponent extends Component
         self:BroadcastHPState()
     end
 
-    -- 사망 시 이동 차단과 게임오버 전달을 동기 처리해 상태 경합을 방지한다.
+    -- Resets death/invincible state for the next run entry.
+    @ExecSpace("ServerOnly")
+    method void ReviveToFullHP()
+        if self._T.InvincibleTimerId ~= nil and self._T.InvincibleTimerId > 0 then
+            _TimerService:ClearTimer(self._T.InvincibleTimerId)
+            self._T.InvincibleTimerId = 0
+        end
+
+        self.CurrentHP = math.max(self.MaxHP, 1)
+        self.IsInvincible = false
+        self.IsDead = false
+        self._T.IsDeadUIOpened = false
+        self:BroadcastHPState()
+    end
+
+    -- Death state is finalized once and triggers the game-over flow.
     @ExecSpace("ServerOnly")
     method void EvaluateDeath()
         if self.CurrentHP > 0 then
@@ -147,17 +162,81 @@ script HPSystemComponent extends Component
         self.IsDead = true
         self.IsInvincible = false
 
-        local movementComponent = self.Entity:GetComponent("MovementComponent")
-        if movementComponent ~= nil and isvalid(movementComponent) == true then
-            movementComponent.CanMove = false
-        end
+        self:TrySetMovementCanMove(false)
 
         self:NotifyGameOver()
     end
 
-    -- GameManager와 느슨하게 연결해 매니저 구조 변경에도 컴포넌트 결합을 낮춘다.
+    -- Resolves custom movement component first to avoid native MovementComponent name collisions.
+    method Component ResolveProjectMovementComponent()
+        local prefixed = self.Entity:GetComponent("script.MovementComponent")
+        if self:CanWriteComponentField(prefixed, "CanMove") == true then
+            return prefixed
+        end
+
+        local plain = self.Entity:GetComponent("MovementComponent")
+        if self:CanWriteComponentField(plain, "CanMove") == true then
+            return plain
+        end
+
+        return nil
+    end
+
+    -- Protects death-lock writes from runtime exceptions when wrong component type is returned.
+    method boolean TrySetMovementCanMove(boolean canMove)
+        local movementComponent = self:ResolveProjectMovementComponent()
+        if movementComponent == nil then
+            return false
+        end
+
+        local ok, _ = pcall(function()
+            movementComponent.CanMove = canMove
+        end)
+        if ok == false then
+            log_warning("[HPSystemComponent] Failed to set MovementComponent.CanMove")
+            return false
+        end
+
+        return true
+    end
+
+    -- Uses read+write probe so nil-valued fields are still recognized while missing fields are rejected.
+    method boolean CanWriteComponentField(any targetComponent, string fieldName)
+        if targetComponent == nil or isvalid(targetComponent) == false then
+            return false
+        end
+        if fieldName == nil or fieldName == "" then
+            return false
+        end
+
+        local readOk, readValue = pcall(function()
+            return targetComponent[fieldName]
+        end)
+        if readOk == false then
+            return false
+        end
+
+        local writeOk, _ = pcall(function()
+            targetComponent[fieldName] = readValue
+        end)
+        return writeOk
+    end
+
+    -- Game-over routing prefers LobbyFlow, then GameManager, then timer-only fallback.
     @ExecSpace("ServerOnly")
     method void NotifyGameOver()
+        local lobbyFlow = self.Entity:GetComponent("LobbyFlowComponent")
+        if lobbyFlow ~= nil and isvalid(lobbyFlow) == true then
+            if lobbyFlow.HandleStageFailedServer ~= nil then
+                lobbyFlow:HandleStageFailedServer()
+                return
+            end
+            if lobbyFlow.HandleRunCompletedServer ~= nil then
+                lobbyFlow:HandleRunCompletedServer(false)
+                return
+            end
+        end
+
         local gameManager = self.Entity:GetComponent("GameManagerComponent")
         if gameManager ~= nil and isvalid(gameManager) == true then
             if gameManager.OnPlayerDead ~= nil then
@@ -166,16 +245,21 @@ script HPSystemComponent extends Component
             return
         end
 
-        log_warning("[HPSystemComponent] GameManagerComponent not found. GameOver callback skipped.")
+        local timerComponent = self.Entity:GetComponent("SpeedrunTimerComponent")
+        if timerComponent ~= nil and isvalid(timerComponent) == true then
+            timerComponent:CompleteRun()
+        end
+
+        log_warning("[HPSystemComponent] Fallback game-over flow used. LobbyFlow/GameManager not found.")
     end
 
-    -- 서버 기준 HP 상태를 클라이언트 연출 진입점으로 전달해 표시와 판정을 분리한다.
+    -- Sends current HP state to client-side feedback handler.
     @ExecSpace("ServerOnly")
     method void BroadcastHPState()
         self:UpdateHPFeedbackClient(self.CurrentHP, self.MaxHP, self.IsInvincible, self.IsDead)
     end
 
-    -- 클라이언트는 Sync 결과를 받아 HUD/이펙트만 처리해 권위 경계를 유지한다.
+    -- Client feedback stays visual-only while authority remains on server.
     @ExecSpace("Client")
     method void UpdateHPFeedbackClient(integer currentHp, integer maxHp, boolean isInvincible, boolean isDead)
         self:UpdateInvincibleBlink(isInvincible)
@@ -186,7 +270,7 @@ script HPSystemComponent extends Component
         end
     end
 
-    -- 무적 시 시각 피드백을 제공해 플레이어가 피격 무효 구간을 직관적으로 파악하게 한다.
+    -- Toggles invincible blink loop.
     @ExecSpace("ClientOnly")
     method void UpdateInvincibleBlink(boolean isInvincible)
         if isInvincible == true then
@@ -197,7 +281,7 @@ script HPSystemComponent extends Component
         self:StopInvincibleBlink()
     end
 
-    -- 반복 타이머 기반 점멸로 OnUpdate 부하 없이 무적 연출을 구현한다.
+    -- Uses timer-based blink to avoid per-frame overhead.
     @ExecSpace("ClientOnly")
     method void StartInvincibleBlink()
         if self._T.BlinkTimerId ~= nil and self._T.BlinkTimerId > 0 then
@@ -228,7 +312,7 @@ script HPSystemComponent extends Component
         self._T.BlinkTimerId = _TimerService:SetTimerRepeat(blinkTick, 0.1, 0.0)
     end
 
-    -- 점멸 종료 시 색상을 원복해 다른 버프/디버프 렌더링과 충돌을 줄인다.
+    -- Restores default color when invincible blink ends.
     @ExecSpace("ClientOnly")
     method void StopInvincibleBlink()
         if self._T.BlinkTimerId ~= nil and self._T.BlinkTimerId > 0 then
@@ -242,7 +326,7 @@ script HPSystemComponent extends Component
         end
     end
 
-    -- 위기 상태 플래그를 분리해 HUD 이펙트 연동 시 조건 계산 중복을 제거한다.
+    -- Computes critical state for downstream UI warning logic.
     @ExecSpace("ClientOnly")
     method void UpdateCriticalWarning(integer currentHp, integer maxHp)
         if maxHp <= 0 then
@@ -254,7 +338,7 @@ script HPSystemComponent extends Component
         self._T.IsCritical = (hpRatio < self.CriticalHPRatio)
     end
 
-    -- 게임오버 UI는 단발 트리거로 제한해 중복 팝업/사운드 재생을 방지한다.
+    -- Prevents repeated game-over UI trigger spam.
     @ExecSpace("ClientOnly")
     method void HandleDeadUI()
         if self._T.IsDeadUIOpened == true then
@@ -265,7 +349,7 @@ script HPSystemComponent extends Component
         log("[HPSystemComponent] Game Over UI trigger requested.")
     end
 
-    -- 월드 정리 시 서버 타이머를 해제해 제거된 엔티티 콜백을 차단한다.
+    -- Clears server timer on end play.
     @ExecSpace("ServerOnly")
     method void OnEndPlay()
         if self._T.InvincibleTimerId ~= nil and self._T.InvincibleTimerId > 0 then
@@ -274,3 +358,4 @@ script HPSystemComponent extends Component
         end
     end
 end
+

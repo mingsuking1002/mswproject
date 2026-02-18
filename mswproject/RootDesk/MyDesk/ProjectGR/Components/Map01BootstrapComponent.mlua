@@ -63,7 +63,7 @@ script Map01BootstrapComponent extends Component
         if self._T.ConfiguredUserMap[userId] == true then
             self:RebindRuntimeReferences(playerEntity)
 
-            local lobbyFlowComponent = playerEntity:GetComponent("LobbyFlowComponent")
+            local lobbyFlowComponent = self:FindProjectComponent(playerEntity, "LobbyFlowComponent", "IsLobbyActive")
             if lobbyFlowComponent ~= nil and isvalid(lobbyFlowComponent) == true then
                 if lobbyFlowComponent.ApplyInitialServerState ~= nil then
                     lobbyFlowComponent:ApplyInitialServerState()
@@ -80,53 +80,53 @@ script Map01BootstrapComponent extends Component
     -- Adds required gameplay components once and injects default values.
     @ExecSpace("ServerOnly")
     method void ConfigurePlayer(Entity playerEntity)
-        local movementComponent = self:AddOrGetComponent(playerEntity, "MovementComponent")
-        local cameraComponent = self:AddOrGetComponent(playerEntity, "CameraFollowComponent")
-        local hpComponent = self:AddOrGetComponent(playerEntity, "HPSystemComponent")
-        local reloadComponent = self:AddOrGetComponent(playerEntity, "ReloadComponent")
-        local fireComponent = self:AddOrGetComponent(playerEntity, "FireSystemComponent")
-        local weaponSwapComponent = self:AddOrGetComponent(playerEntity, "WeaponSwapComponent")
-        local wheelComponent = self:AddOrGetComponent(playerEntity, "WeaponWheelUIComponent")
-        local tagComponent = self:AddOrGetComponent(playerEntity, "TagManagerComponent")
-        local timerComponent = self:AddOrGetComponent(playerEntity, "SpeedrunTimerComponent")
-        local rankingComponent = self:AddOrGetComponent(playerEntity, "RankingComponent")
-        local rankingUIComponent = self:AddOrGetComponent(playerEntity, "RankingUIComponent")
-        local lobbyFlowComponent = self:AddOrGetComponent(playerEntity, "LobbyFlowComponent")
+        local movementComponent = self:GetOrAddProjectComponent(playerEntity, "MovementComponent", "MoveSpeed")
+        local cameraComponent = self:GetOrAddProjectComponent(playerEntity, "CameraFollowComponent", "MapBoundsMin")
+        local hpComponent = self:GetOrAddProjectComponent(playerEntity, "HPSystemComponent", "MaxHP")
+        local reloadComponent = self:GetOrAddProjectComponent(playerEntity, "ReloadComponent", "MaxAmmo")
+        local fireComponent = self:GetOrAddProjectComponent(playerEntity, "FireSystemComponent", "FireCooldown")
+        local weaponSwapComponent = self:GetOrAddProjectComponent(playerEntity, "WeaponSwapComponent", "AllowSwapMenu")
+        local wheelComponent = self:GetOrAddProjectComponent(playerEntity, "WeaponWheelUIComponent", "IsVisible")
+        local tagComponent = self:GetOrAddProjectComponent(playerEntity, "TagManagerComponent", "CurrentCharIndex")
+        local timerComponent = self:GetOrAddProjectComponent(playerEntity, "SpeedrunTimerComponent", "ElapsedTime")
+        local rankingComponent = self:GetOrAddProjectComponent(playerEntity, "RankingComponent", "MinimumValidTime")
+        local rankingUIComponent = self:GetOrAddProjectComponent(playerEntity, "RankingUIComponent", "CurrentTab")
+        local lobbyFlowComponent = self:GetOrAddProjectComponent(playerEntity, "LobbyFlowComponent", "IsLobbyActive")
 
         if movementComponent ~= nil and isvalid(movementComponent) == true then
-            movementComponent.MoveSpeed = 4.0
-            movementComponent.SpeedMultiplier = 1.0
-            movementComponent.CanMove = true
+            self:TrySetComponentField(movementComponent, "MoveSpeed", 4.0)
+            self:TrySetComponentField(movementComponent, "SpeedMultiplier", 1.0)
+            self:TrySetComponentField(movementComponent, "CanMove", true)
         end
 
         if cameraComponent ~= nil and isvalid(cameraComponent) == true then
-            cameraComponent.MapBoundsMin = Vector2(-100, -100)
-            cameraComponent.MapBoundsMax = Vector2(100, 100)
+            self:TrySetComponentField(cameraComponent, "MapBoundsMin", Vector2(-100, -100))
+            self:TrySetComponentField(cameraComponent, "MapBoundsMax", Vector2(100, 100))
         end
 
         if hpComponent ~= nil and isvalid(hpComponent) == true then
-            hpComponent.MaxHP = 100
-            hpComponent.CurrentHP = 100
-            hpComponent.IsDead = false
-            hpComponent.IsInvincible = false
+            self:TrySetComponentField(hpComponent, "MaxHP", 100)
+            self:TrySetComponentField(hpComponent, "CurrentHP", 100)
+            self:TrySetComponentField(hpComponent, "IsDead", false)
+            self:TrySetComponentField(hpComponent, "IsInvincible", false)
         end
 
         if reloadComponent ~= nil and isvalid(reloadComponent) == true then
-            reloadComponent.MaxAmmo = 12
-            reloadComponent.ReloadTime = 1.2
-            reloadComponent.FireRate = 0.35
-            reloadComponent.CurrentWeaponSlot = 1
-            reloadComponent.CurrentAmmo = 12
+            self:TrySetComponentField(reloadComponent, "MaxAmmo", 12)
+            self:TrySetComponentField(reloadComponent, "ReloadTime", 1.2)
+            self:TrySetComponentField(reloadComponent, "FireRate", 0.35)
+            self:TrySetComponentField(reloadComponent, "CurrentWeaponSlot", 1)
+            self:TrySetComponentField(reloadComponent, "CurrentAmmo", 12)
         end
 
         if fireComponent ~= nil and isvalid(fireComponent) == true then
-            fireComponent.ProjectileModelId = ""
-            fireComponent.FireCooldown = 0.35
-            fireComponent.ProjectileSpeed = 25.0
-            fireComponent.ProjectileRange = 20.0
-            fireComponent.ProjectileLifetime = 2.0
-            fireComponent.BaseWeaponAttack = 10
-            fireComponent.CanAttack = true
+            self:TrySetComponentField(fireComponent, "ProjectileModelId", "")
+            self:TrySetComponentField(fireComponent, "FireCooldown", 0.35)
+            self:TrySetComponentField(fireComponent, "ProjectileSpeed", 25.0)
+            self:TrySetComponentField(fireComponent, "ProjectileRange", 20.0)
+            self:TrySetComponentField(fireComponent, "ProjectileLifetime", 2.0)
+            self:TrySetComponentField(fireComponent, "BaseWeaponAttack", 10)
+            self:TrySetComponentField(fireComponent, "CanAttack", true)
         end
 
         if weaponSwapComponent ~= nil and isvalid(weaponSwapComponent) == true then
@@ -134,36 +134,36 @@ script Map01BootstrapComponent extends Component
         end
 
         if tagComponent ~= nil and isvalid(tagComponent) == true then
-            tagComponent.TagCooldown = 3.0
-            tagComponent.IsTagLocked = false
+            self:TrySetComponentField(tagComponent, "TagCooldown", 3.0)
+            self:TrySetComponentField(tagComponent, "IsTagLocked", false)
         end
 
         if timerComponent ~= nil and isvalid(timerComponent) == true then
-            timerComponent.CurrentStageId = 1
+            self:TrySetComponentField(timerComponent, "CurrentStageId", 1)
         end
 
         if rankingComponent ~= nil and isvalid(rankingComponent) == true then
-            rankingComponent.MinimumValidTime = 3.0
+            self:TrySetComponentField(rankingComponent, "MinimumValidTime", 3.0)
         end
 
         if lobbyFlowComponent ~= nil and isvalid(lobbyFlowComponent) == true then
             if self.EnableLobbyMapSplit == true then
-                lobbyFlowComponent.EnableLobbyFlow = true
-                lobbyFlowComponent.UseMapSplit = true
+                self:TrySetComponentField(lobbyFlowComponent, "EnableLobbyFlow", true)
+                self:TrySetComponentField(lobbyFlowComponent, "UseMapSplit", true)
 
                 if self.LobbyMapName ~= nil and self.LobbyMapName ~= "" then
-                    lobbyFlowComponent.LobbyMapName = self.LobbyMapName
+                    self:TrySetComponentField(lobbyFlowComponent, "LobbyMapName", self.LobbyMapName)
                 end
                 if self.InGameMapName ~= nil and self.InGameMapName ~= "" then
-                    lobbyFlowComponent.InGameMapName = self.InGameMapName
+                    self:TrySetComponentField(lobbyFlowComponent, "InGameMapName", self.InGameMapName)
                 end
-                lobbyFlowComponent.InGameSpawnPosition = self.InGameSpawnPosition
+                self:TrySetComponentField(lobbyFlowComponent, "InGameSpawnPosition", self.InGameSpawnPosition)
             else
                 if lobbyFlowComponent.LobbyMapName == nil or lobbyFlowComponent.LobbyMapName == "" then
-                    lobbyFlowComponent.LobbyMapName = self.TargetMapName
+                    self:TrySetComponentField(lobbyFlowComponent, "LobbyMapName", self.TargetMapName)
                 end
                 if lobbyFlowComponent.InGameMapName == nil or lobbyFlowComponent.InGameMapName == "" then
-                    lobbyFlowComponent.InGameMapName = self.TargetMapName
+                    self:TrySetComponentField(lobbyFlowComponent, "InGameMapName", self.TargetMapName)
                 end
             end
         end
@@ -183,10 +183,12 @@ script Map01BootstrapComponent extends Component
         end
 
         if reloadComponent ~= nil and isvalid(reloadComponent) == true then
-            reloadComponent:SetSlotAmmo(1, 12)
-            reloadComponent:SetSlotAmmo(2, 8)
-            reloadComponent:SetSlotAmmo(3, 30)
-            reloadComponent:SetSlotAmmo(4, 4)
+            if self:HasComponentMember(reloadComponent, "SetSlotAmmo") == true then
+                reloadComponent:SetSlotAmmo(1, 12)
+                reloadComponent:SetSlotAmmo(2, 8)
+                reloadComponent:SetSlotAmmo(3, 30)
+                reloadComponent:SetSlotAmmo(4, 4)
+            end
         end
     end
 
@@ -195,10 +197,10 @@ script Map01BootstrapComponent extends Component
     method void RebindRuntimeReferences(Entity playerEntity)
         local projectileTemplate = self:FindMapEntityByName(self.ProjectileTemplateName)
 
-        local fireComponent = playerEntity:GetComponent("FireSystemComponent")
+        local fireComponent = self:FindProjectComponent(playerEntity, "FireSystemComponent", "FireCooldown")
         if fireComponent ~= nil and isvalid(fireComponent) == true then
-            fireComponent.ProjectileTemplateEntity = projectileTemplate
-            fireComponent.ProjectileModelId = ""
+            self:TrySetComponentField(fireComponent, "ProjectileTemplateEntity", projectileTemplate)
+            self:TrySetComponentField(fireComponent, "ProjectileModelId", "")
         end
     end
 
@@ -269,4 +271,114 @@ script Map01BootstrapComponent extends Component
 
         return added
     end
+
+    -- Tries to find a ProjectGR script component with script-prefix and plain-name fallback.
+    method Component FindProjectComponent(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+        if scriptName == nil or scriptName == "" then
+            return nil
+        end
+
+        local prefixedName = "script." .. scriptName
+        local prefixedComponent = targetEntity:GetComponent(prefixedName)
+        if self:HasComponentMember(prefixedComponent, markerField) == true then
+            return prefixedComponent
+        end
+
+        local plainComponent = targetEntity:GetComponent(scriptName)
+        if self:HasComponentMember(plainComponent, markerField) == true then
+            return plainComponent
+        end
+
+        return nil
+    end
+
+    -- Adds script component safely and validates member marker to avoid native-name collisions.
+    method Component GetOrAddProjectComponent(Entity targetEntity, string scriptName, string markerField)
+        local found = self:FindProjectComponent(targetEntity, scriptName, markerField)
+        if found ~= nil and isvalid(found) == true then
+            return found
+        end
+
+        local prefixedName = "script." .. scriptName
+        local addedPrefixed = self:AddOrGetComponent(targetEntity, prefixedName)
+        if self:HasComponentMember(addedPrefixed, markerField) == true then
+            return addedPrefixed
+        end
+        if addedPrefixed ~= nil and isvalid(addedPrefixed) == true then
+            log_warning("[Map01BootstrapComponent] Prefixed component missing marker: ", prefixedName, ", marker=", markerField)
+        end
+
+        local addedPlain = self:AddOrGetComponent(targetEntity, scriptName)
+        if self:HasComponentMember(addedPlain, markerField) == true then
+            return addedPlain
+        end
+        if addedPlain ~= nil and isvalid(addedPlain) == true then
+            log_warning("[Map01BootstrapComponent] Plain component missing marker: ", scriptName, ", marker=", markerField)
+        end
+
+        local fallback = self:FindProjectComponent(targetEntity, scriptName, markerField)
+        if fallback ~= nil and isvalid(fallback) == true then
+            return fallback
+        end
+
+        log_warning("[Map01BootstrapComponent] Could not resolve script component: ", scriptName, ", marker=", markerField)
+        return nil
+    end
+
+    method boolean HasComponentMember(any targetComponent, string memberName)
+        if targetComponent == nil or isvalid(targetComponent) == false then
+            return false
+        end
+        if memberName == nil or memberName == "" then
+            return true
+        end
+
+        local readOk, readValue = pcall(function()
+            return targetComponent[memberName]
+        end)
+        if readOk == false then
+            return false
+        end
+
+        if readValue ~= nil then
+            return true
+        end
+
+        -- nil 값 프로퍼티도 존재 필드일 수 있으므로 동일값 재대입 가능 여부로 최종 판정한다.
+        local writeOk, _ = pcall(function()
+            targetComponent[memberName] = readValue
+        end)
+        return writeOk
+    end
+
+    method boolean TrySetComponentField(any targetComponent, string fieldName, any value)
+        if self:HasComponentMember(targetComponent, fieldName) == false then
+            log_warning("[Map01BootstrapComponent] Missing field on component: ", fieldName)
+            return false
+        end
+
+        local ok, _ = pcall(function()
+            targetComponent[fieldName] = value
+        end)
+        if ok == false then
+            log_warning("[Map01BootstrapComponent] Failed to set field: ", fieldName)
+            return false
+        end
+
+        return true
+    end
 end
+
+
+
+
+
+
+
+
+
+
+

@@ -12,6 +12,22 @@ script TagManagerComponent extends Component
 
     property table Character1_Data = {}
     property table Character2_Data = {}
+    property boolean EnableCharacterVisualSwap = true
+    property Color Character1VisualColor = Color(1, 0.9, 0.9, 1)
+    property Color Character2VisualColor = Color(0.8, 0.95, 1, 1)
+    property number Character1VisualAlpha = 1
+    property number Character2VisualAlpha = 1
+    property boolean EnableEntrySkill = true
+    property string EntrySkillTargetCollisionGroupName = "Enemy"
+    property string EntrySkillTargetHPComponentName = "HPSystemComponent"
+    property integer Character1EntrySkillDamage = 14
+    property integer Character2EntrySkillDamage = 18
+    property number Character1EntrySkillRadius = 2.2
+    property number Character2EntrySkillRadius = 2.8
+    property integer EntrySkillMaxTargets = 8
+    property number EntrySkillFlashDuration = 0.15
+    property Color Character1EntrySkillFlashColor = Color(1, 0.8, 0.55, 1)
+    property Color Character2EntrySkillFlashColor = Color(0.55, 0.85, 1, 1)
 
     -- 서버 초기화에서 현재 상태를 캐릭터1 기준 스냅샷으로 저장해 첫 태그 시점 누락을 방지한다.
     @ExecSpace("ServerOnly")
@@ -26,6 +42,22 @@ script TagManagerComponent extends Component
 
         self.Character1_Data = self:CaptureCurrentCharacterState()
         self.Character2_Data = self:CloneTable(self.Character1_Data)
+    end
+
+    -- 클라이언트 진입 시 현재 캐릭터 외형을 즉시 적용해 교체 상태와 시각 정보를 일치시킨다.
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self:ApplyCharacterVisualClient(self.CurrentCharIndex)
+    end
+
+    -- CurrentCharIndex 동기화 시 외형을 다시 적용해 원격/지연 동기 환경에서도 표현을 유지한다.
+    @ExecSpace("ClientOnly")
+    method void OnSyncProperty(string propertyName, any value)
+        if propertyName ~= "CurrentCharIndex" then
+            return
+        end
+
+        self:ApplyCharacterVisualClient(self.CurrentCharIndex)
     end
 
     -- 태그 키 입력은 클라이언트에서 받고 실제 캐릭터 스왑은 서버에서만 수행한다.
@@ -71,6 +103,7 @@ script TagManagerComponent extends Component
         self:LoadCharacterState(nextIndex)
 
         self.CurrentCharIndex = nextIndex
+        self:ApplyCharacterVisualClient(nextIndex)
         self:ApplyTagInvincibleWindow()
         self:StartTagCooldown()
         self:TriggerEntrySkill(nextIndex)
@@ -255,10 +288,196 @@ script TagManagerComponent extends Component
         self._T.TagCooldownTimerId = _TimerService:SetTimerOnce(releaseTagCooldown, math.max(self.TagCooldown, 0))
     end
 
-    -- 엔트리 스킬은 호출 포인트만 남겨 캐릭터별 스킬 확장을 무중단으로 연결한다.
+    -- 엔트리 스킬은 서버에서 판정하고 클라이언트는 연출만 처리해 치트와 과부하를 동시에 줄인다.
     @ExecSpace("ServerOnly")
     method void TriggerEntrySkill(integer charIndex)
-        log("[TagManagerComponent] EntrySkill hook called. charIndex=", charIndex)
+        if self.EnableEntrySkill == false then
+            return
+        end
+
+        local skillDamage = self:GetEntrySkillDamage(charIndex)
+        local skillRadius = self:GetEntrySkillRadius(charIndex)
+        if skillDamage <= 0 or skillRadius <= 0 then
+            return
+        end
+
+        local hitCount = self:ApplyEntrySkillDamageServer(skillDamage, skillRadius)
+        self:PlayEntrySkillFlashClient(charIndex)
+        log("[TagManagerComponent] EntrySkill fired. charIndex=", charIndex, ", hitCount=", hitCount)
+    end
+
+    -- 캐릭터별 외형 설정을 클라이언트에 반영해 태그 직후 어떤 캐릭터인지 즉시 식별되게 한다.
+    @ExecSpace("Client")
+    method void ApplyCharacterVisualClient(integer charIndex)
+        if self.EnableCharacterVisualSwap == false then
+            return
+        end
+
+        local visualColor = self:GetCharacterVisualColor(charIndex)
+        local visualAlpha = self:GetCharacterVisualAlpha(charIndex)
+
+        local avatarRenderer = self.Entity.AvatarRendererComponent
+        if avatarRenderer ~= nil and isvalid(avatarRenderer) == true then
+            avatarRenderer:SetColor(visualColor.r, visualColor.g, visualColor.b, visualColor.a)
+            avatarRenderer:SetAlpha(visualAlpha)
+        end
+
+        local spriteRenderer = self.Entity.SpriteRendererComponent
+        if spriteRenderer ~= nil and isvalid(spriteRenderer) == true then
+            spriteRenderer.Color = visualColor
+            spriteRenderer:SetAlpha(visualAlpha)
+        end
+    end
+
+    -- 엔트리 스킬은 충돌 시뮬레이터로 범위 내 타겟을 조회해 서버 권위 데미지를 적용한다.
+    @ExecSpace("ServerOnly")
+    method integer ApplyEntrySkillDamageServer(integer damage, number radius)
+        if self.EntrySkillTargetCollisionGroupName == nil or self.EntrySkillTargetCollisionGroupName == "" then
+            return 0
+        end
+        if self.EntrySkillTargetHPComponentName == nil or self.EntrySkillTargetHPComponentName == "" then
+            return 0
+        end
+
+        local mapName = self.Entity.CurrentMapName
+        if mapName == nil or mapName == "" then
+            return 0
+        end
+
+        local transform = self.Entity.TransformComponent
+        if transform == nil or isvalid(transform) == false then
+            return 0
+        end
+
+        local simulator = _CollisionService:GetSimulator(mapName)
+        if simulator == nil then
+            return 0
+        end
+
+        local worldPosition = transform.WorldPosition
+        local center = Vector2(worldPosition.x, worldPosition.y)
+        local overlappedComponents = simulator:OverlapCircleAll(self.EntrySkillTargetCollisionGroupName, center, radius)
+        if overlappedComponents == nil then
+            return 0
+        end
+
+        local hitCount = 0
+        local maxTargets = math.max(self.EntrySkillMaxTargets, 1)
+        local visitedEntityMap = {}
+        for _, overlappedComponent in pairs(overlappedComponents) do
+            if hitCount >= maxTargets then
+                break
+            end
+            if overlappedComponent == nil or isvalid(overlappedComponent) == false then
+                continue
+            end
+
+            local targetEntity = overlappedComponent.Entity
+            if targetEntity == nil or isvalid(targetEntity) == false then
+                continue
+            end
+            if targetEntity == self.Entity then
+                continue
+            end
+
+            local targetId = targetEntity.Id
+            if targetId == nil then
+                continue
+            end
+            if visitedEntityMap[targetId] == true then
+                continue
+            end
+            visitedEntityMap[targetId] = true
+
+            local targetHp = targetEntity:GetComponent(self.EntrySkillTargetHPComponentName)
+            if targetHp == nil or isvalid(targetHp) == false then
+                continue
+            end
+            if targetHp.IsDead ~= nil and targetHp.IsDead == true then
+                continue
+            end
+
+            if targetHp.ApplyDamage ~= nil then
+                targetHp:ApplyDamage(damage)
+                hitCount += 1
+            end
+        end
+
+        return hitCount
+    end
+
+    -- 플래시 연출은 짧은 타이머로 복구해 전투 색상 설정이 누적 오염되지 않게 한다.
+    @ExecSpace("Client")
+    method void PlayEntrySkillFlashClient(integer charIndex)
+        local flashColor = self:GetEntrySkillFlashColor(charIndex)
+        local flashDuration = math.max(self.EntrySkillFlashDuration, 0.05)
+
+        local spriteRenderer = self.Entity.SpriteRendererComponent
+        if spriteRenderer ~= nil and isvalid(spriteRenderer) == true then
+            spriteRenderer.Color = flashColor
+        end
+
+        local avatarRenderer = self.Entity.AvatarRendererComponent
+        if avatarRenderer ~= nil and isvalid(avatarRenderer) == true then
+            avatarRenderer:SetColor(flashColor.r, flashColor.g, flashColor.b, flashColor.a)
+        end
+
+        if self._T.EntrySkillFlashTimerId ~= nil and self._T.EntrySkillFlashTimerId > 0 then
+            _TimerService:ClearTimer(self._T.EntrySkillFlashTimerId)
+            self._T.EntrySkillFlashTimerId = 0
+        end
+
+        local restoreVisual = function()
+            self._T.EntrySkillFlashTimerId = 0
+            self:ApplyCharacterVisualClient(self.CurrentCharIndex)
+        end
+
+        self._T.EntrySkillFlashTimerId = _TimerService:SetTimerOnce(restoreVisual, flashDuration)
+    end
+
+    -- 캐릭터별 외형색을 분리해 태그 상태 식별성을 높인다.
+    method Color GetCharacterVisualColor(integer charIndex)
+        if charIndex == 2 then
+            return self.Character2VisualColor
+        end
+
+        return self.Character1VisualColor
+    end
+
+    -- 캐릭터별 알파값으로 로컬 실험 시 외형 노출 정책을 빠르게 조정할 수 있게 한다.
+    method number GetCharacterVisualAlpha(integer charIndex)
+        if charIndex == 2 then
+            return math.max(0, math.min(self.Character2VisualAlpha, 1))
+        end
+
+        return math.max(0, math.min(self.Character1VisualAlpha, 1))
+    end
+
+    -- 엔트리 스킬 수치를 캐릭터별로 분기해 밸런스 조정 지점을 명확히 분리한다.
+    method integer GetEntrySkillDamage(integer charIndex)
+        if charIndex == 2 then
+            return math.max(self.Character2EntrySkillDamage, 0)
+        end
+
+        return math.max(self.Character1EntrySkillDamage, 0)
+    end
+
+    -- 엔트리 스킬 반경도 캐릭터별로 분리해 캐릭터 아이덴티티 확장 여지를 남긴다.
+    method number GetEntrySkillRadius(integer charIndex)
+        if charIndex == 2 then
+            return math.max(self.Character2EntrySkillRadius, 0)
+        end
+
+        return math.max(self.Character1EntrySkillRadius, 0)
+    end
+
+    -- 플래시 색상 분리로 캐릭터별 엔트리 스킬 시각 피드백을 구분한다.
+    method Color GetEntrySkillFlashColor(integer charIndex)
+        if charIndex == 2 then
+            return self.Character2EntrySkillFlashColor
+        end
+
+        return self.Character1EntrySkillFlashColor
     end
 
     -- 소유자 검증을 공통화해 태그 요청 보안 체크 누락을 방지한다.
@@ -309,3 +528,7 @@ script TagManagerComponent extends Component
         end
     end
 end
+
+
+
+
