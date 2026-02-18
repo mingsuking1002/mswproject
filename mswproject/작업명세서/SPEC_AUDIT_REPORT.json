@@ -1,0 +1,157 @@
+﻿{
+    "generated_at":  "2026-02-19 01:15:51",
+    "workspace_root":  "C:\\Users\\ksh00\\Documents\\GitHub\\mswproject\\mswproject",
+    "mode":  "deep",
+    "specs":  [
+                  {
+                      "name":  "SPEC_EngineSetup.md",
+                      "top":  "# 🟢 완료",
+                      "meta":  "**상태** 🟢 완료",
+                      "checked":  5,
+                      "unchecked_total":  5,
+                      "unchecked_non_backlog":  0,
+                      "map01":  0,
+                      "lobby_map":  0,
+                      "global__GRUtil":  0
+                  },
+                  {
+                      "name":  "SPEC_FireSystem.md",
+                      "top":  "# 🟢 완료",
+                      "meta":  "**상태** 🟢 완료",
+                      "checked":  7,
+                      "unchecked_total":  1,
+                      "unchecked_non_backlog":  0,
+                      "map01":  0,
+                      "lobby_map":  0,
+                      "global__GRUtil":  0
+                  },
+                  {
+                      "name":  "SPEC_HPSystem.md",
+                      "top":  "# 🟢 완료",
+                      "meta":  "**상태** 🟢 완료",
+                      "checked":  7,
+                      "unchecked_total":  1,
+                      "unchecked_non_backlog":  0,
+                      "map01":  0,
+                      "lobby_map":  0,
+                      "global__GRUtil":  0
+                  },
+                  {
+                      "name":  "SPEC_Lobby.md",
+                      "top":  "# 🟢 완료",
+                      "meta":  "**상태** 🟢 완료",
+                      "checked":  10,
+                      "unchecked_total":  2,
+                      "unchecked_non_backlog":  0,
+                      "map01":  0,
+                      "lobby_map":  0,
+                      "global__GRUtil":  0
+                  },
+                  {
+                      "name":  "SPEC_LobbyUIFix.md",
+                      "top":  "# 🟢 완료",
+                      "meta":  "**상태** 🟢 완료",
+                      "checked":  8,
+                      "unchecked_total":  3,
+                      "unchecked_non_backlog":  0,
+                      "map01":  0,
+                      "lobby_map":  0,
+                      "global__GRUtil":  0
+                  },
+                  {
+                      "name":  "SPEC_ModularRefactor.md",
+                      "top":  "# 🟢 완료",
+                      "meta":  "**상태** 🟢 완료",
+                      "checked":  9,
+                      "unchecked_total":  0,
+                      "unchecked_non_backlog":  0,
+                      "map01":  0,
+                      "lobby_map":  0,
+                      "global__GRUtil":  0
+                  },
+                  {
+                      "name":  "SPEC_Movement.md",
+                      "top":  "# 🟢 완료",
+                      "meta":  "**상태** 🟢 완료",
+                      "checked":  7,
+                      "unchecked_total":  1,
+                      "unchecked_non_backlog":  0,
+                      "map01":  0,
+                      "lobby_map":  0,
+                      "global__GRUtil":  0
+                  },
+                  {
+                      "name":  "SPEC_RankingSystem.md",
+                      "top":  "# 🟢 완료",
+                      "meta":  "**상태** 🟢 완료",
+                      "checked":  7,
+                      "unchecked_total":  1,
+                      "unchecked_non_backlog":  0,
+                      "map01":  0,
+                      "lobby_map":  0,
+                      "global__GRUtil":  0
+                  },
+                  {
+                      "name":  "SPEC_ReloadSystem.md",
+                      "top":  "# 🟢 완료",
+                      "meta":  "**상태** 🟢 완료",
+                      "checked":  7,
+                      "unchecked_total":  1,
+                      "unchecked_non_backlog":  0,
+                      "map01":  0,
+                      "lobby_map":  0,
+                      "global__GRUtil":  0
+                  },
+                  {
+                      "name":  "SPEC_SpeedrunTimer.md",
+                      "top":  "# 🟢 완료",
+                      "meta":  "**상태** 🟢 완료",
+                      "checked":  7,
+                      "unchecked_total":  1,
+                      "unchecked_non_backlog":  0,
+                      "map01":  0,
+                      "lobby_map":  0,
+                      "global__GRUtil":  0
+                  },
+                  {
+                      "name":  "SPEC_TagSystem.md",
+                      "top":  "# 🟢 완료",
+                      "meta":  "**상태** 🟢 완료",
+                      "checked":  7,
+                      "unchecked_total":  1,
+                      "unchecked_non_backlog":  0,
+                      "map01":  0,
+                      "lobby_map":  0,
+                      "global__GRUtil":  0
+                  },
+                  {
+                      "name":  "SPEC_WeaponSwap.md",
+                      "top":  "# 🟢 완료",
+                      "meta":  "**상태** 🟢 완료",
+                      "checked":  7,
+                      "unchecked_total":  1,
+                      "unchecked_non_backlog":  0,
+                      "map01":  0,
+                      "lobby_map":  0,
+                      "global__GRUtil":  0
+                  }
+              ],
+    "component_check":  {
+                            "mlua_count":  16,
+                            "codeblock_count":  16
+                        },
+    "fire_precondition":  {
+                              "default_projectile_model_id":  "",
+                              "has_template_entity":  true,
+                              "has_template_script_component":  true,
+                              "has_template_trigger_component":  true,
+                              "has_template_sprite_component":  false,
+                              "ok":  true
+                          },
+    "code_issues":  [
+
+                    ],
+    "doc_drift":  [
+
+                  ]
+}
