@@ -7,6 +7,8 @@ script RankingUIComponent extends Component
     property Entity MyRankTextEntity = nil
     property string RankingTextPath = "/ui/DefaultGroup/GRRankingText"
     property string MyRankTextPath = "/ui/DefaultGroup/GRMyRankText"
+    property string RankingTextFallbackPath = "/maps/map01/GRRankingText"
+    property string MyRankTextFallbackPath = "/maps/map01/GRMyRankText"
 
     -- 초기 진입 시 현재 탭 데이터를 즉시 조회해 빈 랭킹 UI 노출을 줄인다.
     @ExecSpace("ClientOnly")
@@ -81,8 +83,72 @@ script RankingUIComponent extends Component
     -- Resolves UI text entities by path to avoid map-text coupling.
     @ExecSpace("ClientOnly")
     method void ResolveUIEntitiesClient()
-        self.RankingTextEntity = self:ResolveTextEntityByPath(self.RankingTextEntity, self.RankingTextPath)
-        self.MyRankTextEntity = self:ResolveTextEntityByPath(self.MyRankTextEntity, self.MyRankTextPath)
+        self.RankingTextEntity = self:ResolveTextEntityWithFallback(self.RankingTextEntity, self.RankingTextPath, self.RankingTextFallbackPath)
+        self.MyRankTextEntity = self:ResolveTextEntityWithFallback(self.MyRankTextEntity, self.MyRankTextPath, self.MyRankTextFallbackPath)
+    end
+
+    -- LobbyFlow에서 랭킹 표시를 직접 토글할 수 있도록 엔티티 가시성 제어를 공개한다.
+    @ExecSpace("ClientOnly")
+    method void SetRankingVisibleClient(boolean visible)
+        self:ResolveUIEntitiesClient()
+        self:ApplyEntityVisibleStateClient(self.RankingTextEntity, visible)
+        self:ApplyEntityVisibleStateClient(self.MyRankTextEntity, visible)
+    end
+
+    -- UI 타입별 Enable/Visible 제어를 한곳에서 처리해 잔상 표시를 방지한다.
+    @ExecSpace("ClientOnly")
+    method void ApplyEntityVisibleStateClient(Entity targetEntity, boolean visible)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+
+        pcall(function()
+            targetEntity.Enable = visible
+        end)
+        pcall(function()
+            targetEntity.Visible = visible
+        end)
+
+        local textComponent = targetEntity.TextComponent
+        if textComponent ~= nil and isvalid(textComponent) == true then
+            pcall(function()
+                textComponent.Enable = visible
+            end)
+        end
+
+        local spriteGuiRenderer = targetEntity.SpriteGUIRendererComponent
+        if spriteGuiRenderer ~= nil and isvalid(spriteGuiRenderer) == true then
+            pcall(function()
+                spriteGuiRenderer.Enable = visible
+            end)
+        end
+
+        local canvasGroup = targetEntity.CanvasGroupComponent
+        if canvasGroup ~= nil and isvalid(canvasGroup) == true then
+            pcall(function()
+                canvasGroup.Alpha = visible and 1.0 or 0.0
+                canvasGroup.Interactable = visible
+            end)
+        end
+    end
+
+    -- UI 경로가 없으면 map 텍스트 경로로 폴백해 Maker 배치 차이를 흡수한다.
+    @ExecSpace("ClientOnly")
+    method Entity ResolveTextEntityWithFallback(Entity currentEntity, string primaryPath, string fallbackPath)
+        local resolved = self:ResolveTextEntityByPath(currentEntity, primaryPath)
+
+        local useFallback = false
+        if resolved == nil or isvalid(resolved) == false then
+            useFallback = true
+        elseif primaryPath ~= nil and primaryPath ~= "" and resolved.Path ~= primaryPath then
+            useFallback = true
+        end
+
+        if useFallback == true then
+            resolved = self:ResolveTextEntityByPath(resolved, fallbackPath)
+        end
+
+        return resolved
     end
 
     @ExecSpace("ClientOnly")

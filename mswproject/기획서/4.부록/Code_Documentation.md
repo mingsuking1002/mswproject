@@ -406,7 +406,7 @@
 
 ## [RankingUIComponent]
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/RankingUIComponent.codeblock`
-- **수정일:** `2026-02-17`
+- **수정일:** `2026-02-18`
 
 ### Properties
 | 이름 | 타입 | 설명 |
@@ -417,6 +417,8 @@
 | `MyRankTextEntity` | Entity | 내 순위 텍스트 UI 엔티티 |
 | `RankingTextPath` | string | Ranking list UI path (`/ui/DefaultGroup/GRRankingText`) |
 | `MyRankTextPath` | string | My-rank UI path (`/ui/DefaultGroup/GRMyRankText`) |
+| `RankingTextFallbackPath` | string | map fallback path (`/maps/map01/GRRankingText`) |
+| `MyRankTextFallbackPath` | string | map fallback path (`/maps/map01/GRMyRankText`) |
 
 ### Functions
 | 함수명 | 파라미터 | 리턴값 | 설명 |
@@ -427,6 +429,9 @@
 | `BuildRankingText` | `integer mode`, `table entries` | `string` | 리스트 렌더 문자열 생성 |
 | `BuildMyRankText` | `integer myRank`, `string myValue` | `string` | 내 순위 문자열 생성 |
 | `ResolveUIEntitiesClient` | void | void | Resolve ranking text entities from UI paths |
+| `SetRankingVisibleClient` | `boolean visible` | void | 로비/인게임 상태에 맞춰 랭킹 텍스트 가시성 강제 토글 |
+| `ApplyEntityVisibleStateClient` | `Entity targetEntity`, `boolean visible` | void | Entity/UI component별 Enable/Visible 안전 적용 |
+| `ResolveTextEntityWithFallback` | `Entity currentEntity`, `string primaryPath`, `string fallbackPath` | `Entity` | UI 경로 우선, 실패 시 map 경로 폴백 |
 | `ResolveTextEntityByPath` | `Entity currentEntity`, `string targetPath` | `Entity` | Shared resolver for UI text entities |
 
 ## [LobbyFlowComponent]
@@ -441,6 +446,7 @@
 | `UseMapSplit` | boolean | 로비/인게임 맵 분리 사용 여부 |
 | `LobbyMapName` | string | 로비 맵 이름 |
 | `InGameMapName` | string | 인게임 맵 이름 |
+| `LobbySpawnPosition` | Vector2 | 로비 맵 복귀 위치 |
 | `InGameSpawnPosition` | Vector2 | 인게임 진입 위치 |
 | `AutoOpenRankingOnLobby` | boolean | 로비 진입 시 랭킹 자동 조회 여부 |
 | `LobbyRankingTab` | integer | 로비에서 열 랭킹 탭 (1=TimeAttack, 2=Infinite) |
@@ -458,6 +464,8 @@
 | `StartButtonPath` | string | 시작 버튼 UI 경로 |
 | `RankingTextPath` | string | 랭킹 텍스트 UI 경로 |
 | `MyRankTextPath` | string | 내 순위 텍스트 UI 경로 |
+| `RankingTextFallbackPath` | string | map fallback 랭킹 텍스트 경로 (`/maps/map01/GRRankingText`) |
+| `MyRankTextFallbackPath` | string | map fallback 내 순위 텍스트 경로 (`/maps/map01/GRMyRankText`) |
 | `TimerTextPath` | string | 타이머 텍스트 UI 경로 |
 | `AttackButtonPath` | string | 공격 버튼 UI 경로 |
 | `JumpButtonPath` | string | 점프 버튼 UI 경로 |
@@ -473,7 +481,7 @@
 |---|---|---|---|
 | `OnInitialize` | void | void | 초기 로비 상태 설정 |
 | `OnBeginPlay` | void | void | 초기 서버/클라이언트 상태 적용 |
-| `OnMapEnter` | `Entity enteredMap` | void | 맵 분리 시 로비/인게임 상태 자동 동기화 |
+| `OnMapEnter` | void | void | 맵 분리 시 현재 맵명 기준으로 로비/인게임 상태 자동 동기화 |
 | `OnUpdate` | `number delta` | void | 클라이언트 UI 상태 폴링 및 바인딩 복구 (MapSplit 맵명 기반 상태를 주기적으로 강제 적용) |
 | `RequestStartGameServer` | void | void | 시작 버튼 서버 요청 처리 (맵 분리 시 즉시 인게임 상태 전환) |
 | `HandleRunCompletedServer` | `boolean isClear` | void | 결과 확정 시 타이머 종료/로비 복귀 처리 |
@@ -491,14 +499,19 @@
 | `SetPlayerVisualVisibleClient` | `boolean visible` | void | 플레이어 렌더 알파 토글 |
 | `SetCurrentMapLayerVisibleClient` | `boolean visible` | void | 현재 맵 레이어 가시성 토글 |
 | `MoveOwnerToInGameMapIfNeeded` | void | `boolean` | 맵 분리 모드에서 인게임 맵 이동 요청 성공 여부 반환 |
+| `MoveOwnerToLobbyMapIfNeeded` | void | `boolean` | 결과 확정 후 split-scene 로비 맵 이동 요청 성공 여부 반환 |
 | `ApplyLobbyUIClient` | `boolean isLobby` | void | 로비/인게임 UI 가시성 전환 |
-| `ResolveEffectiveLobbyStateClient` | void | `boolean` | MapSplit 시 현재 맵 이름 기준으로 로비 상태를 보정 |
+| `ResolveEffectiveLobbyStateClient` | void | `boolean` | MapSplit 시 현재 맵 이름 기준으로 로비 상태를 보정(불명확 시 인게임 기본값) |
 | `BindStartButtonClient` | void | `boolean` | 시작 버튼 클릭/프레스 이벤트 바인딩 |
 | `ScheduleStartButtonBindRetryClient` | void | void | UI 지연 로딩 시 바인딩 재시도 타이머 시작 |
 | `SetEntityEnableByPath` | `string entityPath`, `boolean enabled` | void | 경로 기반 UI 활성 상태 변경 |
+| `SetEntityEnableByPathIfExists` | `string entityPath`, `boolean enabled` | void | 폴백 경로를 경고 없이 가시성 적용 |
+| `ApplyEntityEnableStateClient` | `Entity targetEntity`, `boolean enabled` | void | UI 엔티티 Enable/Visible 적용 공통 처리 |
 | `TrySetComponentEnable` | `any targetComponent`, `boolean enabled` | void | UI 컴포넌트별 Enable 안전 적용 |
 | `TrySetEntityVisualAlpha` | `Entity targetEntity`, `boolean enabled` | void | Enable 적용 후에도 남는 UI 잔상을 알파로 강제 숨김 |
 | `ResolveEntityByPath` | `string entityPath` | `Entity` | 경로 기반 엔티티 조회 |
+| `NormalizeMapName` | `string mapName` | `string` | `/maps/map01`/`map01` 형태를 동일 비교용 키로 정규화 |
+| `IsMapNameMatched` | `string currentMapName`, `string targetMapName` | `boolean` | split-scene 맵명 비교 표준화 |
 | `IsRequestFromOwner` | void | `boolean` | 요청 소유자 검증 |
 | `OnEndPlay` | void | void | 클릭 이벤트 해제 |
 
@@ -513,6 +526,7 @@
 | `ProjectileTemplateName` | string | 발사 템플릿 엔티티 이름 |
 | `EnableLobbyMapSplit` | boolean | 로비/인게임 맵 분리 설정 주입 여부 |
 | `LobbyMapName` | string | 분리 모드 로비 맵 이름 |
+| `LobbySpawnPosition` | Vector2 | 분리 모드 로비 맵 이동 목표 좌표 |
 | `InGameMapName` | string | 분리 모드 인게임 맵 이름 |
 | `InGameSpawnPosition` | Vector2 | 인게임 맵 이동 목표 좌표 |
 

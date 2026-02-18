@@ -5,6 +5,7 @@ script Map01BootstrapComponent extends Component
     property string ProjectileTemplateName = "GRProjectileTemplate"
     property boolean EnableLobbyMapSplit = false
     property string LobbyMapName = "map01"
+    property Vector2 LobbySpawnPosition = Vector2(0, 0)
     property string InGameMapName = "map01"
     property Vector2 InGameSpawnPosition = Vector2(0, 0)
 
@@ -154,6 +155,7 @@ script Map01BootstrapComponent extends Component
                 if self.LobbyMapName ~= nil and self.LobbyMapName ~= "" then
                     self:TrySetComponentField(lobbyFlowComponent, "LobbyMapName", self.LobbyMapName)
                 end
+                self:TrySetComponentField(lobbyFlowComponent, "LobbySpawnPosition", self.LobbySpawnPosition)
                 if self.InGameMapName ~= nil and self.InGameMapName ~= "" then
                     self:TrySetComponentField(lobbyFlowComponent, "InGameMapName", self.InGameMapName)
                 end
@@ -371,7 +373,6 @@ script Map01BootstrapComponent extends Component
         return true
     end
 end
-
 
 
 

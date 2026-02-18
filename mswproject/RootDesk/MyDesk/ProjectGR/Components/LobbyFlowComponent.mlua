@@ -7,6 +7,7 @@ script LobbyFlowComponent extends Component
     property boolean UseMapSplit = false
     property string LobbyMapName = "map01"
     property string InGameMapName = "map01"
+    property Vector2 LobbySpawnPosition = Vector2(0, 0)
     property Vector2 InGameSpawnPosition = Vector2(0, 0)
 
     property boolean AutoOpenRankingOnLobby = true
@@ -27,6 +28,8 @@ script LobbyFlowComponent extends Component
     property string StartButtonPath = "/ui/DefaultGroup/GRStartButton"
     property string RankingTextPath = "/ui/DefaultGroup/GRRankingText"
     property string MyRankTextPath = "/ui/DefaultGroup/GRMyRankText"
+    property string RankingTextFallbackPath = "/maps/map01/GRRankingText"
+    property string MyRankTextFallbackPath = "/maps/map01/GRMyRankText"
     property string TimerTextPath = "/ui/DefaultGroup/GRTimerText"
     property string AttackButtonPath = "/ui/DefaultGroup/Button_Attack"
     property string JumpButtonPath = "/ui/DefaultGroup/Button_Jump"
@@ -60,15 +63,13 @@ script LobbyFlowComponent extends Component
         end
 
         local currentMapName = self.Entity.CurrentMapName
-        if currentMapName == self.LobbyMapName then
+        if self:IsMapNameMatched(currentMapName, self.LobbyMapName) == true then
             self:SetLobbyStateServer(true)
             return
         end
 
-        if self.InGameMapName ~= nil and self.InGameMapName ~= "" then
-            if currentMapName == self.InGameMapName then
-                self:SetLobbyStateServer(false)
-            end
+        if self:IsMapNameMatched(currentMapName, self.InGameMapName) == true then
+            self:SetLobbyStateServer(false)
         end
     end
 
@@ -114,7 +115,7 @@ script LobbyFlowComponent extends Component
         log("[LobbyFlowComponent] Start game accepted. user=", tostring(self.Entity.PlayerComponent.UserId))
         if self.UseMapSplit == true then
             if self.InGameMapName ~= nil and self.InGameMapName ~= "" then
-                if self.Entity.CurrentMapName == self.InGameMapName then
+                if self:IsMapNameMatched(self.Entity.CurrentMapName, self.InGameMapName) == true then
                     self:SetLobbyStateServer(false)
                     return
                 end
@@ -141,14 +142,26 @@ script LobbyFlowComponent extends Component
             timerComponent:CompleteRun()
         end
 
+        local movedToLobbyMap = false
         if self.ReturnToLobbyOnRunComplete == true then
-            self:SetLobbyStateServer(true)
+            if self.UseMapSplit == true then
+                movedToLobbyMap = self:MoveOwnerToLobbyMapIfNeeded()
+            end
+
+            -- split 이동 요청이 실패했을 때만 즉시 로비 상태를 적용한다.
+            if movedToLobbyMap == false then
+                self:SetLobbyStateServer(true)
+            end
         end
 
         if isClear == true then
             log("[LobbyFlowComponent] Run completed: CLEAR")
         else
             log("[LobbyFlowComponent] Run completed: FAIL")
+        end
+
+        if movedToLobbyMap == true then
+            log("[LobbyFlowComponent] Lobby map move requested: ", tostring(self.LobbyMapName))
         end
     end
 
@@ -238,7 +251,7 @@ script LobbyFlowComponent extends Component
         end
 
         if self.UseMapSplit == true then
-            if self.Entity.CurrentMapName == self.LobbyMapName then
+            if self:IsMapNameMatched(self.Entity.CurrentMapName, self.LobbyMapName) == true then
                 self:SetLobbyStateServer(true)
             else
                 self:SetLobbyStateServer(false)
@@ -473,7 +486,7 @@ script LobbyFlowComponent extends Component
         if self.InGameMapName == nil or self.InGameMapName == "" then
             return false
         end
-        if self.Entity.CurrentMapName == self.InGameMapName then
+        if self:IsMapNameMatched(self.Entity.CurrentMapName, self.InGameMapName) == true then
             return false
         end
 
@@ -483,6 +496,28 @@ script LobbyFlowComponent extends Component
         end
 
         playerComponent:MoveToMapPosition(self.InGameMapName, self.InGameSpawnPosition)
+        return true
+    end
+
+    -- 결과 확정 후 split-scene 로비 맵으로 이동시켜 로비 UI와 월드를 일치시킨다.
+    @ExecSpace("ServerOnly")
+    method boolean MoveOwnerToLobbyMapIfNeeded()
+        if self.UseMapSplit == false then
+            return false
+        end
+        if self.LobbyMapName == nil or self.LobbyMapName == "" then
+            return false
+        end
+        if self:IsMapNameMatched(self.Entity.CurrentMapName, self.LobbyMapName) == true then
+            return false
+        end
+
+        local playerComponent = self.Entity.PlayerComponent
+        if playerComponent == nil then
+            return false
+        end
+
+        playerComponent:MoveToMapPosition(self.LobbyMapName, self.LobbySpawnPosition)
         return true
     end
 
@@ -504,6 +539,8 @@ script LobbyFlowComponent extends Component
         end
         self:SetEntityEnableByPath(self.RankingTextPath, rankingVisible)
         self:SetEntityEnableByPath(self.MyRankTextPath, rankingVisible)
+        self:SetEntityEnableByPathIfExists(self.RankingTextFallbackPath, rankingVisible)
+        self:SetEntityEnableByPathIfExists(self.MyRankTextFallbackPath, rankingVisible)
 
         local timerVisible = (isLobby == false)
         if self.HideTimerDuringLobby == false then
@@ -519,8 +556,14 @@ script LobbyFlowComponent extends Component
         self:SetEntityEnableByPath(self.JumpButtonPath, combatHudVisible)
         self:SetEntityEnableByPath(self.JoystickPath, combatHudVisible)
 
+        local rankingUIComponent = self.Entity:GetComponent("RankingUIComponent")
+        if rankingUIComponent ~= nil and isvalid(rankingUIComponent) == true then
+            if rankingUIComponent.SetRankingVisibleClient ~= nil then
+                rankingUIComponent:SetRankingVisibleClient(rankingVisible)
+            end
+        end
+
         if isLobby == true and self.AutoOpenRankingOnLobby == true and previousLobbyState ~= true then
-            local rankingUIComponent = self.Entity:GetComponent("RankingUIComponent")
             if rankingUIComponent ~= nil and isvalid(rankingUIComponent) == true then
                 rankingUIComponent:OpenTab(self.LobbyRankingTab)
             end
@@ -542,14 +585,15 @@ script LobbyFlowComponent extends Component
         end
 
         local currentMapName = self.Entity.CurrentMapName
-        if self.InGameMapName ~= nil and self.InGameMapName ~= "" and currentMapName == self.InGameMapName then
+        if self:IsMapNameMatched(currentMapName, self.InGameMapName) == true then
             return false
         end
-        if self.LobbyMapName ~= nil and self.LobbyMapName ~= "" and currentMapName == self.LobbyMapName then
+        if self:IsMapNameMatched(currentMapName, self.LobbyMapName) == true then
             return true
         end
 
-        return self.IsLobbyActive
+        -- 맵명이 애매한 경우 로비 UI 잔류를 방지하기 위해 인게임 상태를 기본값으로 사용한다.
+        return false
     end
 
     @ExecSpace("ClientOnly")
@@ -640,6 +684,27 @@ script LobbyFlowComponent extends Component
             return
         end
 
+        self:ApplyEntityEnableStateClient(targetEntity, enabled)
+    end
+
+    -- 폴백 경로는 존재하지 않아도 정상 시나리오가 있으므로 경고 없이 시도만 수행한다.
+    @ExecSpace("ClientOnly")
+    method void SetEntityEnableByPathIfExists(string entityPath, boolean enabled)
+        local targetEntity = self:ResolveEntityByPath(entityPath)
+        if targetEntity == nil then
+            return
+        end
+
+        self:ApplyEntityEnableStateClient(targetEntity, enabled)
+    end
+
+    -- UI 타입별 Enable/Visible 제어를 한곳에서 처리해 상태 잔류를 방지한다.
+    @ExecSpace("ClientOnly")
+    method void ApplyEntityEnableStateClient(Entity targetEntity, boolean enabled)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+
         targetEntity.Enable = enabled
         pcall(function()
             targetEntity.Visible = enabled
@@ -721,6 +786,43 @@ script LobbyFlowComponent extends Component
         return targetEntity
     end
 
+    -- `/maps/map01` 형태와 `map01` 형태를 동일 맵명으로 취급해 비교 오류를 줄인다.
+    method string NormalizeMapName(string mapName)
+        if mapName == nil then
+            return ""
+        end
+
+        local normalized = tostring(mapName)
+        if normalized == "" then
+            return ""
+        end
+
+        local lastSlash = 0
+        local length = string.len(normalized)
+        for i = 1, length do
+            if string.sub(normalized, i, i) == "/" then
+                lastSlash = i
+            end
+        end
+
+        if lastSlash > 0 and lastSlash < length then
+            normalized = string.sub(normalized, lastSlash + 1, length)
+        end
+
+        return string.lower(normalized)
+    end
+
+    -- 맵명 비교를 표준화해 split-scene 전환 시 UI 상태 오판정을 방지한다.
+    method boolean IsMapNameMatched(string currentMapName, string targetMapName)
+        local normalizedCurrent = self:NormalizeMapName(currentMapName)
+        local normalizedTarget = self:NormalizeMapName(targetMapName)
+        if normalizedCurrent == "" or normalizedTarget == "" then
+            return false
+        end
+
+        return normalizedCurrent == normalizedTarget
+    end
+
     @ExecSpace("ServerOnly")
     method boolean IsRequestFromOwner()
         local playerComponent = self.Entity.PlayerComponent
@@ -734,8 +836,6 @@ script LobbyFlowComponent extends Component
         return senderUserId == playerComponent.UserId
     end
 end
-
-
 
 
 
