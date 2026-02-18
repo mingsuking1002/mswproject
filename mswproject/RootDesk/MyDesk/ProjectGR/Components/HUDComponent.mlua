@@ -1,0 +1,294 @@
+@Component
+script HUDComponent extends Component
+
+    property Entity HPTextEntity = nil
+    property Entity AmmoTextEntity = nil
+    property Entity CooldownTextEntity = nil
+    property Entity WeaponTextEntity = nil
+
+    property string HPTextPath = "/ui/DefaultGroup/GRHPText"
+    property string AmmoTextPath = "/ui/DefaultGroup/GRAmmoText"
+    property string CooldownTextPath = "/ui/DefaultGroup/GRCooldownText"
+    property string WeaponTextPath = "/ui/DefaultGroup/GRWeaponText"
+
+    property number UpdateInterval = 0.1
+    property boolean HideInLobby = true
+
+    -- Client initializes HUD entity references and starts low-frequency UI refresh loop.
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self:EnsureGRUtil()
+        self:ResolveTextEntitiesClient()
+        self:StartHUDLoopClient()
+        self:RefreshHUDClient()
+    end
+
+    -- Map enter re-resolves UI entities to avoid stale references after map transitions.
+    @ExecSpace("ClientOnly")
+    method void OnMapEnter(Entity enteredMap)
+        self:ResolveTextEntitiesClient()
+        self:RefreshHUDClient()
+    end
+
+    -- LobbyFlow calls this to apply visibility policy without touching text content logic.
+    @ExecSpace("Client")
+    method void ApplyLobbyStateClient(boolean isLobby)
+        local visible = true
+        if self.HideInLobby == true and isLobby == true then
+            visible = false
+        end
+
+        self:SetHUDVisibilityClient(visible)
+    end
+
+    -- Visibility setter toggles all configured HUD text entities together.
+    @ExecSpace("Client")
+    method void SetHUDVisibilityClient(boolean visible)
+        local texts = {
+            self:ResolveTextComponentClient(self.HPTextEntity, self.HPTextPath),
+            self:ResolveTextComponentClient(self.AmmoTextEntity, self.AmmoTextPath),
+            self:ResolveTextComponentClient(self.CooldownTextEntity, self.CooldownTextPath),
+            self:ResolveTextComponentClient(self.WeaponTextEntity, self.WeaponTextPath)
+        }
+
+        for _, textComponent in pairs(texts) do
+            if textComponent ~= nil and isvalid(textComponent) == true then
+                pcall(function()
+                    textComponent.Entity.Enable = visible
+                    textComponent.Entity.Visible = visible
+                end)
+            end
+        end
+    end
+
+    -- Refresh pulls gameplay state from combat components and updates HUD text accordingly.
+    @ExecSpace("ClientOnly")
+    method void RefreshHUDClient()
+        local hpText = self:ResolveTextComponentClient(self.HPTextEntity, self.HPTextPath)
+        local ammoText = self:ResolveTextComponentClient(self.AmmoTextEntity, self.AmmoTextPath)
+        local cooldownText = self:ResolveTextComponentClient(self.CooldownTextEntity, self.CooldownTextPath)
+        local weaponText = self:ResolveTextComponentClient(self.WeaponTextEntity, self.WeaponTextPath)
+
+        local hpComponent = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "CurrentHP")
+        if hpText ~= nil and hpComponent ~= nil then
+            local currentHp = 0
+            local maxHp = 0
+            local hpOk, _ = pcall(function()
+                currentHp = hpComponent.CurrentHP
+                maxHp = hpComponent.MaxHP
+            end)
+            if hpOk == true then
+                pcall(function()
+                    hpText.Text = "HP " .. tostring(currentHp) .. " / " .. tostring(maxHp)
+                end)
+            end
+        end
+
+        local reloadComponent = self:ResolveComponentSafe(self.Entity, "ReloadComponent", "CurrentAmmo")
+        if ammoText ~= nil and reloadComponent ~= nil then
+            local ammo = 0
+            local reloading = false
+            local ammoOk, _ = pcall(function()
+                ammo = reloadComponent.CurrentAmmo
+                reloading = reloadComponent.IsReloading
+            end)
+            if ammoOk == true then
+                local label = "AMMO " .. tostring(ammo)
+                if reloading == true then
+                    label = label .. " (RELOADING)"
+                end
+                pcall(function()
+                    ammoText.Text = label
+                end)
+            end
+        end
+
+        local fireComponent = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "IsFireReady")
+        if cooldownText ~= nil and fireComponent ~= nil then
+            local fireReady = true
+            local fireCooldown = 0
+            local cooldownOk, _ = pcall(function()
+                fireReady = fireComponent.IsFireReady
+                fireCooldown = fireComponent.FireCooldown
+            end)
+            if cooldownOk == true then
+                local label = "READY"
+                if fireReady == false then
+                    label = "COOLDOWN " .. tostring(fireCooldown)
+                end
+                pcall(function()
+                    cooldownText.Text = label
+                end)
+            end
+        end
+
+        local swapComponent = self:ResolveComponentSafe(self.Entity, "WeaponSwapComponent", "CurrentWeaponSlot")
+        if weaponText ~= nil and swapComponent ~= nil then
+            local slot = 1
+            local slotOk, _ = pcall(function()
+                slot = swapComponent.CurrentWeaponSlot
+            end)
+            if slotOk == true then
+                pcall(function()
+                    weaponText.Text = "WEAPON SLOT " .. tostring(slot)
+                end)
+            end
+        end
+
+        local lobbyFlow = self:ResolveComponentSafe(self.Entity, "LobbyFlowComponent", "IsLobbyActive")
+        if lobbyFlow ~= nil then
+            local lobbyOk, isLobby = pcall(function()
+                return lobbyFlow.IsLobbyActive
+            end)
+            if lobbyOk == true then
+                self:ApplyLobbyStateClient(isLobby)
+            end
+        end
+    end
+
+    -- Loop timer avoids heavy per-frame HUD operations while keeping text reasonably fresh.
+    @ExecSpace("ClientOnly")
+    method void StartHUDLoopClient()
+        if self._T.HUDTimerId ~= nil and self._T.HUDTimerId > 0 then
+            return
+        end
+
+        local interval = self.UpdateInterval
+        if interval <= 0 then
+            interval = 0.1
+        end
+
+        local tick = function()
+            self:RefreshHUDClient()
+        end
+
+        self._T.HUDTimerId = _TimerService:SetTimerRepeat(tick, interval, 0)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ResolveTextEntitiesClient()
+        if self.HPTextEntity == nil or isvalid(self.HPTextEntity) == false then
+            self.HPTextEntity = self:ResolveEntityByPath(self.HPTextPath)
+        end
+        if self.AmmoTextEntity == nil or isvalid(self.AmmoTextEntity) == false then
+            self.AmmoTextEntity = self:ResolveEntityByPath(self.AmmoTextPath)
+        end
+        if self.CooldownTextEntity == nil or isvalid(self.CooldownTextEntity) == false then
+            self.CooldownTextEntity = self:ResolveEntityByPath(self.CooldownTextPath)
+        end
+        if self.WeaponTextEntity == nil or isvalid(self.WeaponTextEntity) == false then
+            self.WeaponTextEntity = self:ResolveEntityByPath(self.WeaponTextPath)
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method Entity ResolveEntityByPath(string path)
+        if path == nil or path == "" then
+            return nil
+        end
+        local entity = _EntityService:GetEntityByPath(path)
+        if entity == nil or isvalid(entity) == false then
+            return nil
+        end
+        return entity
+    end
+
+    @ExecSpace("ClientOnly")
+    method TextComponent ResolveTextComponentClient(Entity entityRef, string path)
+        local target = entityRef
+        if target == nil or isvalid(target) == false then
+            target = self:ResolveEntityByPath(path)
+        end
+        if target == nil or isvalid(target) == false then
+            return nil
+        end
+        return target.TextComponent
+    end
+
+    -- EndPlay clears loop timer to prevent callback execution on destroyed HUD entities.
+    method void OnEndPlay()
+        if self._T.HUDTimerId ~= nil and self._T.HUDTimerId > 0 then
+            _TimerService:ClearTimer(self._T.HUDTimerId)
+            self._T.HUDTimerId = 0
+        end
+    end
+
+    -- Utility bootstrap first; fallback lookup remains when global util is unavailable.
+    method void EnsureGRUtil()
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, _ = pcall(function()
+                utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    method Component ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return _GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+end

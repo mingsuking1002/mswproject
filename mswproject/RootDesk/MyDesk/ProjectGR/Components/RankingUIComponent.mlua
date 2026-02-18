@@ -1,0 +1,358 @@
+@Component
+script RankingUIComponent extends Component
+
+    property integer CurrentTab = 1
+    property integer DisplayCount = 100
+
+    property Entity RankingTextEntity = nil
+    property Entity MyRankTextEntity = nil
+
+    property string RankingTextPath = "/ui/DefaultGroup/GRRankingText"
+    property string MyRankTextPath = "/ui/DefaultGroup/GRMyRankText"
+    property string RankingTextFallbackPath = ""
+    property string MyRankTextFallbackPath = ""
+
+    property number RefreshInterval = 2.0
+    property boolean AutoRefreshInLobbyOnly = true
+
+    -- Client starts periodic ranking refresh and renders initial placeholder text.
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self:EnsureGRUtil()
+        self.CurrentTab = self:NormalizeTab(self.CurrentTab)
+        self:ResolveTextEntitiesClient()
+        self:StartRefreshLoopClient()
+        self:RefreshRankingUIClient()
+    end
+
+    -- Map enter re-resolves UI entities then triggers immediate refresh to avoid stale references.
+    @ExecSpace("ClientOnly")
+    method void OnMapEnter(Entity enteredMap)
+        self:ResolveTextEntitiesClient()
+        self:RefreshRankingUIClient()
+    end
+
+    -- Optional tab toggle key for quick mode switch while testing ranking layout.
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        if event.key ~= KeyboardKey.Tab then
+            return
+        end
+
+        local nextTab = 2
+        if self.CurrentTab == 2 then
+            nextTab = 1
+        end
+        self:SetCurrentTabClient(nextTab)
+    end
+
+    -- Explicit tab setter keeps tab normalization and refresh side effects centralized.
+    @ExecSpace("ClientOnly")
+    method void SetCurrentTabClient(integer tab)
+        self.CurrentTab = self:NormalizeTab(tab)
+        self:RequestRankingSnapshotClient()
+    end
+
+    -- Client requests snapshot from server-side RankingComponent and then renders latest cached payload.
+    @ExecSpace("ClientOnly")
+    method void RequestRankingSnapshotClient()
+        local rankingComponent = self:ResolveComponentSafe(self.Entity, "RankingComponent", nil)
+        if rankingComponent == nil or rankingComponent.RequestRankingSnapshotServer == nil then
+            return
+        end
+
+        pcall(function()
+            rankingComponent.DisplayCount = self.DisplayCount
+        end)
+        pcall(function()
+            rankingComponent:RequestRankingSnapshotServer(self.CurrentTab)
+        end)
+    end
+
+    -- Refresh draws from RankingComponent's latest client-side snapshot cache.
+    @ExecSpace("ClientOnly")
+    method void RefreshRankingUIClient()
+        self:RequestRankingSnapshotClient()
+
+        local rankingComponent = self:ResolveComponentSafe(self.Entity, "RankingComponent", nil)
+        local topRows = {}
+        local myRow = nil
+
+        if rankingComponent ~= nil then
+            local rowsOk, rows = pcall(function()
+                return rankingComponent._T.LastTopRanks
+            end)
+            if rowsOk == true and rows ~= nil then
+                topRows = rows
+            end
+
+            local myOk, myValue = pcall(function()
+                return rankingComponent._T.LastMyRank
+            end)
+            if myOk == true then
+                myRow = myValue
+            end
+        end
+
+        self:RenderRankingTextClient(topRows)
+        self:RenderMyRankTextClient(myRow)
+    end
+
+    -- Ranking list text is formatted in a compact top-N table to match minimal lobby UI.
+    @ExecSpace("ClientOnly")
+    method void RenderRankingTextClient(table topRows)
+        local textComponent = self:ResolveRankingTextComponentClient()
+        if textComponent == nil then
+            return
+        end
+
+        local header = "[TOP " .. tostring(self.DisplayCount) .. "] "
+        if self.CurrentTab == 1 then
+            header = header .. "TIME ATTACK"
+        else
+            header = header .. "INFINITE"
+        end
+
+        local lines = {}
+        table.insert(lines, header)
+
+        local rowCount = 0
+        for _, row in pairs(topRows) do
+            rowCount += 1
+            if rowCount > self.DisplayCount then
+                break
+            end
+
+            local rank = tostring(row.Rank)
+            local nickname = tostring(row.Nickname)
+            local value = tostring(row.DisplayValue)
+            table.insert(lines, rank .. ". " .. nickname .. " - " .. value)
+        end
+
+        if rowCount == 0 then
+            table.insert(lines, "No ranking data.")
+        end
+
+        local body = table.concat(lines, "\n")
+        pcall(function()
+            textComponent.Text = body
+        end)
+    end
+
+    -- My-rank text is rendered separately so it can stay pinned regardless of top-list length.
+    @ExecSpace("ClientOnly")
+    method void RenderMyRankTextClient(table myRow)
+        local textComponent = self:ResolveMyRankTextComponentClient()
+        if textComponent == nil then
+            return
+        end
+
+        local line = "My Rank: -"
+        if myRow ~= nil then
+            local rankLabel = "-"
+            if myRow.Rank ~= nil and myRow.Rank > 0 then
+                rankLabel = tostring(myRow.Rank)
+            end
+
+            local scoreLabel = "-"
+            if myRow.DisplayValue ~= nil and myRow.DisplayValue ~= "" then
+                scoreLabel = tostring(myRow.DisplayValue)
+            end
+
+            line = "My Rank: " .. rankLabel .. " / " .. scoreLabel
+        end
+
+        pcall(function()
+            textComponent.Text = line
+        end)
+    end
+
+    -- LobbyFlow calls this to toggle ranking visibility without touching ranking data/render logic.
+    @ExecSpace("Client")
+    method void ApplyVisibilityClient(boolean visible)
+        local rankingText = self:ResolveRankingTextComponentClient()
+        if rankingText ~= nil then
+            pcall(function()
+                rankingText.Entity.Enable = visible
+                rankingText.Entity.Visible = visible
+            end)
+        end
+
+        local myRankText = self:ResolveMyRankTextComponentClient()
+        if myRankText ~= nil then
+            pcall(function()
+                myRankText.Entity.Enable = visible
+                myRankText.Entity.Visible = visible
+            end)
+        end
+    end
+
+    -- Refresh loop polls at low frequency to avoid heavy UI updates every frame.
+    @ExecSpace("ClientOnly")
+    method void StartRefreshLoopClient()
+        if self._T.RefreshTimerId ~= nil and self._T.RefreshTimerId > 0 then
+            return
+        end
+
+        local interval = self.RefreshInterval
+        if interval <= 0 then
+            interval = 2.0
+        end
+
+        local refreshTick = function()
+            if self.AutoRefreshInLobbyOnly == true then
+                local lobbyFlow = self:ResolveComponentSafe(self.Entity, "LobbyFlowComponent", "IsLobbyActive")
+                if lobbyFlow ~= nil then
+                    local lobbyOk, isLobby = pcall(function()
+                        return lobbyFlow.IsLobbyActive
+                    end)
+                    if lobbyOk == true and isLobby == false then
+                        return
+                    end
+                end
+            end
+
+            self:RefreshRankingUIClient()
+        end
+
+        self._T.RefreshTimerId = _TimerService:SetTimerRepeat(refreshTick, interval, 0)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ResolveTextEntitiesClient()
+        if self.RankingTextEntity == nil or isvalid(self.RankingTextEntity) == false then
+            self.RankingTextEntity = self:ResolveEntityByPathPair(self.RankingTextPath, self.RankingTextFallbackPath)
+        end
+        if self.MyRankTextEntity == nil or isvalid(self.MyRankTextEntity) == false then
+            self.MyRankTextEntity = self:ResolveEntityByPathPair(self.MyRankTextPath, self.MyRankTextFallbackPath)
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method Entity ResolveEntityByPathPair(string primaryPath, string fallbackPath)
+        local entity = nil
+        if primaryPath ~= nil and primaryPath ~= "" then
+            entity = _EntityService:GetEntityByPath(primaryPath)
+        end
+        if (entity == nil or isvalid(entity) == false) and fallbackPath ~= nil and fallbackPath ~= "" then
+            entity = _EntityService:GetEntityByPath(fallbackPath)
+        end
+        return entity
+    end
+
+    @ExecSpace("ClientOnly")
+    method TextComponent ResolveRankingTextComponentClient()
+        if self.RankingTextEntity == nil or isvalid(self.RankingTextEntity) == false then
+            self.RankingTextEntity = self:ResolveEntityByPathPair(self.RankingTextPath, self.RankingTextFallbackPath)
+        end
+        if self.RankingTextEntity == nil or isvalid(self.RankingTextEntity) == false then
+            return nil
+        end
+        return self.RankingTextEntity.TextComponent
+    end
+
+    @ExecSpace("ClientOnly")
+    method TextComponent ResolveMyRankTextComponentClient()
+        if self.MyRankTextEntity == nil or isvalid(self.MyRankTextEntity) == false then
+            self.MyRankTextEntity = self:ResolveEntityByPathPair(self.MyRankTextPath, self.MyRankTextFallbackPath)
+        end
+        if self.MyRankTextEntity == nil or isvalid(self.MyRankTextEntity) == false then
+            return nil
+        end
+        return self.MyRankTextEntity.TextComponent
+    end
+
+    method integer NormalizeTab(integer tab)
+        if math.floor(tab) == 2 then
+            return 2
+        end
+        return 1
+    end
+
+    -- EndPlay clears loop timer so refresh callbacks do not run on invalid UI references.
+    method void OnEndPlay()
+        if self._T.RefreshTimerId ~= nil and self._T.RefreshTimerId > 0 then
+            _TimerService:ClearTimer(self._T.RefreshTimerId)
+            self._T.RefreshTimerId = 0
+        end
+    end
+
+    -- Utility bootstrap first; fallback local lookup is retained when global util cannot be initialized.
+    method void EnsureGRUtil()
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, _ = pcall(function()
+                utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    method Component ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return _GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+end

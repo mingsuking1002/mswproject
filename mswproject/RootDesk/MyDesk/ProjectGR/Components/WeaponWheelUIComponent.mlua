@@ -1,0 +1,177 @@
+@Component
+script WeaponWheelUIComponent extends Component
+
+    property Entity WheelRoot = nil
+    property string WheelRootPath = "/ui/DefaultGroup/GRWeaponWheelRoot"
+    property boolean UseRootVisibleToggle = true
+    property number HighlightScale = 1.15
+    property number NormalScale = 1.0
+
+    -- Client initializes UI references once so swap menu updates remain lightweight.
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self:EnsureGRUtil()
+        self:ResolveWheelRootClient()
+        self:ApplyWeaponWheelStateClient(false, 1, 1)
+    end
+
+    -- Map enter re-resolves root because UI entities can be reconstructed across map changes.
+    @ExecSpace("ClientOnly")
+    method void OnMapEnter(Entity enteredMap)
+        self:ResolveWheelRootClient()
+        self:ApplyWeaponWheelStateClient(false, 1, 1)
+    end
+
+    -- Called by WeaponSwapComponent to render current visibility/highlight/current-slot state.
+    @ExecSpace("Client")
+    method void ApplyWeaponWheelStateClient(boolean visible, integer highlightedSlot, integer currentSlot)
+        local wheelRoot = self:ResolveWheelRootClient()
+        if wheelRoot == nil then
+            return
+        end
+
+        local finalHighlighted = self:ClampSlot(highlightedSlot)
+        local finalCurrent = self:ClampSlot(currentSlot)
+
+        if self.UseRootVisibleToggle == true then
+            pcall(function()
+                wheelRoot.Visible = visible
+            end)
+            pcall(function()
+                wheelRoot.Enable = visible
+            end)
+        end
+
+        for slot = 1, 4 do
+            local slotEntity = self:GetSlotEntityClient(slot)
+            if slotEntity ~= nil and isvalid(slotEntity) == true then
+                local isHighlighted = (slot == finalHighlighted)
+                local isCurrent = (slot == finalCurrent)
+                self:ApplySlotVisualClient(slotEntity, isHighlighted, isCurrent, visible)
+            end
+        end
+    end
+
+    -- Tag change closes wheel immediately so previous character selection highlight does not linger.
+    @ExecSpace("Client")
+    method void OnTagChangedClient(integer charIndex)
+        self:ApplyWeaponWheelStateClient(false, 1, 1)
+    end
+
+    -- Root resolve uses direct reference first and path fallback second for robust UI binding.
+    @ExecSpace("ClientOnly")
+    method Entity ResolveWheelRootClient()
+        if self.WheelRoot ~= nil and isvalid(self.WheelRoot) == true then
+            return self.WheelRoot
+        end
+        if self.WheelRootPath == nil or self.WheelRootPath == "" then
+            return nil
+        end
+
+        local root = _EntityService:GetEntityByPath(self.WheelRootPath)
+        if root == nil or isvalid(root) == false then
+            return nil
+        end
+
+        self.WheelRoot = root
+        return root
+    end
+
+    -- Slot entity search supports common naming variants to reduce hard dependency on one UI prefab.
+    @ExecSpace("ClientOnly")
+    method Entity GetSlotEntityClient(integer slot)
+        local wheelRoot = self:ResolveWheelRootClient()
+        if wheelRoot == nil then
+            return nil
+        end
+
+        local slotNameA = "Slot" .. tostring(slot)
+        local slotNameB = "GRWeaponSlot" .. tostring(slot)
+        local slotEntity = wheelRoot:GetChildByName(slotNameA, true)
+        if slotEntity == nil then
+            slotEntity = wheelRoot:GetChildByName(slotNameB, true)
+        end
+        return slotEntity
+    end
+
+    -- Visual policy scales highlighted/current slots and toggles child highlight marker when available.
+    @ExecSpace("ClientOnly")
+    method void ApplySlotVisualClient(Entity slotEntity, boolean isHighlighted, boolean isCurrent, boolean wheelVisible)
+        local targetScale = self.NormalScale
+        if isCurrent == true then
+            targetScale = math.max(targetScale, self.HighlightScale)
+        end
+        if isHighlighted == true then
+            targetScale = math.max(targetScale, self.HighlightScale + 0.05)
+        end
+
+        local uiTransform = slotEntity.UITransformComponent
+        if uiTransform ~= nil and isvalid(uiTransform) == true then
+            pcall(function()
+                uiTransform.UIScale = Vector3(targetScale, targetScale, 1)
+            end)
+        end
+
+        local marker = slotEntity:GetChildByName("Highlight", true)
+        if marker ~= nil and isvalid(marker) == true then
+            local markerVisible = wheelVisible and (isHighlighted or isCurrent)
+            pcall(function()
+                marker.Enable = markerVisible
+                marker.Visible = markerVisible
+            end)
+        end
+    end
+
+    method integer ClampSlot(integer slot)
+        local value = math.floor(slot)
+        if value < 1 then
+            return 1
+        end
+        if value > 4 then
+            return 4
+        end
+        return value
+    end
+
+    -- Utility bootstrap first; fallback local lookup remains when global util is unavailable.
+    method void EnsureGRUtil()
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, _ = pcall(function()
+                utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+end

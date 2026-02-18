@@ -301,8 +301,8 @@ script XxxComponent extends Component
 - [x] Phase 0: `GRUtilModule` 신규 구현 및 `_GRUtil` 등록
 - [x] Phase 1: `MovementComponent`, `CameraFollowComponent` 신규 구현
 - [x] Phase 2: `HPSystemComponent`, `FireSystemComponent`, `ProjectileComponent`, `ReloadComponent` 신규 구현
-- [ ] Phase 3: Meta 레이어 4종 컴포넌트
-- [ ] Phase 4: UI/Bootstrap 레이어 5종 컴포넌트
+- [x] Phase 3: `WeaponSwapComponent`, `TagManagerComponent`, `SpeedrunTimerComponent`, `RankingComponent` 신규 구현
+- [x] Phase 4: `WeaponWheelUIComponent`, `RankingUIComponent`, `HUDComponent`, `Map01BootstrapComponent`, `LobbyFlowComponent` 신규 구현
 - [ ] 전체 Phase 완료 후 상태 `🟢 완료` 전환
 
 ---
@@ -310,7 +310,7 @@ script XxxComponent extends Component
 ## 7. Phase 완료 시 갱신 대상
 
 - [ ] `기획서/0.개요/FOLDER_RULES.md` — 코드 구조 섹션 업데이트
-- [ ] `기획서/4.부록/Code_Documentation.md` — 전체 재작성
+- [x] `기획서/4.부록/Code_Documentation.md` — 전체 재작성
 - [ ] 본 SPEC 상태 `🟢 완료`로 변경
 
 ---

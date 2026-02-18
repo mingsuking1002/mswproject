@@ -1,0 +1,519 @@
+@Component
+script LobbyFlowComponent extends Component
+
+    @Sync
+    property boolean IsLobbyActive = true
+
+    property boolean EnableLobbyFlow = true
+    property boolean UseMapSplit = true
+    property string LobbyMapName = "lobby"
+    property string InGameMapName = "map01"
+    property Vector2 InGameSpawnPosition = Vector2(0, 0)
+
+    property boolean HideRankingDuringGameplay = true
+    property boolean HideTimerDuringLobby = true
+    property boolean HideCombatHUDInLobby = true
+    property boolean ReturnToLobbyOnRunComplete = true
+    property boolean EnableKeyboardStartFallback = false
+
+    property string StartButtonPath = "/ui/DefaultGroup/GRStartButton"
+    property string StartButtonFallbackPath = ""
+    property string RankingTextPath = "/ui/DefaultGroup/GRRankingText"
+    property string RankingTextFallbackPath = ""
+    property string MyRankTextPath = "/ui/DefaultGroup/GRMyRankText"
+    property string MyRankTextFallbackPath = ""
+    property string TimerTextPath = "/ui/DefaultGroup/GRTimerText"
+
+    -- Server initializes lobby state and utility bootstrap before gameplay begins.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self:EnsureGRUtil()
+        self._T.StartButtonHandler = nil
+    end
+
+    -- Server applies initial lock state once so lobby/in-game lock policy starts from authoritative state.
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        if self.EnableLobbyFlow == false then
+            return
+        end
+        self:ApplyInitialServerState()
+    end
+
+    -- Client refresh on map enter avoids one-frame stale UI during room/map transitions.
+    @ExecSpace("ClientOnly")
+    method void OnMapEnter(Entity enteredMap)
+        if self.EnableLobbyFlow == false then
+            return
+        end
+        self:BindStartButtonClient()
+        self:ApplyLobbyUIClient(self:ResolveEffectiveLobbyStateClient())
+    end
+
+    -- Button click is the primary start route; keyboard fallback is intentionally disabled by default.
+    @ExecSpace("ClientOnly")
+    method void HandleStartButtonClickClient(ButtonClickEvent event)
+        if self.EnableLobbyFlow == false then
+            return
+        end
+        if self.IsLobbyActive == false then
+            return
+        end
+
+        self:RequestStartGameServer()
+    end
+
+    -- Optional keyboard route remains behind explicit flag for emergency input fallback only.
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        if self.EnableKeyboardStartFallback == false then
+            return
+        end
+        if self.IsLobbyActive == false then
+            return
+        end
+
+        if event.key == KeyboardKey.Return or event.key == KeyboardKey.Space then
+            log("[LobbyFlowComponent] Keyboard start fallback used.")
+            self:RequestStartGameServer()
+        end
+    end
+
+    -- Client asks server to start run; server keeps final authority on lobby state changes.
+    @ExecSpace("Server")
+    method void RequestStartGameServer()
+        if self:IsOwnerRequest(senderUserId) == false then
+            return
+        end
+        if self.EnableLobbyFlow == false then
+            return
+        end
+        if self.IsLobbyActive == false then
+            return
+        end
+
+        self:SetLobbyStateServer(false)
+        self:MoveOwnerToInGameMapIfNeeded()
+        self:StartRunTimerServer()
+    end
+
+    -- Run completion path is shared by clear/fail flows and can return user to lobby map.
+    @ExecSpace("ServerOnly")
+    method void HandleRunCompletedServer(boolean isClear)
+        self:CompleteRunTimerServer()
+        if self.ReturnToLobbyOnRunComplete == false then
+            return
+        end
+
+        self:SetLobbyStateServer(true)
+        self:MoveOwnerToLobbyMapIfNeeded()
+    end
+
+    -- Stage-fail alias is referenced by HPSystem fallback flow.
+    @ExecSpace("ServerOnly")
+    method void HandleStageFailedServer()
+        self:HandleRunCompletedServer(false)
+    end
+
+    -- Initial server state aligns movement/attack/timer pause with current lobby flag.
+    @ExecSpace("ServerOnly")
+    method void ApplyInitialServerState()
+        self:SetLobbyStateServer(self.IsLobbyActive)
+    end
+
+    -- Lobby state setter centralizes lock/unlock and linked component policy updates.
+    @ExecSpace("ServerOnly")
+    method void SetLobbyStateServer(boolean isLobby)
+        self.IsLobbyActive = isLobby
+        self:ApplyGameplayLockByLobbyServer(isLobby)
+    end
+
+    -- Gameplay lock routes through shared components to keep server authority and state consistency.
+    @ExecSpace("ServerOnly")
+    method void ApplyGameplayLockByLobbyServer(boolean isLobby)
+        self:SetCanMoveSafely(not isLobby)
+        self:SetCanAttackSafely(not isLobby)
+
+        local timerComponent = self:ResolveComponentSafe(self.Entity, "SpeedrunTimerComponent", "IsRunning")
+        if timerComponent ~= nil and timerComponent.SetPauseSource ~= nil then
+            pcall(function()
+                timerComponent:SetPauseSource("Lobby", isLobby)
+            end)
+        end
+
+        local hudComponent = self:ResolveComponentSafe(self.Entity, "HUDComponent", nil)
+        if hudComponent ~= nil and hudComponent.ApplyLobbyStateClient ~= nil and self.HideCombatHUDInLobby == true then
+            pcall(function()
+                hudComponent:ApplyLobbyStateClient(isLobby)
+            end)
+        end
+    end
+
+    -- Client UI apply keeps visibility changes in one location to avoid split ownership bugs.
+    @ExecSpace("ClientOnly")
+    method void ApplyLobbyUIClient(boolean isLobby)
+        local startButton = self:ResolveEntityByPathPair(self.StartButtonPath, self.StartButtonFallbackPath)
+        if startButton ~= nil and isvalid(startButton) == true then
+            pcall(function()
+                startButton.Enable = isLobby
+                startButton.Visible = isLobby
+            end)
+        end
+
+        local rankingVisible = true
+        if self.HideRankingDuringGameplay == true and isLobby == false then
+            rankingVisible = false
+        end
+
+        local rankingText = self:ResolveEntityByPathPair(self.RankingTextPath, self.RankingTextFallbackPath)
+        if rankingText ~= nil and isvalid(rankingText) == true then
+            pcall(function()
+                rankingText.Enable = rankingVisible
+                rankingText.Visible = rankingVisible
+            end)
+        end
+
+        local myRankText = self:ResolveEntityByPathPair(self.MyRankTextPath, self.MyRankTextFallbackPath)
+        if myRankText ~= nil and isvalid(myRankText) == true then
+            pcall(function()
+                myRankText.Enable = rankingVisible
+                myRankText.Visible = rankingVisible
+            end)
+        end
+
+        local timerVisible = not isLobby
+        if self.HideTimerDuringLobby == true and isLobby == true then
+            timerVisible = false
+        end
+
+        local timerText = self:ResolveEntityByPathPair(self.TimerTextPath, "")
+        if timerText ~= nil and isvalid(timerText) == true then
+            pcall(function()
+                timerText.Enable = timerVisible
+                timerText.Visible = timerVisible
+            end)
+        end
+
+        local rankingUI = self:ResolveComponentSafe(self.Entity, "RankingUIComponent", nil)
+        if rankingUI ~= nil and rankingUI.ApplyVisibilityClient ~= nil then
+            pcall(function()
+                rankingUI:ApplyVisibilityClient(rankingVisible)
+            end)
+        end
+
+        local hudComponent = self:ResolveComponentSafe(self.Entity, "HUDComponent", nil)
+        if hudComponent ~= nil and hudComponent.ApplyLobbyStateClient ~= nil then
+            pcall(function()
+                hudComponent:ApplyLobbyStateClient(isLobby)
+            end)
+        end
+    end
+
+    -- Sync callback is main UI state trigger after server authoritative lobby flag changes.
+    @ExecSpace("ClientOnly")
+    method void OnSyncProperty(string propertyName, any value)
+        if propertyName ~= "IsLobbyActive" then
+            return
+        end
+        self:ApplyLobbyUIClient(self:ResolveEffectiveLobbyStateClient())
+    end
+
+    -- Resolves client-side lobby state with local fallback path for startup races.
+    @ExecSpace("ClientOnly")
+    method boolean ResolveEffectiveLobbyStateClient()
+        return self.IsLobbyActive
+    end
+
+    -- Binds start button once and connects click callback to server start request.
+    @ExecSpace("ClientOnly")
+    method void BindStartButtonClient()
+        if self._T.StartButtonHandler ~= nil then
+            return
+        end
+
+        local startButton = self:ResolveEntityByPathPair(self.StartButtonPath, self.StartButtonFallbackPath)
+        if startButton == nil or isvalid(startButton) == false then
+            return
+        end
+
+        if startButton.ButtonComponent == nil then
+            pcall(function()
+                startButton:AddComponent("MOD.Core.ButtonComponent")
+            end)
+        end
+
+        local callback = function(event)
+            self:HandleStartButtonClickClient(event)
+        end
+        self._T.StartButtonHandler = startButton:ConnectEvent(ButtonClickEvent, callback)
+    end
+
+    method Entity ResolveEntityByPathPair(string primaryPath, string fallbackPath)
+        local target = nil
+        if primaryPath ~= nil and primaryPath ~= "" then
+            target = _EntityService:GetEntityByPath(primaryPath)
+        end
+        if (target == nil or isvalid(target) == false) and fallbackPath ~= nil and fallbackPath ~= "" then
+            target = _EntityService:GetEntityByPath(fallbackPath)
+        end
+        return target
+    end
+
+    -- In-game map transition uses RoomService static-room move with target map name.
+    @ExecSpace("ServerOnly")
+    method boolean MoveOwnerToInGameMapIfNeeded()
+        if self.UseMapSplit == false then
+            return true
+        end
+
+        local userId = self:GetOwnerUserId()
+        if userId == nil or userId == "" then
+            return false
+        end
+
+        local moveOk, moved = pcall(function()
+            return _RoomService:MoveUserToStaticRoom(userId, self.InGameMapName)
+        end)
+        if moveOk == false then
+            return false
+        end
+        return moved
+    end
+
+    -- Lobby map transition mirrors in-game move path for consistent flow behavior.
+    @ExecSpace("ServerOnly")
+    method boolean MoveOwnerToLobbyMapIfNeeded()
+        if self.UseMapSplit == false then
+            return true
+        end
+
+        local userId = self:GetOwnerUserId()
+        if userId == nil or userId == "" then
+            return false
+        end
+
+        local moveOk, moved = pcall(function()
+            return _RoomService:MoveUserToStaticRoom(userId, self.LobbyMapName)
+        end)
+        if moveOk == false then
+            return false
+        end
+        return moved
+    end
+
+    -- Starts speedrun timer via dedicated component interface.
+    @ExecSpace("ServerOnly")
+    method void StartRunTimerServer()
+        local timerComponent = self:ResolveComponentSafe(self.Entity, "SpeedrunTimerComponent", "IsRunning")
+        if timerComponent == nil then
+            return
+        end
+
+        if timerComponent.StartRunWithCountdown ~= nil then
+            pcall(function()
+                timerComponent:StartRunWithCountdown()
+            end)
+            return
+        end
+
+        if timerComponent.StartRunNow ~= nil then
+            pcall(function()
+                timerComponent:StartRunNow()
+            end)
+        end
+    end
+
+    -- Completes timer flow using available interface (CompleteRun preferred).
+    @ExecSpace("ServerOnly")
+    method void CompleteRunTimerServer()
+        local timerComponent = self:ResolveComponentSafe(self.Entity, "SpeedrunTimerComponent", "IsRunning")
+        if timerComponent == nil then
+            return
+        end
+
+        if timerComponent.CompleteRun ~= nil then
+            pcall(function()
+                timerComponent:CompleteRun()
+            end)
+            return
+        end
+
+        if timerComponent.ResetRun ~= nil then
+            pcall(function()
+                timerComponent:ResetRun()
+            end)
+        end
+    end
+
+    -- Owner resolver is shared by room-move and request validation paths.
+    method string GetOwnerUserId()
+        local userId = ""
+
+        local playerComponent = self.Entity.PlayerComponent
+        if playerComponent ~= nil then
+            local playerOk, playerUserId = pcall(function()
+                return playerComponent.UserId
+            end)
+            if playerOk == true and playerUserId ~= nil and playerUserId ~= "" then
+                userId = playerUserId
+            end
+        end
+
+        if userId ~= "" then
+            return userId
+        end
+
+        local localPlayer = _UserService.LocalPlayer
+        if localPlayer ~= nil and isvalid(localPlayer) == true then
+            local localOk, localUserId = pcall(function()
+                return localPlayer.PlayerComponent.UserId
+            end)
+            if localOk == true and localUserId ~= nil then
+                return localUserId
+            end
+        end
+
+        return ""
+    end
+
+    -- Movement lock uses shared utility path first to keep cross-component writes consistent.
+    method boolean SetCanMoveSafely(boolean canMove)
+        if _GRUtil ~= nil and _GRUtil.TrySetCanMove ~= nil then
+            return _GRUtil.TrySetCanMove(self.Entity, canMove)
+        end
+
+        local movementComponent = self:ResolveComponentSafe(self.Entity, "MovementComponent", "CanMove")
+        if movementComponent == nil then
+            return false
+        end
+
+        local ok, _ = pcall(function()
+            movementComponent.CanMove = canMove
+        end)
+        return ok
+    end
+
+    -- Attack lock mirrors movement lock strategy and gracefully handles missing fire component.
+    method boolean SetCanAttackSafely(boolean canAttack)
+        local fireComponent = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "CanAttack")
+        if fireComponent == nil then
+            return false
+        end
+
+        if _GRUtil ~= nil and _GRUtil.TrySetField ~= nil then
+            return _GRUtil.TrySetField(fireComponent, "CanAttack", canAttack)
+        end
+
+        local ok, _ = pcall(function()
+            fireComponent.CanAttack = canAttack
+        end)
+        return ok
+    end
+
+    -- EndPlay unbinds button event handler to avoid duplicate callbacks on re-init.
+    method void OnEndPlay()
+        local startButton = self:ResolveEntityByPathPair(self.StartButtonPath, self.StartButtonFallbackPath)
+        if startButton ~= nil and self._T.StartButtonHandler ~= nil then
+            pcall(function()
+                startButton:DisconnectEvent(ButtonClickEvent, self._T.StartButtonHandler)
+            end)
+        end
+        self._T.StartButtonHandler = nil
+    end
+
+    -- Utility bootstrap first; fallback local lookup is retained when global utility is unavailable.
+    method void EnsureGRUtil()
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, _ = pcall(function()
+                utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    method Component ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return _GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+
+    method boolean IsOwnerRequest(string requestUserId)
+        if _GRUtil ~= nil and _GRUtil.IsOwner ~= nil then
+            return _GRUtil.IsOwner(self.Entity, requestUserId)
+        end
+
+        local playerComponent = self.Entity.PlayerComponent
+        if playerComponent == nil then
+            return true
+        end
+
+        if requestUserId == nil or requestUserId == "" then
+            return true
+        end
+
+        return requestUserId == playerComponent.UserId
+    end
+end

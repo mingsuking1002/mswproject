@@ -1,0 +1,544 @@
+@Component
+script TagManagerComponent extends Component
+
+    @Sync
+    property integer CurrentCharIndex = 1
+    property number TagCooldown = 3.0
+    @Sync
+    property boolean IsTagReady = true
+    property number InvincibleTime = 0.5
+    @Sync
+    property boolean IsTagLocked = false
+
+    property boolean DisableMoveDuringTag = true
+    property boolean CancelReloadOnTag = true
+    property number SwapLockDuration = 0.1
+
+    property string CharacterAAvatarRuid = ""
+    property string CharacterBAvatarRuid = ""
+
+    -- Server initializes character snapshot buffers so both characters keep independent combat state.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self:EnsureGRUtil()
+
+        self.CurrentCharIndex = self:ClampCharacterIndex(self.CurrentCharIndex)
+        self.IsTagReady = true
+        self._T.TagCooldownTimerId = 0
+        self._T.TagInvincibleTimerId = 0
+        self._T.TagUnlockTimerId = 0
+        self._T.IsTagInProgress = false
+
+        self._T.CharacterStates = {}
+        self._T.CharacterStates[1] = self:CaptureCurrentCharacterState()
+        self._T.CharacterStates[2] = self:CloneCharacterState(self._T.CharacterStates[1])
+    end
+
+    -- Client bootstraps utility so owner validation and component lookup conventions match other scripts.
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self:EnsureGRUtil()
+    end
+
+    -- Q requests server-authoritative tag swap; all swap decisions stay on server.
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        if event.key ~= KeyboardKey.Q then
+            return
+        end
+
+        self:RequestTagServer()
+    end
+
+    -- Server request entry checks ownership and state-gating before executing swap.
+    @ExecSpace("Server")
+    method void RequestTagServer()
+        if self:IsOwnerRequest(senderUserId) == false then
+            return
+        end
+        if self:CanTagServer() == false then
+            return
+        end
+
+        self:ExecuteTagSwapServer()
+    end
+
+    -- Gate keeps cooldown, lock, death, and swap-menu conflicts consistent in one place.
+    @ExecSpace("ServerOnly")
+    method boolean CanTagServer()
+        if self.Entity == nil or isvalid(self.Entity) == false then
+            return false
+        end
+        if self.IsTagLocked == true then
+            return false
+        end
+        if self.IsTagReady == false then
+            return false
+        end
+        if self._T.IsTagInProgress == true then
+            return false
+        end
+
+        local hpComponent = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "IsDead")
+        if hpComponent ~= nil then
+            local deadOk, isDead = pcall(function()
+                return hpComponent.IsDead
+            end)
+            if deadOk == true and isDead == true then
+                return false
+            end
+        end
+
+        local swapComponent = self:ResolveComponentSafe(self.Entity, "WeaponSwapComponent", "IsSwapMenuOpen")
+        if swapComponent ~= nil then
+            local menuOk, menuOpen = pcall(function()
+                return swapComponent.IsSwapMenuOpen
+            end)
+            if menuOk == true and menuOpen == true then
+                return false
+            end
+        end
+
+        return true
+    end
+
+    -- Core swap saves current character data and loads the standby character data atomically.
+    @ExecSpace("ServerOnly")
+    method void ExecuteTagSwapServer()
+        self._T.IsTagInProgress = true
+        local fromIndex = self:ClampCharacterIndex(self.CurrentCharIndex)
+        local toIndex = self:GetOtherCharacterIndex(fromIndex)
+
+        if self.DisableMoveDuringTag == true then
+            self:SetCanMoveSafely(false)
+        end
+
+        self:StoreCharacterState(fromIndex)
+        self:ApplyCharacterState(toIndex)
+        self.CurrentCharIndex = toIndex
+
+        self:ApplyCharacterVisualServer(toIndex)
+        self:ApplyInvincibleWindowServer()
+        self:TriggerEntrySkillServer(toIndex)
+        self:StartTagCooldownServer()
+        self:StartMovementUnlockServer()
+        self:NotifyTagChangedClient(toIndex)
+    end
+
+    -- Cooldown timer is server-driven to prevent client clock manipulation.
+    @ExecSpace("ServerOnly")
+    method void StartTagCooldownServer()
+        if self._T.TagCooldownTimerId ~= nil and self._T.TagCooldownTimerId > 0 then
+            _TimerService:ClearTimer(self._T.TagCooldownTimerId)
+            self._T.TagCooldownTimerId = 0
+        end
+
+        self.IsTagReady = false
+        local cooldown = math.max(self.TagCooldown, 0)
+
+        local restoreTagReady = function()
+            self.IsTagReady = true
+            self._T.TagCooldownTimerId = 0
+        end
+
+        self._T.TagCooldownTimerId = _TimerService:SetTimerOnce(restoreTagReady, cooldown)
+    end
+
+    -- Short movement unlock timer prevents immediate move while swap transition is still being applied.
+    @ExecSpace("ServerOnly")
+    method void StartMovementUnlockServer()
+        if self.DisableMoveDuringTag == false then
+            self:SetCanMoveSafely(true)
+            self._T.IsTagInProgress = false
+            return
+        end
+
+        if self._T.TagUnlockTimerId ~= nil and self._T.TagUnlockTimerId > 0 then
+            _TimerService:ClearTimer(self._T.TagUnlockTimerId)
+            self._T.TagUnlockTimerId = 0
+        end
+
+        local unlockDelay = math.max(self.SwapLockDuration, 0)
+        local unlockMove = function()
+            self:SetCanMoveSafely(true)
+            self._T.TagUnlockTimerId = 0
+            self._T.IsTagInProgress = false
+        end
+
+        self._T.TagUnlockTimerId = _TimerService:SetTimerOnce(unlockMove, unlockDelay)
+    end
+
+    -- Invincibility window protects tag entry frames and is always cleared by timer.
+    @ExecSpace("ServerOnly")
+    method void ApplyInvincibleWindowServer()
+        local hpComponent = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "IsInvincible")
+        if hpComponent == nil then
+            return
+        end
+
+        if self._T.TagInvincibleTimerId ~= nil and self._T.TagInvincibleTimerId > 0 then
+            _TimerService:ClearTimer(self._T.TagInvincibleTimerId)
+            self._T.TagInvincibleTimerId = 0
+        end
+
+        pcall(function()
+            hpComponent.IsInvincible = true
+        end)
+
+        local duration = math.max(self.InvincibleTime, 0)
+        local clearInvincible = function()
+            pcall(function()
+                hpComponent.IsInvincible = false
+            end)
+            self._T.TagInvincibleTimerId = 0
+        end
+
+        self._T.TagInvincibleTimerId = _TimerService:SetTimerOnce(clearInvincible, duration)
+    end
+
+    -- Captures HP/weapon/reload state snapshot for the currently active character.
+    @ExecSpace("ServerOnly")
+    method table CaptureCurrentCharacterState()
+        local state = {}
+        state.Timestamp = _UtilLogic.ServerElapsedSeconds
+
+        local hpComponent = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "CurrentHP")
+        if hpComponent ~= nil then
+            local hpOk, hpValue = pcall(function()
+                return hpComponent.CurrentHP
+            end)
+            if hpOk == true and hpValue ~= nil then
+                state.CurrentHP = hpValue
+            end
+        end
+
+        local swapComponent = self:ResolveComponentSafe(self.Entity, "WeaponSwapComponent", "CurrentWeaponSlot")
+        if swapComponent ~= nil and swapComponent.ExportWeaponSwapState ~= nil then
+            local exportOk, exportState = pcall(function()
+                return swapComponent:ExportWeaponSwapState()
+            end)
+            if exportOk == true and exportState ~= nil then
+                state.WeaponSwapState = exportState
+            end
+        end
+
+        local reloadComponent = self:ResolveComponentSafe(self.Entity, "ReloadComponent", "CurrentWeaponSlot")
+        if reloadComponent ~= nil then
+            local ammoBySlot = {}
+            local slotCount = 4
+            if swapComponent ~= nil then
+                local countOk, countValue = pcall(function()
+                    return swapComponent.WeaponSlotCount
+                end)
+                if countOk == true and countValue ~= nil then
+                    slotCount = math.max(1, math.floor(countValue))
+                end
+            end
+
+            for slot = 1, slotCount do
+                local ammoOk, ammoValue = pcall(function()
+                    return reloadComponent:GetSlotAmmo(slot)
+                end)
+                if ammoOk == true and ammoValue ~= nil then
+                    ammoBySlot[slot] = ammoValue
+                end
+            end
+
+            state.AmmoBySlot = ammoBySlot
+        end
+
+        return state
+    end
+
+    -- Applies target character snapshot and restores linked components to that state.
+    @ExecSpace("ServerOnly")
+    method void ApplyCharacterState(integer charIndex)
+        local targetIndex = self:ClampCharacterIndex(charIndex)
+        local state = self._T.CharacterStates[targetIndex]
+        if state == nil then
+            state = self:CaptureCurrentCharacterState()
+            self._T.CharacterStates[targetIndex] = state
+        end
+
+        local hpComponent = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "CurrentHP")
+        if hpComponent ~= nil and state.CurrentHP ~= nil then
+            pcall(function()
+                hpComponent.CurrentHP = math.max(0, math.floor(state.CurrentHP))
+                hpComponent.IsDead = (hpComponent.CurrentHP <= 0)
+            end)
+        end
+
+        local swapComponent = self:ResolveComponentSafe(self.Entity, "WeaponSwapComponent", "CurrentWeaponSlot")
+        if swapComponent ~= nil and state.WeaponSwapState ~= nil and swapComponent.ImportWeaponSwapState ~= nil then
+            pcall(function()
+                swapComponent:ImportWeaponSwapState(state.WeaponSwapState)
+            end)
+        end
+
+        local reloadComponent = self:ResolveComponentSafe(self.Entity, "ReloadComponent", "CurrentAmmo")
+        if reloadComponent ~= nil and state.AmmoBySlot ~= nil then
+            if self.CancelReloadOnTag == true then
+                pcall(function()
+                    reloadComponent:CancelCurrentReload()
+                end)
+            end
+            for slot, ammo in pairs(state.AmmoBySlot) do
+                pcall(function()
+                    reloadComponent:SetSlotAmmo(slot, ammo)
+                end)
+            end
+        end
+    end
+
+    -- Stores active character snapshot back into its index.
+    @ExecSpace("ServerOnly")
+    method void StoreCharacterState(integer charIndex)
+        local index = self:ClampCharacterIndex(charIndex)
+        self._T.CharacterStates[index] = self:CaptureCurrentCharacterState()
+    end
+
+    -- Avatar switch hook is optional and uses pcall so missing avatar APIs do not break swap flow.
+    @ExecSpace("ServerOnly")
+    method void ApplyCharacterVisualServer(integer charIndex)
+        local avatarRenderer = self.Entity.AvatarRendererComponent
+        if avatarRenderer == nil or isvalid(avatarRenderer) == false then
+            return
+        end
+
+        local targetRuid = self.CharacterAAvatarRuid
+        if self:ClampCharacterIndex(charIndex) == 2 then
+            targetRuid = self.CharacterBAvatarRuid
+        end
+        if targetRuid == nil or targetRuid == "" then
+            return
+        end
+
+        pcall(function()
+            avatarRenderer.CurrentBodyRuid = targetRuid
+        end)
+        pcall(function()
+            avatarRenderer.BodyRuid = targetRuid
+        end)
+        pcall(function()
+            avatarRenderer:ApplyBody(targetRuid)
+        end)
+    end
+
+    -- Entry-skill hook stays isolated so character-specific skill scripts can be added without rewiring tag flow.
+    @ExecSpace("ServerOnly")
+    method void TriggerEntrySkillServer(integer charIndex)
+        local entrySkill = self:ResolveComponentSafe(self.Entity, "TagEntrySkillComponent", nil)
+        if entrySkill ~= nil and entrySkill.TriggerEntrySkill ~= nil then
+            pcall(function()
+                entrySkill:TriggerEntrySkill(charIndex)
+            end)
+            return
+        end
+
+        log("[TagManagerComponent] Entry skill placeholder executed for char index: " .. tostring(charIndex))
+    end
+
+    -- Client callback keeps UI/avatar overlays synchronized with the current active character index.
+    @ExecSpace("Client")
+    method void NotifyTagChangedClient(integer charIndex)
+        local weaponUI = self:ResolveComponentSafe(self.Entity, "WeaponWheelUIComponent", nil)
+        if weaponUI ~= nil and weaponUI.OnTagChangedClient ~= nil then
+            pcall(function()
+                weaponUI:OnTagChangedClient(charIndex)
+            end)
+        end
+    end
+
+    -- External systems can lock/unlock tag by calling a dedicated server method.
+    @ExecSpace("ServerOnly")
+    method void SetTagLocked(boolean locked)
+        self.IsTagLocked = locked
+    end
+
+    -- Export API allows bootstrap/meta systems to snapshot per-character states externally.
+    @ExecSpace("ServerOnly")
+    method table ExportCharacterState(integer charIndex)
+        local index = self:ClampCharacterIndex(charIndex)
+        local state = self._T.CharacterStates[index]
+        if state == nil then
+            return nil
+        end
+        return self:CloneCharacterState(state)
+    end
+
+    -- Import API allows external recovery without direct table mutation.
+    @ExecSpace("ServerOnly")
+    method void ImportCharacterState(integer charIndex, table state)
+        if state == nil then
+            return
+        end
+        local index = self:ClampCharacterIndex(charIndex)
+        self._T.CharacterStates[index] = self:CloneCharacterState(state)
+    end
+
+    method integer ClampCharacterIndex(integer charIndex)
+        if math.floor(charIndex) <= 1 then
+            return 1
+        end
+        return 2
+    end
+
+    method integer GetOtherCharacterIndex(integer charIndex)
+        if self:ClampCharacterIndex(charIndex) == 1 then
+            return 2
+        end
+        return 1
+    end
+
+    -- Clone helper avoids accidental shared-table mutation between character snapshots.
+    method table CloneCharacterState(table source)
+        local clone = {}
+        if source == nil then
+            return clone
+        end
+
+        for key, value in pairs(source) do
+            if type(value) == "table" then
+                local nested = {}
+                for key2, value2 in pairs(value) do
+                    nested[key2] = value2
+                end
+                clone[key] = nested
+            else
+                clone[key] = value
+            end
+        end
+
+        return clone
+    end
+
+    -- Movement write uses shared util path first so all authority checks stay centralized.
+    method boolean SetCanMoveSafely(boolean canMove)
+        if _GRUtil ~= nil and _GRUtil.TrySetCanMove ~= nil then
+            return _GRUtil.TrySetCanMove(self.Entity, canMove)
+        end
+
+        local movementComponent = self:ResolveComponentSafe(self.Entity, "MovementComponent", "CanMove")
+        if movementComponent == nil then
+            return false
+        end
+
+        local ok, _ = pcall(function()
+            movementComponent.CanMove = canMove
+        end)
+        return ok
+    end
+
+    -- EndPlay clears timers so tag callbacks never fire on destroyed entities.
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self._T.TagCooldownTimerId ~= nil and self._T.TagCooldownTimerId > 0 then
+            _TimerService:ClearTimer(self._T.TagCooldownTimerId)
+            self._T.TagCooldownTimerId = 0
+        end
+        if self._T.TagInvincibleTimerId ~= nil and self._T.TagInvincibleTimerId > 0 then
+            _TimerService:ClearTimer(self._T.TagInvincibleTimerId)
+            self._T.TagInvincibleTimerId = 0
+        end
+        if self._T.TagUnlockTimerId ~= nil and self._T.TagUnlockTimerId > 0 then
+            _TimerService:ClearTimer(self._T.TagUnlockTimerId)
+            self._T.TagUnlockTimerId = 0
+        end
+    end
+
+    -- Utility bootstrap first; fallback local lookup is kept for resiliency when util component is missing.
+    method void EnsureGRUtil()
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, _ = pcall(function()
+                utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    method Component ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return _GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+
+    method boolean IsOwnerRequest(string requestUserId)
+        if _GRUtil ~= nil and _GRUtil.IsOwner ~= nil then
+            return _GRUtil.IsOwner(self.Entity, requestUserId)
+        end
+
+        local playerComponent = self.Entity.PlayerComponent
+        if playerComponent == nil then
+            return true
+        end
+
+        if requestUserId == nil or requestUserId == "" then
+            return true
+        end
+
+        return requestUserId == playerComponent.UserId
+    end
+end

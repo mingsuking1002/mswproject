@@ -1,0 +1,241 @@
+@Component
+script Map01BootstrapComponent extends Component
+
+    property boolean ConfigureOnBeginPlay = true
+    property boolean ConfigureOnUserEnter = true
+    property boolean AutoAttachMissingComponents = true
+
+    property boolean EnableLobbyMapSplit = true
+    property string LobbyMapName = "lobby"
+    property string InGameMapName = "map01"
+
+    -- Server initializes utility and sets up per-user configuration flow.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self:EnsureGRUtil()
+    end
+
+    -- BeginPlay configures already connected users so bootstrap works after hot-reload/rejoin.
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        if self.ConfigureOnBeginPlay == false then
+            return
+        end
+
+        local users = _UserService.UserEntities
+        if users == nil then
+            return
+        end
+
+        for userId, _ in pairs(users) do
+            self:ConfigurePlayerByUserIdServer(userId)
+        end
+    end
+
+    -- New users are configured at join time so required components are always attached.
+    @EventSender("Service", "UserService")
+    handler HandleUserEnterEvent(UserEnterEvent event)
+        if self.ConfigureOnUserEnter == false then
+            return
+        end
+        if event == nil then
+            return
+        end
+
+        self:ConfigurePlayerByUserIdServer(event.UserId)
+    end
+
+    -- User-id resolver entry keeps configuration path tolerant to timing of entity creation.
+    @ExecSpace("ServerOnly")
+    method void ConfigurePlayerByUserIdServer(string userId)
+        if userId == nil or userId == "" then
+            return
+        end
+
+        local userEntity = _UserService:GetUserEntityByUserId(userId)
+        if userEntity == nil or isvalid(userEntity) == false then
+            return
+        end
+
+        self:ConfigurePlayer(userEntity)
+    end
+
+    -- Public configuration API is used by workspace runbook and can be called manually if needed.
+    @ExecSpace("ServerOnly")
+    method void ConfigurePlayer(Entity playerEntity)
+        if playerEntity == nil or isvalid(playerEntity) == false then
+            return
+        end
+
+        if self.AutoAttachMissingComponents == true then
+            self:AttachRequiredComponentsServer(playerEntity)
+        end
+
+        local lobbyFlow = self:ResolveComponentSafe(playerEntity, "LobbyFlowComponent", "IsLobbyActive")
+        if lobbyFlow ~= nil then
+            pcall(function()
+                lobbyFlow.EnableLobbyFlow = true
+            end)
+            pcall(function()
+                lobbyFlow.UseMapSplit = self.EnableLobbyMapSplit
+            end)
+            pcall(function()
+                lobbyFlow.LobbyMapName = self.LobbyMapName
+            end)
+            pcall(function()
+                lobbyFlow.InGameMapName = self.InGameMapName
+            end)
+            if lobbyFlow.ApplyInitialServerState ~= nil then
+                pcall(function()
+                    lobbyFlow:ApplyInitialServerState()
+                end)
+            end
+        end
+    end
+
+    -- Required component list is attached idempotently via shared utility resolver.
+    @ExecSpace("ServerOnly")
+    method void AttachRequiredComponentsServer(Entity playerEntity)
+        local required = {
+            "GRUtilModule",
+            "MovementComponent",
+            "CameraFollowComponent",
+            "HPSystemComponent",
+            "ReloadComponent",
+            "FireSystemComponent",
+            "WeaponSwapComponent",
+            "TagManagerComponent",
+            "SpeedrunTimerComponent",
+            "RankingComponent",
+            "WeaponWheelUIComponent",
+            "RankingUIComponent",
+            "HUDComponent",
+            "LobbyFlowComponent"
+        }
+
+        for _, typeName in pairs(required) do
+            self:FindOrAddComponentSafe(playerEntity, typeName)
+        end
+    end
+
+    method Component FindOrAddComponentSafe(Entity targetEntity, string typeName)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if _GRUtil ~= nil and _GRUtil.FindOrAddComponent ~= nil then
+            return _GRUtil.FindOrAddComponent(targetEntity, typeName)
+        end
+
+        local existing = self:ResolveComponentSafe(targetEntity, typeName, nil)
+        if existing ~= nil then
+            return existing
+        end
+
+        local prefixedName = typeName
+        local plainName = typeName
+        if string.sub(typeName, 1, 7) == "script." then
+            plainName = string.sub(typeName, 8)
+        else
+            prefixedName = "script." .. typeName
+        end
+
+        local added = nil
+        local addOk1, addResult1 = pcall(function()
+            return targetEntity:AddComponent(prefixedName)
+        end)
+        if addOk1 == true then
+            added = addResult1
+        end
+
+        if added == nil then
+            local addOk2, addResult2 = pcall(function()
+                return targetEntity:AddComponent(plainName)
+            end)
+            if addOk2 == true then
+                added = addResult2
+            end
+        end
+
+        return added
+    end
+
+    -- Utility bootstrap first; fallback local lookup remains when global util registration fails.
+    method void EnsureGRUtil()
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, _ = pcall(function()
+                utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    method Component ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return _GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+end

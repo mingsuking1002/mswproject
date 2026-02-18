@@ -1,0 +1,678 @@
+@Component
+script WeaponSwapComponent extends Component
+
+    @Sync
+    property integer CurrentWeaponSlot = 1
+    property integer WeaponSlotCount = 4
+    @Sync
+    property boolean IsSwapMenuOpen = false
+
+    property table Weapon1_Data = {}
+    property table Weapon2_Data = {}
+    property table Weapon3_Data = {}
+    property table Weapon4_Data = {}
+
+    property boolean PauseGameplayByFlag = true
+    property boolean UseClientTimeScalePause = false
+    property boolean CancelReloadOnSwap = true
+    property integer DefaultAmmo = 30
+    property integer DefaultDamage = 10
+    property number DefaultFireCooldown = 0.5
+    property number DefaultReloadTime = 1.5
+
+    -- Server initializes deterministic slot state so tag/swap can load valid data even before first fire.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self:EnsureGRUtil()
+        self.CurrentWeaponSlot = self:ClampSlot(self.CurrentWeaponSlot)
+        self:InitializeSlotData()
+        self:ApplySlotDataToCombat(self.CurrentWeaponSlot)
+    end
+
+    -- Client initializes utility and local selection cache used by radial selection input.
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self:EnsureGRUtil()
+        self._T.PendingSlotClient = self.CurrentWeaponSlot
+    end
+
+    -- F toggles the menu, ESC cancels, and direction/mouse confirm follows the radial-selection intent.
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        local key = event.key
+
+        if key == KeyboardKey.F then
+            if self.IsSwapMenuOpen == true then
+                self:RequestCancelSwapMenuServer()
+            else
+                self:RequestOpenSwapMenuServer()
+            end
+            return
+        end
+
+        if self.IsSwapMenuOpen == false then
+            return
+        end
+
+        if key == KeyboardKey.Escape then
+            self:RequestCancelSwapMenuServer()
+            return
+        end
+
+        if key == KeyboardKey.W or key == KeyboardKey.D or key == KeyboardKey.S or key == KeyboardKey.A then
+            self._T.PendingSlotClient = self:DirectionKeyToSlot(key)
+            self:NotifySwapMenuClient(true, self._T.PendingSlotClient, self.CurrentWeaponSlot)
+            return
+        end
+
+        if key == KeyboardKey.Mouse0 or key == KeyboardKey.Space then
+            local selectedSlot = self._T.PendingSlotClient
+            if selectedSlot == nil then
+                selectedSlot = self.CurrentWeaponSlot
+            end
+            self:RequestConfirmSwapServer(selectedSlot)
+        end
+    end
+
+    -- Client-to-server request validates owner and state before opening menu.
+    @ExecSpace("Server")
+    method void RequestOpenSwapMenuServer()
+        if self:IsOwnerRequest(senderUserId) == false then
+            return
+        end
+        if self:IsSwapAvailableServer() == false then
+            return
+        end
+
+        self:OpenSwapMenuServer()
+    end
+
+    -- Cancel request keeps close/resume behavior in one authoritative server path.
+    @ExecSpace("Server")
+    method void RequestCancelSwapMenuServer()
+        if self:IsOwnerRequest(senderUserId) == false then
+            return
+        end
+        if self.IsSwapMenuOpen == false then
+            return
+        end
+
+        self:CloseSwapMenuServer()
+    end
+
+    -- Confirm request applies selected slot only on server to prevent client-side forced weapon changes.
+    @ExecSpace("Server")
+    method void RequestConfirmSwapServer(integer selectedSlot)
+        if self:IsOwnerRequest(senderUserId) == false then
+            return
+        end
+        if self.IsSwapMenuOpen == false then
+            return
+        end
+
+        local finalSlot = self:ClampSlot(selectedSlot)
+        self:ConfirmSwapServer(finalSlot)
+    end
+
+    -- Open transition pauses gameplay logic and blocks combat/movement inputs.
+    @ExecSpace("ServerOnly")
+    method void OpenSwapMenuServer()
+        if self.IsSwapMenuOpen == true then
+            return
+        end
+
+        self.IsSwapMenuOpen = true
+        self:SetGameplayLockServer(true)
+        self:NotifySwapMenuClient(true, self.CurrentWeaponSlot, self.CurrentWeaponSlot)
+    end
+
+    -- Close transition resumes gameplay and clears temporary UI state.
+    @ExecSpace("ServerOnly")
+    method void CloseSwapMenuServer()
+        if self.IsSwapMenuOpen == false then
+            return
+        end
+
+        self.IsSwapMenuOpen = false
+        self:SetGameplayLockServer(false)
+        self:NotifySwapMenuClient(false, self.CurrentWeaponSlot, self.CurrentWeaponSlot)
+    end
+
+    -- Slot confirmation snapshots previous slot runtime data before loading the new slot.
+    @ExecSpace("ServerOnly")
+    method void ConfirmSwapServer(integer selectedSlot)
+        if self.IsSwapMenuOpen == false then
+            return
+        end
+
+        local fromSlot = self.CurrentWeaponSlot
+        local toSlot = self:ClampSlot(selectedSlot)
+
+        self:CaptureRuntimeToSlot(fromSlot)
+        self.CurrentWeaponSlot = toSlot
+        self:ApplySlotDataToCombat(toSlot)
+        self:CloseSwapMenuServer()
+    end
+
+    -- Swap availability gate centralizes death/lock checks for consistent UX.
+    @ExecSpace("ServerOnly")
+    method boolean IsSwapAvailableServer()
+        if self.Entity == nil or isvalid(self.Entity) == false then
+            return false
+        end
+        if self.IsSwapMenuOpen == true then
+            return false
+        end
+
+        local hpComponent = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "IsDead")
+        if hpComponent ~= nil then
+            local deadOk, isDead = pcall(function()
+                return hpComponent.IsDead
+            end)
+            if deadOk == true and isDead == true then
+                return false
+            end
+        end
+
+        local tagManager = self:ResolveComponentSafe(self.Entity, "TagManagerComponent", "IsTagLocked")
+        if tagManager ~= nil then
+            local lockOk, isLocked = pcall(function()
+                return tagManager.IsTagLocked
+            end)
+            if lockOk == true and isLocked == true then
+                return false
+            end
+        end
+
+        return true
+    end
+
+    -- Slot data is initialized once so all slot read/write paths can assume schema presence.
+    @ExecSpace("ServerOnly")
+    method void InitializeSlotData()
+        self.Weapon1_Data = self:NormalizeSlotData(self.Weapon1_Data, 1)
+        self.Weapon2_Data = self:NormalizeSlotData(self.Weapon2_Data, 2)
+        self.Weapon3_Data = self:NormalizeSlotData(self.Weapon3_Data, 3)
+        self.Weapon4_Data = self:NormalizeSlotData(self.Weapon4_Data, 4)
+    end
+
+    -- Data normalization prevents missing fields from older save/state payloads.
+    method table NormalizeSlotData(table source, integer slot)
+        local data = source
+        if data == nil then
+            data = {}
+        end
+
+        if data.WeaponId == nil or data.WeaponId == "" then
+            data.WeaponId = "Weapon" .. tostring(slot)
+        end
+        if data.Ammo == nil then
+            data.Ammo = self.DefaultAmmo
+        end
+        if data.IsReloading == nil then
+            data.IsReloading = false
+        end
+        if data.Damage == nil then
+            data.Damage = self.DefaultDamage
+        end
+        if data.FireCooldown == nil then
+            data.FireCooldown = self.DefaultFireCooldown
+        end
+        if data.ReloadTime == nil then
+            data.ReloadTime = self.DefaultReloadTime
+        end
+        if data.ProjectileSpeed == nil then
+            data.ProjectileSpeed = 20
+        end
+        if data.ProjectileRange == nil then
+            data.ProjectileRange = 15
+        end
+        if data.ProjectileLifetime == nil then
+            data.ProjectileLifetime = 2
+        end
+        if data.ProjectileSpread == nil then
+            data.ProjectileSpread = 0
+        end
+        if data.ProjectileModelId == nil then
+            data.ProjectileModelId = ""
+        end
+
+        return data
+    end
+
+    -- Runtime snapshot keeps ammo/cooldown values synchronized into slot state before switching away.
+    @ExecSpace("ServerOnly")
+    method void CaptureRuntimeToSlot(integer slot)
+        local finalSlot = self:ClampSlot(slot)
+        local data = self:GetSlotDataBySlot(finalSlot)
+        data = self:NormalizeSlotData(data, finalSlot)
+
+        local reloadComponent = self:ResolveComponentSafe(self.Entity, "ReloadComponent", "CurrentAmmo")
+        if reloadComponent ~= nil then
+            local ammoValue = data.Ammo
+            local ammoOk, ammoResult = pcall(function()
+                return reloadComponent:GetSlotAmmo(finalSlot)
+            end)
+            if ammoOk == true and ammoResult ~= nil then
+                ammoValue = ammoResult
+            end
+            data.Ammo = math.max(0, math.floor(ammoValue))
+
+            local reloadOk, reloadState = pcall(function()
+                return reloadComponent.IsReloading
+            end)
+            if reloadOk == true then
+                data.IsReloading = reloadState
+            end
+        end
+
+        local fireComponent = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "BaseWeaponAttack")
+        if fireComponent ~= nil then
+            local damageOk, damageValue = pcall(function()
+                return fireComponent.BaseWeaponAttack
+            end)
+            if damageOk == true and damageValue ~= nil then
+                data.Damage = math.max(0, math.floor(damageValue))
+            end
+
+            local cooldownOk, cooldownValue = pcall(function()
+                return fireComponent.FireCooldown
+            end)
+            if cooldownOk == true and cooldownValue ~= nil then
+                data.FireCooldown = math.max(0, cooldownValue)
+            end
+
+            local speedOk, speedValue = pcall(function()
+                return fireComponent.ProjectileSpeed
+            end)
+            if speedOk == true and speedValue ~= nil then
+                data.ProjectileSpeed = speedValue
+            end
+
+            local rangeOk, rangeValue = pcall(function()
+                return fireComponent.ProjectileRange
+            end)
+            if rangeOk == true and rangeValue ~= nil then
+                data.ProjectileRange = rangeValue
+            end
+
+            local lifeOk, lifeValue = pcall(function()
+                return fireComponent.ProjectileLifetime
+            end)
+            if lifeOk == true and lifeValue ~= nil then
+                data.ProjectileLifetime = lifeValue
+            end
+
+            local spreadOk, spreadValue = pcall(function()
+                return fireComponent.ProjectileSpread
+            end)
+            if spreadOk == true and spreadValue ~= nil then
+                data.ProjectileSpread = spreadValue
+            end
+
+            local modelOk, modelValue = pcall(function()
+                return fireComponent.ProjectileModelId
+            end)
+            if modelOk == true and modelValue ~= nil then
+                data.ProjectileModelId = modelValue
+            end
+        end
+
+        self:SetSlotDataBySlot(finalSlot, data)
+    end
+
+    -- Applying slot data routes through Reload/Fire so all downstream combat logic uses one source of truth.
+    @ExecSpace("ServerOnly")
+    method void ApplySlotDataToCombat(integer slot)
+        local finalSlot = self:ClampSlot(slot)
+        local data = self:NormalizeSlotData(self:GetSlotDataBySlot(finalSlot), finalSlot)
+        self:SetSlotDataBySlot(finalSlot, data)
+
+        local reloadComponent = self:ResolveComponentSafe(self.Entity, "ReloadComponent", "CurrentAmmo")
+        if reloadComponent ~= nil then
+            if self.CancelReloadOnSwap == true then
+                pcall(function()
+                    reloadComponent:CancelCurrentReload()
+                end)
+            end
+
+            pcall(function()
+                reloadComponent:SetCurrentWeaponSlot(finalSlot)
+            end)
+            pcall(function()
+                reloadComponent:SetSlotAmmo(finalSlot, data.Ammo)
+            end)
+            pcall(function()
+                reloadComponent.ReloadTime = data.ReloadTime
+            end)
+            pcall(function()
+                reloadComponent.FireRate = data.FireCooldown
+            end)
+        end
+
+        local fireComponent = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "BaseWeaponAttack")
+        if fireComponent ~= nil then
+            pcall(function()
+                fireComponent.BaseWeaponAttack = data.Damage
+            end)
+            pcall(function()
+                fireComponent.FireCooldown = data.FireCooldown
+            end)
+            pcall(function()
+                fireComponent.ProjectileSpeed = data.ProjectileSpeed
+            end)
+            pcall(function()
+                fireComponent.ProjectileRange = data.ProjectileRange
+            end)
+            pcall(function()
+                fireComponent.ProjectileLifetime = data.ProjectileLifetime
+            end)
+            pcall(function()
+                fireComponent.ProjectileSpread = data.ProjectileSpread
+            end)
+            pcall(function()
+                fireComponent.ProjectileModelId = data.ProjectileModelId
+            end)
+        end
+
+        self:NotifySwapMenuClient(self.IsSwapMenuOpen, finalSlot, self.CurrentWeaponSlot)
+    end
+
+    -- Export API is consumed by TagManager so each character can preserve independent 4-slot state.
+    @ExecSpace("ServerOnly")
+    method table ExportWeaponSwapState()
+        self:CaptureRuntimeToSlot(self.CurrentWeaponSlot)
+
+        local state = {}
+        state.CurrentWeaponSlot = self.CurrentWeaponSlot
+        state.Weapon1_Data = self:CloneSlotData(self.Weapon1_Data)
+        state.Weapon2_Data = self:CloneSlotData(self.Weapon2_Data)
+        state.Weapon3_Data = self:CloneSlotData(self.Weapon3_Data)
+        state.Weapon4_Data = self:CloneSlotData(self.Weapon4_Data)
+        return state
+    end
+
+    -- Import API restores previously saved per-character weapon state and reapplies combat parameters.
+    @ExecSpace("ServerOnly")
+    method void ImportWeaponSwapState(table state)
+        if state == nil then
+            return
+        end
+
+        if state.Weapon1_Data ~= nil then
+            self.Weapon1_Data = self:NormalizeSlotData(self:CloneSlotData(state.Weapon1_Data), 1)
+        end
+        if state.Weapon2_Data ~= nil then
+            self.Weapon2_Data = self:NormalizeSlotData(self:CloneSlotData(state.Weapon2_Data), 2)
+        end
+        if state.Weapon3_Data ~= nil then
+            self.Weapon3_Data = self:NormalizeSlotData(self:CloneSlotData(state.Weapon3_Data), 3)
+        end
+        if state.Weapon4_Data ~= nil then
+            self.Weapon4_Data = self:NormalizeSlotData(self:CloneSlotData(state.Weapon4_Data), 4)
+        end
+
+        if state.CurrentWeaponSlot ~= nil then
+            self.CurrentWeaponSlot = self:ClampSlot(state.CurrentWeaponSlot)
+        end
+
+        self:ApplySlotDataToCombat(self.CurrentWeaponSlot)
+    end
+
+    -- Gameplay lock toggles movement, attack, and timer pause in one place for open/close consistency.
+    @ExecSpace("ServerOnly")
+    method void SetGameplayLockServer(boolean locked)
+        self:SetCanMoveSafely(not locked)
+        self:SetCanAttackSafely(not locked)
+
+        local timerComponent = self:ResolveComponentSafe(self.Entity, "SpeedrunTimerComponent", "IsRunning")
+        if timerComponent ~= nil and timerComponent.SetPauseSource ~= nil and self.PauseGameplayByFlag == true then
+            pcall(function()
+                timerComponent:SetPauseSource("WeaponSwap", locked)
+            end)
+        end
+
+        if self.UseClientTimeScalePause == true then
+            if locked == true then
+                self:ApplyClientTimeScale(0)
+            else
+                self:ApplyClientTimeScale(1)
+            end
+        end
+    end
+
+    -- Client-only time scale branch is optional fallback when project chooses visual time-stop over logic pause.
+    @ExecSpace("Client")
+    method void ApplyClientTimeScale(number scale)
+        local targetScale = scale
+        if targetScale < 0 then
+            targetScale = 0
+        end
+        if targetScale > 1 then
+            targetScale = 1
+        end
+
+        pcall(function()
+            _UtilLogic:SetClientTimeScale(targetScale)
+        end)
+    end
+
+    -- UI callback is isolated so Phase 4 wheel implementation can attach without changing server flow.
+    @ExecSpace("Client")
+    method void NotifySwapMenuClient(boolean visible, integer highlightedSlot, integer currentSlot)
+        self._T.PendingSlotClient = highlightedSlot
+
+        local wheelComponent = self:ResolveComponentSafe(self.Entity, "WeaponWheelUIComponent", nil)
+        if wheelComponent ~= nil and wheelComponent.ApplyWeaponWheelStateClient ~= nil then
+            pcall(function()
+                wheelComponent:ApplyWeaponWheelStateClient(visible, highlightedSlot, currentSlot)
+            end)
+        end
+    end
+
+    -- Direction mapping follows the radial layout (W up, D right, S down, A left).
+    method integer DirectionKeyToSlot(KeyboardKey key)
+        if key == KeyboardKey.W then
+            return 1
+        end
+        if key == KeyboardKey.D then
+            return 2
+        end
+        if key == KeyboardKey.S then
+            return 3
+        end
+        if key == KeyboardKey.A then
+            return 4
+        end
+
+        return self.CurrentWeaponSlot
+    end
+
+    method integer ClampSlot(integer slot)
+        local maxSlot = math.max(self.WeaponSlotCount, 1)
+        local value = math.floor(slot)
+        if value < 1 then
+            return 1
+        end
+        if value > maxSlot then
+            return maxSlot
+        end
+        return value
+    end
+
+    method table GetSlotDataBySlot(integer slot)
+        local finalSlot = self:ClampSlot(slot)
+        if finalSlot == 1 then
+            return self.Weapon1_Data
+        elseif finalSlot == 2 then
+            return self.Weapon2_Data
+        elseif finalSlot == 3 then
+            return self.Weapon3_Data
+        end
+        return self.Weapon4_Data
+    end
+
+    method void SetSlotDataBySlot(integer slot, table data)
+        local finalSlot = self:ClampSlot(slot)
+        if finalSlot == 1 then
+            self.Weapon1_Data = data
+        elseif finalSlot == 2 then
+            self.Weapon2_Data = data
+        elseif finalSlot == 3 then
+            self.Weapon3_Data = data
+        else
+            self.Weapon4_Data = data
+        end
+    end
+
+    -- Clone utility avoids reference sharing between slots and tag character snapshots.
+    method table CloneSlotData(table source)
+        local clone = {}
+        if source == nil then
+            return clone
+        end
+
+        for key, value in pairs(source) do
+            clone[key] = value
+        end
+        return clone
+    end
+
+    -- Movement lock uses shared util path first to keep cross-component write policy centralized.
+    method boolean SetCanMoveSafely(boolean canMove)
+        if _GRUtil ~= nil and _GRUtil.TrySetCanMove ~= nil then
+            return _GRUtil.TrySetCanMove(self.Entity, canMove)
+        end
+
+        local movementComponent = self:ResolveComponentSafe(self.Entity, "MovementComponent", "CanMove")
+        if movementComponent == nil then
+            return false
+        end
+
+        local ok, _ = pcall(function()
+            movementComponent.CanMove = canMove
+        end)
+        return ok
+    end
+
+    -- Attack lock follows the same safe-write strategy to avoid hard failures on missing components.
+    method boolean SetCanAttackSafely(boolean canAttack)
+        local fireComponent = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "CanAttack")
+        if fireComponent == nil then
+            return false
+        end
+
+        if _GRUtil ~= nil and _GRUtil.TrySetField ~= nil then
+            return _GRUtil.TrySetField(fireComponent, "CanAttack", canAttack)
+        end
+
+        local ok, _ = pcall(function()
+            fireComponent.CanAttack = canAttack
+        end)
+        return ok
+    end
+
+    -- EndPlay restores menu side effects so entity reuse never keeps pause/lock states.
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self.IsSwapMenuOpen == true then
+            self:CloseSwapMenuServer()
+        end
+    end
+
+    -- Utility bootstrap first; fallback path keeps local safe lookup when global utility is absent.
+    method void EnsureGRUtil()
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, _ = pcall(function()
+                utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    method Component ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return _GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+
+    method boolean IsOwnerRequest(string requestUserId)
+        if _GRUtil ~= nil and _GRUtil.IsOwner ~= nil then
+            return _GRUtil.IsOwner(self.Entity, requestUserId)
+        end
+
+        local playerComponent = self.Entity.PlayerComponent
+        if playerComponent == nil then
+            return true
+        end
+
+        if requestUserId == nil or requestUserId == "" then
+            return true
+        end
+
+        return requestUserId == playerComponent.UserId
+    end
+end
