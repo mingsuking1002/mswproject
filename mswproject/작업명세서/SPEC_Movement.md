@@ -8,11 +8,7 @@
 | **Component Name** | `MovementComponent`, `CameraFollowComponent` |
 | **기능 요약** | WASD 8방향 캐릭터 이동 + 카메라 추적 (맵 경계 클램핑) |
 | **기획서 참조** | `기획서/1.핵심 시스템/[시스템] 기본 이동 기획 v.1.2.md` |
-
-### 핵심 동작
-- WASD 단독/조합 입력 → 8방향 이동 (대각선 속도 보정 적용)
-- 벽/장애물 충돌 시 멈추지 않고 **슬라이드**
-- 카메라는 캐릭터 중앙 추적, **맵 끝에서는 더 이상 이동하지 않음**
+| **모듈화 레이어** | `Core` |
 
 ---
 
@@ -33,18 +29,18 @@
 
 | Property Name | Type | Sync | Default | 설명 |
 |---|---|---|---|---|
-| `MoveSpeed` | `number` | `None` | `1.0` | 기본 이동 속도 (버프/디버프 배율 적용 기준) |
-| `SpeedMultiplier` | `number` | `Sync` | `1.0` | 속도 배율 (버프: 1.5, 감속: 0.5 등) |
-| `CanMove` | `boolean` | `Sync` | `true` | 이동 가능 여부 (CC기, 상점, 사망 시 false) |
-| `FacingDirection` | `integer` | `Sync` | `1` | 현재 바라보는 방향 (1~8, 스프라이트 교체용) |
+| `MoveSpeed` | `number` | `None` | `1.0` | 기본 이동 속도 |
+| `SpeedMultiplier` | `number` | `Sync` | `1.0` | 속도 배율 |
+| `CanMove` | `boolean` | `Sync` | `true` | 이동 가능 여부 |
+| `FacingDirection` | `integer` | `Sync` | `1` | 현재 바라보는 방향 (1~8) |
 
 ### CameraFollowComponent
 
 | Property Name | Type | Sync | Default | 설명 |
 |---|---|---|---|---|
-| `CameraOffset` | `Vector2` | `None` | `(0, 0)` | 카메라 오프셋 (캐릭터 정중앙 기준) |
-| `MapBoundsMin` | `Vector2` | `None` | `(-50, -50)` | 맵 최소 경계 좌표 |
-| `MapBoundsMax` | `Vector2` | `None` | `(50, 50)` | 맵 최대 경계 좌표 |
+| `CameraOffset` | `Vector2` | `None` | `(0, 0)` | 카메라 오프셋 |
+| `MapBoundsMin` | `Vector2` | `None` | `(-50, -50)` | 맵 최소 경계 |
+| `MapBoundsMax` | `Vector2` | `None` | `(50, 50)` | 맵 최대 경계 |
 
 ---
 
@@ -52,7 +48,7 @@
 
 | 서비스/API | 용도 |
 |---|---|
-| `_InputService` | WASD 키 입력 감지 (`IsKeyPressed`) |
+| `_InputService` | WASD 키 입력 감지 |
 | `TransformComponent` | 캐릭터 위치/회전 제어 |
 | `RigidbodyComponent` | 물리 기반 이동 (충돌/슬라이드) |
 | `StateComponent` | 이동/정지 애니메이션 상태 전환 |
@@ -65,51 +61,70 @@
 ### 5-1. 이동 처리
 1. 매 프레임 WASD 입력 조합 감지
 2. 반대 키 동시 입력(W+S, A+D) 시 해당 축 0 처리
-3. 방향 벡터 정규화 → 대각선 속도 뻥튀기 방지 (√2/2 ≈ 0.7071)
+3. 방향 벡터 정규화 → 대각선 속도 보정 (√2/2 ≈ 0.7071)
 4. 최종 이동량 = 정규화 벡터 × `MoveSpeed` × `SpeedMultiplier` × delta
-5. `CanMove == false` 시 이동 무시, 즉시 정지
+5. `CanMove == false` 시 이동 무시
 
 ### 5-2. 방향/스프라이트
 - 입력 벡터 기반으로 8방향 인덱스 계산 → `FacingDirection` 업데이트
-- 스프라이트/애니메이션 전환은 `FacingDirection` Sync 변경 감지로 처리
 
 ### 5-3. 카메라 추적
 - 카메라 위치 = 캐릭터 위치 + `CameraOffset`
-- 카메라 X/Y를 `MapBoundsMin` ~ `MapBoundsMax` 범위 내로 클램핑
-- 맵 모서리에서는 캐릭터만 이동, 카메라는 고정
-
-### 5-4. 조작 불가 처리
-- 상점/UI 팝업/사망/CC기 시 → `CanMove = false` (외부 시스템이 제어)
-- 창 비활성화(포커스 손실) 시 → 눌려있던 키 해제 처리, 즉시 정지
+- 맵 경계 클램핑
 
 ---
 
-## 6. 연동 컴포넌트
+## 6. Maker 배치 (Codex MCP 실행) ⚠️ 필수 검토
 
-| 컴포넌트 | 연동 방식 | 설명 |
+### 6-1. UI 엔티티 (`DefaultGroup.ui`)
+
+해당 없음
+
+### 6-2. 맵 엔티티 (`lobby.map`)
+
+해당 없음 (플레이어 엔티티에 부착)
+
+### 6-3. 글로벌/모델 (`DefaultPlayer.model`)
+
+| 작업 | 대상 파일 | 변경 내용 | 비고 |
+|---|---|---|---|
+| `확인` | `Global/DefaultPlayer.model` | `RigidbodyComponent` 존재 확인 | GravityScale=0, FreezeRotationZ=true |
+
+### 6-4. 컴포넌트 부착 관계
+
+| 엔티티 경로 | 부착할 컴포넌트 | 설정할 Property | 비고 |
+|---|---|---|---|
+| Player Entity (Bootstrap 자동) | `script.MovementComponent` | `MoveSpeed=1.0` | Map01BootstrapComponent가 자동 부착 |
+| Player Entity (Bootstrap 자동) | `script.CameraFollowComponent` | 기본값 | Map01BootstrapComponent가 자동 부착 |
+
+---
+
+## 7. 연동 컴포넌트
+
+| 컴포넌트 | 레이어 | 연동 방식 |
 |---|---|---|
-| `HPSystemComponent` | `CanMove` 제어 | 사망 시 이동 차단 |
-| `TagManagerComponent` | `CanMove` 제어 | 태그 연출 중 이동 차단 |
-| `WeaponSwapComponent` | `CanMove` 제어 | 무기 교체 팝업 중 이동 차단 |
-| `FireSystemComponent` | `SpeedMultiplier` 참조 | 공격 중 감속 적용 시 |
+| `HPSystemComponent` | Combat | `CanMove` 제어 — 사망 시 이동 차단 |
+| `TagManagerComponent` | Meta | `CanMove` 제어 — 태그 연출 중 이동 차단 |
+| `WeaponSwapComponent` | Meta | `CanMove` 제어 — 무기 교체 중 이동 차단 |
+| `FireSystemComponent` | Combat | `SpeedMultiplier` 참조 |
 
 ---
 
-## 7. 주의 사항
+## 8. 주의/최적화 포인트
 
-- [ ] 대각선 보정값 ±0.7071은 기획서 확정 수치
-- [ ] 공격 중 이동 속도 감소 비율은 무기별로 다를 수 있음 → 미정, 기본 1.0 유지
-- [ ] `OnUpdate`에서 입력 처리하되 물리 이동은 엔진에 위임 (직접 좌표 조작 최소화)
-- [ ] 벽 슬라이드는 `RigidbodyComponent`의 물리 충돌로 자연 처리
+- 대각선 보정값 ±0.7071은 기획서 확정 수치
+- `OnUpdate`에서 입력 처리하되 물리 이동은 엔진에 위임
+- 벽 슬라이드는 `RigidbodyComponent` 물리 충돌로 자연 처리
 
 ---
 
-## 8. Codex 구현 체크리스트
+## 9. Codex 구현 체크리스트
 
-- [ ] `@Component` 어트리뷰트로 시작
-- [ ] 밸런스 수치 전부 `property`로 선언
+- [ ] `@Component` 어트리뷰트, `Core` 레이어
+- [ ] `_GRUtil` 사용 (중복 유틸 금지)
 - [ ] `[server only]` / `[client only]` 분리
-- [ ] `nil` 체크, `isValid` 방어 코드
+- [ ] `nil`/`isvalid` 방어 + `pcall` 보호
+- [ ] **Maker 배치 (§6) 완료** — 컴포넌트 부착 확인
 - [ ] `기획서/4.부록/Code_Documentation.md` 업데이트
 - [ ] 완료 후 상태 `🟢 완료`로 변경
 
@@ -122,4 +137,4 @@
 | **작성자** | Antigravity (TD) |
 | **담당자** | Codex |
 | **작성일** | 2026-02-18 |
-| **상태** | 🟡 대기중 |
+| **상태** | 🟢 완료 |

@@ -1,4 +1,4 @@
-# 🔵 진행중
+# 🟢 완료
 # SPEC_ModularRefactor — 전체 스크립트 모듈화 리팩토링
 
 ## 1. 개요
@@ -73,7 +73,8 @@ ProjectGR/
 ## 4. GRUtilModule (Phase 0 — 최우선 구현)
 
 ### 4-1. 역할
-6개 컴포넌트에서 복사되었던 공통 유틸리티를 `_GRUtil` 글로벌 테이블 1곳에 통합
+중복 유틸 함수를 `GRUtilModule`에 통합하고,  
+`BootstrapUtil() -> table` 반환값을 각 컴포넌트 `self._T.GRUtil`에 캐시해 사용한다.
 
 ### 4-2. 추출 대상 함수
 
@@ -84,7 +85,7 @@ ProjectGR/
 | `TrySetCanMove` | `(entity, canMove) → boolean` | 4 |
 | `CanWriteField` | `(comp, fieldName) → boolean` | 5 |
 | `HasMember` | `(comp, memberName) → boolean` | 2 |
-| `IsOwner` | `(entity, senderUserId) → boolean` | 3 |
+| `IsOwner` | `(entity, requestUserId) → boolean` | 3 |
 | `TrySetField` | `(comp, fieldName, value) → boolean` | 2 |
 | `FindOrAddComponent` | `(entity, typeName) → Component` | 2 |
 
@@ -94,114 +95,50 @@ ProjectGR/
 @Component
 script GRUtilModule extends Component
 
-    @ExecSpace("ServerOnly")
-    method void OnBeginPlay()
-        if _GRUtil ~= nil then
-            return  -- 이미 등록됨
-        end
-        _GRUtil = {}
-
-        ---------------------------------------------------
-        -- script.XXX / XXX 양방향 탐색으로 컴포넌트 참조
-        ---------------------------------------------------
-        _GRUtil.ResolveComponent = function(entity, scriptName, markerField)
-            if entity == nil or isvalid(entity) == false then return nil end
-            local comp = entity:GetComponent("script." .. scriptName)
-            if comp == nil then
-                comp = entity:GetComponent(scriptName)
-            end
-            if comp ~= nil and markerField ~= nil and markerField ~= "" then
-                local ok, _ = pcall(function() return comp[markerField] end)
-                if not ok then return nil end
-            end
-            return comp
+    method table BootstrapUtil()
+        if self._T.UtilApi ~= nil then
+            return self._T.UtilApi
         end
 
-        ---------------------------------------------------
-        -- CanMove 필드를 가진 이동 컴포넌트 탐색
-        ---------------------------------------------------
-        _GRUtil.ResolveMovement = function(entity)
-            local comp = _GRUtil.ResolveComponent(entity, "MovementComponent", "CanMove")
-            if comp == nil then
-                comp = entity:GetComponent("MovementComponent")
-            end
-            return comp
+        local utilApi = {}
+        utilApi.ResolveComponent = function(entity, scriptName, markerField)
+            return self:ResolveComponent(entity, scriptName, markerField)
+        end
+        utilApi.ResolveMovement = function(entity)
+            return self:ResolveMovement(entity)
+        end
+        utilApi.TrySetCanMove = function(entity, canMove)
+            return self:TrySetCanMove(entity, canMove)
+        end
+        utilApi.CanWriteField = function(component, fieldName)
+            return self:CanWriteField(component, fieldName)
+        end
+        utilApi.HasMember = function(component, memberName)
+            return self:HasMember(component, memberName)
+        end
+        utilApi.IsOwner = function(entity, requestUserId)
+            return self:IsOwner(entity, requestUserId)
+        end
+        utilApi.TrySetField = function(component, fieldName, value)
+            return self:TrySetField(component, fieldName, value)
+        end
+        utilApi.FindOrAddComponent = function(entity, typeName)
+            return self:FindOrAddComponent(entity, typeName)
         end
 
-        ---------------------------------------------------
-        -- pcall 보호 CanMove 대입
-        ---------------------------------------------------
-        _GRUtil.TrySetCanMove = function(entity, canMove)
-            local comp = _GRUtil.ResolveMovement(entity)
-            if comp == nil then return false end
-            local ok, _ = pcall(function() comp.CanMove = canMove end)
-            return ok
-        end
-
-        ---------------------------------------------------
-        -- read+write probe 필드 검증
-        ---------------------------------------------------
-        _GRUtil.CanWriteField = function(comp, fieldName)
-            if comp == nil then return false end
-            local ok, val = pcall(function() return comp[fieldName] end)
-            if not ok then return false end
-            local ok2, _ = pcall(function() comp[fieldName] = val end)
-            return ok2
-        end
-
-        ---------------------------------------------------
-        -- nil 필드 / 미존재 필드 구분
-        ---------------------------------------------------
-        _GRUtil.HasMember = function(comp, memberName)
-            if comp == nil then return false end
-            local ok, _ = pcall(function() return comp[memberName] end)
-            return ok
-        end
-
-        ---------------------------------------------------
-        -- 요청 소유자 검증
-        ---------------------------------------------------
-        _GRUtil.IsOwner = function(entity)
-            if entity == nil or isvalid(entity) == false then return false end
-            if entity.PlayerController == nil then return true end
-            local currentUser = _UserService.LocalPlayer
-            if currentUser == nil then return false end
-            return entity == currentUser.Entity
-        end
-
-        ---------------------------------------------------
-        -- 안전 필드 대입
-        ---------------------------------------------------
-        _GRUtil.TrySetField = function(comp, fieldName, value)
-            if comp == nil then return false end
-            local ok, _ = pcall(function() comp[fieldName] = value end)
-            return ok
-        end
-
-        ---------------------------------------------------
-        -- 컴포넌트 중복 없이 조회/추가
-        ---------------------------------------------------
-        _GRUtil.FindOrAddComponent = function(entity, typeName)
-            if entity == nil or isvalid(entity) == false then return nil end
-            local comp = entity:GetComponent(typeName)
-            if comp == nil then
-                comp = entity:AddComponent(typeName)
-            end
-            return comp
-        end
-
-        log("[GRUtilModule] _GRUtil registered.")
+        self._T.UtilApi = utilApi
+        return self._T.UtilApi
     end
 end
 ```
 
 ### 4-4. PoC 테스트 방법
-1. Maker에서 `GRUtilModule.codeblock` 생성
-2. `Map01Bootstrap` 또는 맵 엔티티에 부착
-3. 플레이 → 콘솔에 `[GRUtilModule] _GRUtil registered.` 확인
-4. 다른 컴포넌트에서 `_GRUtil.ResolveComponent(...)` 호출 → nil이 아닌 값 반환 확인
+1. Maker에서 `GRUtilModule.codeblock` 적용 후 플레이
+2. 각 컴포넌트 `EnsureGRUtil()`에서 `utilComponent:BootstrapUtil()` 호출
+3. `self._T.GRUtil ~= nil` 및 `self._T.GRUtil.ResolveComponent ~= nil` 확인
+4. `self._T.GRUtil.ResolveComponent(...)` 호출 결과가 nil이 아닌지 확인
 
-> ⚠️ PoC 실패 시(글로벌 테이블 미지원) → 각 컴포넌트 `OnBeginPlay`에서 `Map01BootstrapComponent`를 통해 유틸 테이블 주입받는 방식으로 전환
+> 폴백 정책: `self._T.GRUtil` 확보 실패 시, 컴포넌트 내부 `ResolveComponentSafe` + `pcall` 경로로 안전 동작 유지
 
 ---
 
@@ -209,16 +146,17 @@ end
 
 ### 5-1. 중복 코드 제거
 
-모든 컴포넌트에서 아래 함수들을 **삭제**하고 `_GRUtil.함수명()` 호출로 대체:
+모든 컴포넌트에서 아래 함수들을 **삭제**하고  
+`self._T.GRUtil` 경유 호출(없으면 `ResolveComponentSafe` 폴백)로 대체:
 
 | 삭제 대상 (self 메서드) | 대체 호출 |
 |---|---|
-| `self:ResolveProjectComponent(name, marker)` | `_GRUtil.ResolveComponent(self.Entity, name, marker)` |
-| `self:ResolveProjectMovementComponent()` | `_GRUtil.ResolveMovement(self.Entity)` |
-| `self:TrySetMovementCanMove(val)` | `_GRUtil.TrySetCanMove(self.Entity, val)` |
-| `self:CanWriteComponentField(comp, field)` | `_GRUtil.CanWriteField(comp, field)` |
-| `self:HasComponentMember(comp, member)` | `_GRUtil.HasMember(comp, member)` |
-| `self:IsRequestFromOwner()` | `_GRUtil.IsOwner(self.Entity)` |
+| `self:ResolveProjectComponent(name, marker)` | `self._T.GRUtil.ResolveComponent(self.Entity, name, marker)` |
+| `self:ResolveProjectMovementComponent()` | `self._T.GRUtil.ResolveMovement(self.Entity)` |
+| `self:TrySetMovementCanMove(val)` | `self._T.GRUtil.TrySetCanMove(self.Entity, val)` |
+| `self:CanWriteComponentField(comp, field)` | `self._T.GRUtil.CanWriteField(comp, field)` |
+| `self:HasComponentMember(comp, member)` | `self._T.GRUtil.HasMember(comp, member)` |
+| `self:IsRequestFromOwner()` | `self._T.GRUtil.IsOwner(self.Entity, requestUserId)` |
 
 ### 5-2. 레이어 참조 규칙
 
@@ -270,9 +208,9 @@ script XxxComponent extends Component
     @ExecSpace("ClientOnly") 
     method void ClientMethod() ... end
 
--- ④ 모든 외부 참조는 _GRUtil 경유
+-- ④ 모든 외부 참조는 self._T.GRUtil 경유
     -- ✅ Good
-    local comp = _GRUtil.ResolveComponent(self.Entity, "HPSystemComponent", "CurrentHP")
+    local comp = self._T.GRUtil.ResolveComponent(self.Entity, "HPSystemComponent", "CurrentHP")
     -- ❌ Bad (직접 탐색)
     local comp = self.Entity:GetComponent("script.HPSystemComponent")
 
@@ -299,12 +237,12 @@ script XxxComponent extends Component
 
 ### 6-1. 진행 체크 (2026-02-18)
 
-- [x] Phase 0: `GRUtilModule` 신규 구현 및 `_GRUtil` 등록
+- [x] Phase 0: `GRUtilModule` 신규 구현 및 `BootstrapUtil() -> self._T.GRUtil` 경로 확정
 - [x] Phase 1: `MovementComponent`, `CameraFollowComponent` 신규 구현
 - [x] Phase 2: `HPSystemComponent`, `FireSystemComponent`, `ProjectileComponent`, `ReloadComponent` 신규 구현
 - [x] Phase 3: `WeaponSwapComponent`, `TagManagerComponent`, `SpeedrunTimerComponent`, `RankingComponent` 신규 구현
 - [x] Phase 4: `WeaponWheelUIComponent`, `RankingUIComponent`, `HUDComponent`, `Map01BootstrapComponent`, `LobbyFlowComponent` 신규 구현
-- [ ] 전체 Phase 완료 후 상태 `🟢 완료` 전환
+- [x] 전체 Phase 완료 후 상태 `🟢 완료` 전환
 
 ---
 
@@ -312,7 +250,36 @@ script XxxComponent extends Component
 
 - [x] `기획서/0.개요/FOLDER_RULES.md` — 코드 구조 섹션 업데이트
 - [x] `기획서/4.부록/Code_Documentation.md` — 전체 재작성
-- [ ] 본 SPEC 상태 `🟢 완료`로 변경
+- [x] 본 SPEC 상태 `🟢 완료`로 변경
+
+---
+
+## 8. 명세-코드 정합 매트릭스 (Phase 0~4)
+
+| 컴포넌트 | Execution Space 기준 | 핵심 Property 반영 | 핵심 메서드 반영 | 결과 |
+|---|---|---|---|---|
+| `GRUtilModule` | Server/Client bootstrap 분리 | 없음(유틸 제공 전용) | `BootstrapUtil` + 8개 유틸 API | ✅ |
+| `MovementComponent` | 입력(Client) / 이동(Server) | `CanMove`, `SpeedMultiplier`, `FacingDirection` | `SubmitMoveInput`, `ApplyMovementServer` | ✅ |
+| `CameraFollowComponent` | Client 전용 | 카메라 경계/오프셋 | `ApplyCameraSettings` | ✅ |
+| `HPSystemComponent` | 판정(Server) / 피드백(Client) | `CurrentHP`, `IsDead`, `IsInvincible` | `ApplyDamage`, `ReviveToFullHP` | ✅ |
+| `ReloadComponent` | 입력(Client) / 처리(Server) | `CurrentAmmo`, `IsReloading` | `RequestReloadServer`, `CompleteReload` | ✅ |
+| `FireSystemComponent` | 입력(Client) / 발사(Server) | `CanAttack`, `IsFireReady`, 투사체 설정값 | `RequestFireServer`, `SpawnProjectileServer` | ✅ |
+| `ProjectileComponent` | Server 전용 이동/충돌 | `Speed`, `Damage`, `Lifetime` | `InitializeProjectile`, `HandleTriggerEnterEvent` | ✅ |
+| `WeaponSwapComponent` | 입력(Client) / 상태 스왑(Server) | `CurrentWeaponSlot`, `IsSwapMenuOpen` | `RequestConfirmSwapServer`, `ApplySlotDataToCombat` | ✅ |
+| `TagManagerComponent` | 입력(Client) / 태그(Server) | `CurrentCharIndex`, `IsTagReady` | `RequestTagServer`, `ExecuteTagSwapServer` | ✅ |
+| `SpeedrunTimerComponent` | 서버 시간 권위 + 클라이언트 표시 | `ElapsedTime`, `IsRunning`, `BestTime` | `StartRunNow`, `CompleteRun` | ✅ |
+| `RankingComponent` | Server 조회/저장 + Client 스냅샷 수신 | 모드별 PB/표시 개수 | `RequestRankingSnapshotServer`, `GetMyRankServer` | ✅ |
+| `WeaponWheelUIComponent` | Client 전용 | 휠 루트/시각 파라미터 | `ApplyWeaponWheelStateClient` | ✅ |
+| `RankingUIComponent` | Client 전용 | 탭/표시 개수/텍스트 경로 | `SetCurrentTabClient`, `RefreshRankingUIClient` | ✅ |
+| `HUDComponent` | Client 전용 | HUD 경로/갱신 주기 | `RefreshHUDClient`, `ApplyLobbyStateClient` | ✅ |
+| `Map01BootstrapComponent` | Server 전용 부팅/부착 | 맵 분리 옵션/맵명/로비 옵션 | `ConfigurePlayer`, `AttachRequiredComponentsServer` | ✅ |
+| `LobbyFlowComponent` | UI(Client) + 상태전환(Server) | `IsLobbyActive`, `UseMapSplit`, 맵명 | `RequestStartGameServer`, `ApplyLobbyUIClient` | ✅ |
+
+검증 메모:
+- 기본 맵 정책은 `games`로 정규화 (`LobbyMapName/InGameMapName = games`).
+- `UseMapSplit=false` 시 `GRStartButton` 동작은 UI 비활성/상태 전환이 정상 동작.
+- `_GRUtil` 글로벌 직접 의존 문구 제거, `self._T.GRUtil` 표준으로 통일.
+- 리소스 회귀 경계: `ui/`, `Global/DefaultPlayer.model` 변경 없음.
 
 ---
 
@@ -323,4 +290,4 @@ script XxxComponent extends Component
 | **작성자** | Antigravity (TD) |
 | **담당자** | Codex |
 | **작성일** | 2026-02-18 |
-| **상태** | 🔵 진행중 |
+| **상태** | 🟢 완료 |

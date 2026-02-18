@@ -6,8 +6,8 @@ script Map01BootstrapComponent extends Component
     property boolean AutoAttachMissingComponents = true
 
     property boolean EnableLobbyMapSplit = false
-    property string LobbyMapName = "lobby"
-    property string InGameMapName = "lobby"
+    property string LobbyMapName = "games"
+    property string InGameMapName = "games"
     property boolean AutoOpenRankingOnLobby = true
     property integer LobbyRankingTab = 1
     property string LobbyUIRootPath = "/ui/DefaultGroup"

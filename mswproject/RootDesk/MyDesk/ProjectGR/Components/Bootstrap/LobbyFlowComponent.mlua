@@ -5,8 +5,8 @@ script LobbyFlowComponent extends Component
     property boolean IsLobbyActive = true
 
     property boolean UseMapSplit = false
-    property string LobbyMapName = "lobby"
-    property string InGameMapName = "lobby"
+    property string LobbyMapName = "games"
+    property string InGameMapName = "games"
 
     property boolean AutoOpenRankingOnLobby = true
     property integer LobbyRankingTab = 1
@@ -381,7 +381,7 @@ script LobbyFlowComponent extends Component
         return ""
     end
 
-    -- Normalizes map name format so "1stage", "map://1stage", "/maps/1stage" are treated as same target.
+    -- Normalizes map key format so plain, uri, and path notations map to one comparable value.
     method string NormalizeMapName(string mapName)
         if mapName == nil or mapName == "" then
             return ""
@@ -422,16 +422,6 @@ script LobbyFlowComponent extends Component
             pushCandidate(normalized)
             pushCandidate("map://" .. normalized)
             pushCandidate("/maps/" .. normalized)
-        end
-
-        if normalized == "map01" then
-            pushCandidate("1stage")
-            pushCandidate("map://1stage")
-            pushCandidate("/maps/1stage")
-        elseif normalized == "1stage" then
-            pushCandidate("map01")
-            pushCandidate("map://map01")
-            pushCandidate("/maps/map01")
         end
 
         return candidates

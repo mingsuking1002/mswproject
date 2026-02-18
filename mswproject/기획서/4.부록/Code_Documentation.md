@@ -13,12 +13,12 @@
 ### Properties
 | 이름 | 타입 | 설명 |
 |---|---|---|
-| `-` | `-` | 유틸 함수 전역 등록 컴포넌트로 별도 Property 없음 |
+| `-` | `-` | 유틸 API 제공 컴포넌트로 별도 Property 없음 |
 
 ### Functions
 | 함수명 | 파라미터 | 리턴값 | 설명 |
 |---|---|---|---|
-| `BootstrapUtil` | void | void | `_GRUtil` 테이블 생성 및 공통 유틸 함수 등록 |
+| `BootstrapUtil` | void | table | 공통 유틸 API 테이블 생성/반환 (`self._T.UtilApi` 캐시) |
 | `OnBeginPlay` | void | void | 서버에서 유틸 등록 보장 |
 | `OnMapEnter` | `enteredMap: Entity` | void | 클라이언트 맵 진입 시 유틸 재등록 |
 
@@ -45,7 +45,7 @@
 | `OnUpdate` | `delta: number` | void | 서버 이동/방향/상태 업데이트 |
 | `ApplyMovementServer` | `moveDirection: Vector2, speed: number, delta: number` | void | Rigidbody 우선 이동 적용 |
 | `UpdateStateAnimation` | `moveDirection: Vector2` | void | MOVE/IDLE 상태 동기화 |
-| `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
+| `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## CameraFollowComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Core/CameraFollowComponent.mlua`
@@ -64,7 +64,7 @@
 | `OnBeginPlay` | void | void | 클라이언트 시작 시 카메라 세팅 적용 |
 | `OnMapEnter` | `enteredMap: Entity` | void | 맵 진입 시 카메라 경계 재적용 |
 | `ApplyCameraSettings` | void | void | 현재 카메라 컴포넌트에 Bound/Offset 적용 |
-| `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
+| `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## HPSystemComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.mlua`
@@ -95,7 +95,7 @@
 | `ReviveToFullHP` | void | void | 부활 초기화 |
 | `NotifyGameOver` | void | void | LobbyFlow/GameManager/타이머 순으로 종료 라우팅 |
 | `UpdateHPFeedbackClient` | `currentHp, maxHp, isInvincible, isDead` | void | 클라이언트 전용 피드백 반영 |
-| `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
+| `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## ReloadComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ReloadComponent.mlua`
@@ -125,7 +125,7 @@
 | `SetCurrentWeaponSlot` | `slot: integer` | void | 슬롯 전환/탄약 복원 |
 | `ConsumeAmmoOnFire` | void | boolean | 발사 시 탄약 소비 및 다음 발사 시각 갱신 |
 | `IsFireReady` | void | boolean | 슬롯별 연사 가능 여부 판정 |
-| `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
+| `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## FireSystemComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.mlua`
@@ -160,7 +160,7 @@
 | `SpawnProjectileServer` | `direction: Vector2, shooterPosition: Vector2` | void | 투사체 생성 및 초기화 |
 | `CalculateFinalDamage` | void | integer | 최종 공격력 공식 계산 |
 | `StartFireCooldown` | void | void | 발사 쿨다운 타이머 시작 |
-| `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
+| `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## ProjectileComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ProjectileComponent.mlua`
@@ -187,7 +187,7 @@
 | `OnUpdate` | `delta: number` | void | 이동/거리/수명 서버 판정 |
 | `HandleTriggerEnterEvent` | `event: TriggerEnterEvent` | void | 충돌 피해 적용 후 파괴 |
 | `DestroySelf` | void | void | 중복 파괴 방지 포함 단일 파괴 경로 |
-| `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
+| `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## Phase 3 Meta Modular Refactor
 - **수정일:** `2026-02-18`
@@ -221,7 +221,7 @@
 | `ApplySlotDataToCombat` | `slot: integer` | void | 슬롯 데이터 적용(재장전/발사 파라미터 동기화) |
 | `ExportWeaponSwapState` | void | table | 태그 시스템용 전체 슬롯 상태 내보내기 |
 | `ImportWeaponSwapState` | `state: table` | void | 태그 시스템에서 받은 슬롯 상태 복원 |
-| `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
+| `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## TagManagerComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/TagManagerComponent.mlua`
@@ -249,7 +249,7 @@
 | `StartTagCooldownServer` | void | void | 태그 쿨다운 타이머 시작 |
 | `ApplyInvincibleWindowServer` | void | void | 태그 무적 타이머 적용 |
 | `TriggerEntrySkillServer` | `charIndex: integer` | void | 태그 엔트리 스킬 훅 호출 |
-| `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
+| `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## SpeedrunTimerComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/SpeedrunTimerComponent.mlua`
@@ -278,7 +278,7 @@
 | `LoadBestTimeFromStorageServer` | void | void | 사용자 저장소에서 최고기록 로드 |
 | `SaveBestTimeToStorageServer` | `bestTime: number` | void | 사용자 저장소에 최고기록 저장 |
 | `UpdateTimerTextClient` | `elapsedTime: number, isRunning: boolean` | void | 클라이언트 타이머 텍스트 반영 |
-| `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
+| `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## RankingComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/RankingComponent.mlua`
@@ -307,7 +307,7 @@
 | `LoadLocalBestRecordsServer` | void | void | 로컬 최고기록 로드 |
 | `SaveLocalBestRecordServer` | `mode: integer, value: number` | void | 로컬 최고기록 저장 |
 | `FormatScoreForDisplay` | `mode: integer, scoreValue: integer` | string | UI 표기용 포맷 변환 |
-| `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
+| `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## Phase 4 UI/Bootstrap Modular Refactor
 - **수정일:** `2026-02-18`
@@ -333,7 +333,7 @@
 | `OnTagChangedClient` | `charIndex: integer` | void | 태그 전환 시 휠 상태 리셋 |
 | `ResolveWheelRootClient` | void | Entity | 휠 루트 엔티티 참조 해결 |
 | `ApplySlotVisualClient` | `slotEntity: Entity, isHighlighted: boolean, isCurrent: boolean, wheelVisible: boolean` | void | 슬롯 강조 시각효과 적용 |
-| `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
+| `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## RankingUIComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/UI/RankingUIComponent.mlua`
@@ -360,7 +360,7 @@
 | `RenderRankingTextClient` | `topRows: table` | void | Top N 랭킹 리스트 렌더링 |
 | `RenderMyRankTextClient` | `myRow: table` | void | 내 순위 라인 렌더링 |
 | `ApplyVisibilityClient` | `visible: boolean` | void | 로비/인게임 전환 시 랭킹 UI 표시 제어 |
-| `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
+| `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## HUDComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/UI/HUDComponent.mlua`
@@ -387,7 +387,7 @@
 | `ApplyLobbyStateClient` | `isLobby: boolean` | void | 로비 상태에 따른 HUD 표시 정책 적용 |
 | `SetHUDVisibilityClient` | `visible: boolean` | void | HUD 텍스트 일괄 가시성 제어 |
 | `StartHUDLoopClient` | void | void | 주기적 HUD 갱신 루프 시작 |
-| `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
+| `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## Map01BootstrapComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
@@ -399,7 +399,7 @@
 | `ConfigureOnBeginPlay` | boolean | 시작 시 기존 사용자 설정 수행 여부 |
 | `ConfigureOnUserEnter` | boolean | 유저 입장 이벤트 기반 설정 여부 |
 | `AutoAttachMissingComponents` | boolean | 누락 컴포넌트 자동 부착 여부 |
-| `EnableLobbyMapSplit` | boolean | lobby/map01 분리 이동 사용 여부 |
+| `EnableLobbyMapSplit` | boolean | `games` 기준 맵 분리 이동 사용 여부 (`false`면 UI 상태 전환만 수행) |
 | `LobbyMapName` | string | 로비 맵 이름 |
 | `InGameMapName` | string | 인게임 맵 이름 |
 | `AutoOpenRankingOnLobby` | boolean | 로비 진입 시 랭킹 자동 오픈 여부 |
@@ -414,7 +414,7 @@
 | `ConfigurePlayer` | `playerEntity: Entity` | void | 필수 컴포넌트 부착 및 LobbyFlow 설정 |
 | `AttachRequiredComponentsServer` | `playerEntity: Entity` | void | Phase 0~4 필수 컴포넌트 자동 부착 |
 | `FindOrAddComponentSafe` | `targetEntity: Entity, typeName: string` | Component | 조회/추가 안전 래퍼 |
-| `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
+| `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## LobbyFlowComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.mlua`
@@ -424,7 +424,7 @@
 | 이름 | 타입 | 설명 |
 |---|---|---|
 | `IsLobbyActive` | boolean | 현재 로비 상태 여부(Sync) |
-| `UseMapSplit` | boolean | lobby/map01 분리 맵 이동 여부 |
+| `UseMapSplit` | boolean | `games` 기준 분리 맵 이동 사용 여부 (`false`면 시작 시 UI 비활성만 수행) |
 | `LobbyMapName` | string | 로비 맵 이름 |
 | `InGameMapName` | string | 인게임 맵 이름 |
 | `AutoOpenRankingOnLobby` | boolean | 로비 진입 시 랭킹 자동 오픈 여부 |
@@ -438,7 +438,7 @@
 | 함수명 | 파라미터 | 리턴값 | 설명 |
 |---|---|---|---|
 | `OnStartButtonClickedClient` | `event: ButtonClickEvent` | void | 버튼 클릭 디바운스 후 시작 요청 |
-| `RequestStartGameServer` | void | void | 시작 요청 서버 처리(로비->인게임) |
+| `RequestStartGameServer` | `requestUserId: string` | void | 시작 요청 서버 처리(소유자 검증 후 UI 상태 전환, 필요 시 맵 이동) |
 | `SetLobbyStateServer` | `isLobby: boolean` | void | 로비 상태 전환 및 연동 컴포넌트 정책 적용 |
 | `ApplyLobbyUIClient` | `isLobby: boolean` | void | 시작/랭킹 UI 가시성 클라이언트 반영 |
 | `RequestOpenLobbyRankingClient` | void | void | 로비 진입 시 랭킹 탭 오픈/데이터 요청 |
@@ -446,5 +446,6 @@
 | `MoveOwnerToLobbyMapIfNeeded` | void | boolean | 로비 맵 이동 요청 |
 | `HandleRunCompletedServer` | `isClear: boolean` | void | 런 종료 처리 및 로비 복귀 |
 | `HandleStageFailedServer` | void | void | 실패 종료 래퍼 |
-| `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
+| `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
+
 

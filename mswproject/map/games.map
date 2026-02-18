@@ -150,8 +150,8 @@
               "ConfigureOnUserEnter": true,
               "AutoAttachMissingComponents": true,
               "EnableLobbyMapSplit": false,
-              "LobbyMapName": "lobby",
-              "InGameMapName": "lobby",
+              "LobbyMapName": "games",
+              "InGameMapName": "games",
               "AutoOpenRankingOnLobby": true,
               "LobbyRankingTab": 1,
               "LobbyUIRootPath": "/ui/DefaultGroup"
