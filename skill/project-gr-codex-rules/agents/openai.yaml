@@ -1,6 +1,6 @@
 interface:
   display_name: "Project GR Codex Rules"
-  short_description: "SPEC 기반 Project GR MSW mlua 구현 워크플로우"
-  default_prompt: "Use $project-gr-codex-rules to directly implement Project GR MSW mlua in workspace files from `작업명세서/SPEC_*.md`, update SPEC status (`🟡 -> 🔵 -> 🟢`), and refresh `기획서/4.부록/Code_Documentation.md`."
+  short_description: "SPEC 기반 Project GR MSW codeblock(Target mLua) 구현 워크플로우"
+  default_prompt: "Use $project-gr-codex-rules to directly implement Project GR MSW codeblock(Target mLua) scripts in workspace files from `작업명세서/SPEC_*.md`, update SPEC status (`🟡 -> 🔵 -> 🟢`), and refresh `기획서/4.부록/Code_Documentation.md`."
 policy:
   allow_implicit_invocation: true

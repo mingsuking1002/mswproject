@@ -64,11 +64,7 @@ foreach ($relativePath in $manifest.required_files) {
 
 if (Test-Path -Path $worldConfigPath) {
     try {
-        $worldConfig = Get-Content -Path $worldConfigPath -Encoding UTF8 -Raw | ConvertFrom-Json
-        $useExtendedScriptFormat = $worldConfig.ContentProto.Json.UseExtendedScriptFormat
-        if ($useExtendedScriptFormat -ne $true) {
-            $invalid.Add("Global/WorldConfig.config (UseExtendedScriptFormat must be true for ProjectGR .mlua scripts)")
-        }
+        [void](Get-Content -Path $worldConfigPath -Encoding UTF8 -Raw | ConvertFrom-Json)
     }
     catch {
         $invalid.Add(("Global/WorldConfig.config (invalid json: {0})" -f $_.Exception.Message))
@@ -76,6 +72,34 @@ if (Test-Path -Path $worldConfigPath) {
 }
 else {
     $missing.Add("Global/WorldConfig.config")
+}
+
+foreach ($relativePath in $manifest.required_files) {
+    if ($relativePath -notlike "*.codeblock") {
+        continue
+    }
+
+    $fullPath = Join-Path $projectRoot $relativePath
+    if (-not (Test-Path -Path $fullPath)) {
+        continue
+    }
+
+    try {
+        $codeblock = Get-Content -Path $fullPath -Encoding UTF8 -Raw | ConvertFrom-Json
+        $scriptJson = $codeblock.ContentProto.Json
+
+        if ($scriptJson.Source -ne 1) {
+            $invalid.Add(("{0} (Source must be 1)" -f $relativePath))
+        }
+
+        $target = $scriptJson.Target
+        if (-not ($target -is [string]) -or [string]::IsNullOrWhiteSpace($target)) {
+            $invalid.Add(("{0} (Target must contain script text)" -f $relativePath))
+        }
+    }
+    catch {
+        $invalid.Add(("{0} (invalid codeblock json: {1})" -f $relativePath, $_.Exception.Message))
+    }
 }
 
 if ($null -ne $manifest.required_map_checks) {

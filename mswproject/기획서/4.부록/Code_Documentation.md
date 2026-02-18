@@ -1,5 +1,5 @@
 ﻿## [MovementComponent]
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/MovementComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/MovementComponent.codeblock`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -28,7 +28,7 @@
 | `OnEndPlay` | void | void | 종료 시 이동 벡터 정리 |
 
 ## [CameraFollowComponent]
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/CameraFollowComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/CameraFollowComponent.codeblock`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -42,11 +42,11 @@
 | 함수명 | 파라미터 | 리턴값 | 설명 |
 |---|---|---|---|
 | `OnBeginPlay` | void | void | 입장 시 카메라 설정 적용 |
-| `OnMapEnter` | void | void | 맵 재진입 시 카메라 설정 재적용 |
+| `OnMapEnter` | `Entity enteredMap` | void | 맵 재진입 시 카메라 설정 재적용 |
 | `ApplyCameraSettings` | void | void | 카메라 오프셋/커스텀 경계 동기화 |
 
 ## [HPSystemComponent]
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/HPSystemComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/HPSystemComponent.codeblock`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -71,8 +71,12 @@
 | `ApplyDamage` | `integer rawDamage` | void | 피해 계산 및 HP 차감 |
 | `StartInvincibleWindow` | void | void | 피격 후 무적 타이머 시작 |
 | `Heal` | `integer amount` | void | 서버 회복 처리 (상한 적용) |
+| `ReviveToFullHP` | void | void | 다음 런 시작을 위한 HP/사망 상태 전체 복구 |
 | `EvaluateDeath` | void | void | 사망 상태 확정 및 이동 차단 |
-| `NotifyGameOver` | void | void | GameManager로 게임오버 전달 |
+| `ResolveProjectMovementComponent` | void | `Component` | script 우선으로 CanMove 필드를 가진 이동 컴포넌트 탐색 |
+| `TrySetMovementCanMove` | `boolean canMove` | `boolean` | CanMove 대입을 pcall로 보호해 런타임 예외 차단 |
+| `CanWriteComponentField` | `any targetComponent`, `string fieldName` | `boolean` | 읽기+동일값 재대입 probe로 필드 쓰기 가능 여부 판정 |
+| `NotifyGameOver` | void | void | LobbyFlow/GameManager 폴백 체인으로 게임오버 결과 처리 |
 | `BroadcastHPState` | void | void | 서버 상태를 클라이언트 연출 함수로 전송 |
 | `UpdateHPFeedbackClient` | `integer currentHp`, `integer maxHp`, `boolean isInvincible`, `boolean isDead` | void | 클라이언트 HP/무적/사망 연출 갱신 |
 | `UpdateInvincibleBlink` | `boolean isInvincible` | void | 무적 점멸 시작/종료 분기 |
@@ -83,7 +87,7 @@
 | `OnEndPlay` | void | void | 서버 무적 타이머 정리 |
 
 ## [ReloadComponent]
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/ReloadComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/ReloadComponent.codeblock`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -117,7 +121,7 @@
 | `OnEndPlay` | void | void | 슬롯별 재장전 타이머 정리 |
 
 ## [FireSystemComponent]
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/FireSystemComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/FireSystemComponent.codeblock`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -154,7 +158,7 @@
 | `OnEndPlay` | void | void | 발사 쿨타임 타이머 정리 |
 
 ## [ProjectileComponent]
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/ProjectileComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/ProjectileComponent.codeblock`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -180,8 +184,8 @@
 | `DestroySelf` | void | void | 중복 파괴 방지 포함 투사체 제거 |
 
 ## [WeaponSwapComponent]
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/WeaponSwapComponent.mlua`
-- **수정일:** `2026-02-17`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/WeaponSwapComponent.codeblock`
+- **수정일:** `2026-02-18`
 
 ### Properties
 | 이름 | 타입 | 설명 |
@@ -213,6 +217,9 @@
 | `SaveCurrentSlotState` | `integer slot` | void | 현재 슬롯 상태 저장 |
 | `LoadSlotDataToCombatComponents` | `table data`, `integer slot` | void | 슬롯 데이터 로드 |
 | `SetCombatInputLocked` | `boolean isLocked` | void | 이동/공격 입력 잠금 |
+| `ResolveProjectMovementComponent` | void | `Component` | script 우선으로 CanMove 필드를 가진 이동 컴포넌트 탐색 |
+| `TrySetMovementCanMove` | `boolean canMove` | `boolean` | CanMove 대입을 pcall로 보호해 런타임 예외 차단 |
+| `CanWriteComponentField` | `any targetComponent`, `string fieldName` | `boolean` | 읽기+동일값 재대입 probe로 필드 쓰기 가능 여부 판정 |
 | `UpdateSwapUIClient` | `boolean isOpen`, `integer highlightedSlot` | void | 클라이언트 방사형 메뉴 UI 갱신 |
 | `IsRequestFromOwner` | void | `boolean` | 서버 요청 소유자 검증 |
 | `CanOpenSwapMenu` | void | `boolean` | 메뉴 오픈 가능 여부 검사 (AllowSwapMenu 포함) |
@@ -223,7 +230,7 @@
 | `OnEndPlay` | void | void | 종료 시 메뉴/잠금 상태 정리 |
 
 ## [WeaponWheelUIComponent]
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/WeaponWheelUIComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/WeaponWheelUIComponent.codeblock`
 - **수정일:** `2026-02-17`
 
 ### Properties
@@ -243,7 +250,7 @@
 | `ResolveWheelRootClient` | void | `Entity` | Resolve wheel root from UI path |
 
 ## [TagManagerComponent]
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/TagManagerComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/TagManagerComponent.codeblock`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -256,11 +263,29 @@
 | `IsTagLocked` | boolean | 태그 잠금 상태 (Sync) |
 | `Character1_Data` | table | 캐릭터1 상태 백업 |
 | `Character2_Data` | table | 캐릭터2 상태 백업 |
+| `EnableCharacterVisualSwap` | boolean | 태그 시 캐릭터 외형 색상/알파 스왑 적용 여부 |
+| `Character1VisualColor` | Color | 캐릭터1 외형 기준 색상 |
+| `Character2VisualColor` | Color | 캐릭터2 외형 기준 색상 |
+| `Character1VisualAlpha` | number | 캐릭터1 외형 알파 |
+| `Character2VisualAlpha` | number | 캐릭터2 외형 알파 |
+| `EnableEntrySkill` | boolean | 태그 직후 엔트리 스킬 활성화 여부 |
+| `EntrySkillTargetCollisionGroupName` | string | 엔트리 스킬 탐색 대상 충돌 그룹 이름 |
+| `EntrySkillTargetHPComponentName` | string | 엔트리 스킬 데미지 적용 대상 HP 컴포넌트명 |
+| `Character1EntrySkillDamage` | integer | 캐릭터1 엔트리 스킬 데미지 |
+| `Character2EntrySkillDamage` | integer | 캐릭터2 엔트리 스킬 데미지 |
+| `Character1EntrySkillRadius` | number | 캐릭터1 엔트리 스킬 반경 |
+| `Character2EntrySkillRadius` | number | 캐릭터2 엔트리 스킬 반경 |
+| `EntrySkillMaxTargets` | integer | 엔트리 스킬 최대 타격 대상 수 |
+| `EntrySkillFlashDuration` | number | 엔트리 스킬 플래시 연출 지속 시간 |
+| `Character1EntrySkillFlashColor` | Color | 캐릭터1 엔트리 스킬 플래시 색상 |
+| `Character2EntrySkillFlashColor` | Color | 캐릭터2 엔트리 스킬 플래시 색상 |
 
 ### Functions
 | 함수명 | 파라미터 | 리턴값 | 설명 |
 |---|---|---|---|
 | `OnInitialize` | void | void | 태그 초기 상태/백업 데이터 초기화 |
+| `OnBeginPlay` | void | void | 클라이언트 시작 시 현재 캐릭터 외형 적용 |
+| `OnSyncProperty` | `string propertyName`, `any value` | void | CurrentCharIndex 동기화 시 외형 재적용 |
 | `HandleKeyDownEvent` | `KeyDownEvent event` | void | 태그 키 입력 처리 |
 | `RequestTagServer` | void | void | 서버 태그 요청 검증 진입 |
 | `ExecuteTagServer` | void | void | 태그 스왑 본 처리 |
@@ -271,25 +296,42 @@
 | `CancelCurrentReloadBeforeSwap` | void | void | 태그 전 재장전 취소 |
 | `ApplyTagInvincibleWindow` | void | void | 태그 무적 적용/해제 |
 | `StartTagCooldown` | void | void | 태그 쿨타임 시작/복원 |
-| `TriggerEntrySkill` | `integer charIndex` | void | 캐릭터 엔트리 스킬 훅 |
+| `TriggerEntrySkill` | `integer charIndex` | void | 엔트리 스킬 서버 판정 실행 |
+| `ApplyCharacterVisualClient` | `integer charIndex` | void | 캐릭터별 외형 색상/알파 적용 |
+| `ApplyEntrySkillDamageServer` | `integer damage`, `number radius` | `integer` | 충돌 시뮬레이터 기반 범위 데미지 적용 |
+| `PlayEntrySkillFlashClient` | `integer charIndex` | void | 엔트리 스킬 플래시 연출 |
+| `GetCharacterVisualColor` | `integer charIndex` | `Color` | 캐릭터별 외형 색상 반환 |
+| `GetCharacterVisualAlpha` | `integer charIndex` | `number` | 캐릭터별 외형 알파 반환 |
+| `GetEntrySkillDamage` | `integer charIndex` | `integer` | 캐릭터별 엔트리 스킬 데미지 반환 |
+| `GetEntrySkillRadius` | `integer charIndex` | `number` | 캐릭터별 엔트리 스킬 반경 반환 |
+| `GetEntrySkillFlashColor` | `integer charIndex` | `Color` | 캐릭터별 플래시 색상 반환 |
 | `IsRequestFromOwner` | void | `boolean` | 서버 요청 소유자 검증 |
 | `CloneTable` | `table source` | `table` | 상태 테이블 깊은 복사 |
 | `OnEndPlay` | void | void | 태그 타이머 정리 |
 
 ## [SpeedrunTimerComponent]
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/SpeedrunTimerComponent.mlua`
-- **수정일:** `2026-02-17`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/SpeedrunTimerComponent.codeblock`
+- **수정일:** `2026-02-18`
 
 ### Properties
 | 이름 | 타입 | 설명 |
 |---|---|---|
 | `ElapsedTime` | number | 누적 경과 시간(초) (Sync) |
 | `IsRunning` | boolean | 타이머 동작 여부 (Sync) |
+| `IsCountdownRunning` | boolean | 시작 카운트다운 진행 여부 (Sync) |
+| `CountdownRemaining` | integer | 시작 카운트다운 남은 초 (Sync) |
 | `CurrentStageId` | integer | 현재 스테이지 ID |
 | `BestTime` | number | 스테이지 최고 기록 (Sync) |
 | `DataStorageName` | string | 기록 저장소 이름 |
 | `TimerTextEntity` | Entity | 타이머 텍스트 UI 엔티티 |
 | `TimerTextPath` | string | Timer UI entity path (`/ui/DefaultGroup/GRTimerText`) |
+| `TimerTextFallbackPath` | string | 타이머 텍스트 UI fallback path (`/maps/map01/GRTimerText`) |
+| `EnableStartCountdown` | boolean | 런 시작 전 카운트다운 사용 여부 |
+| `StartCountdownSeconds` | integer | 시작 카운트다운 길이(초) |
+| `LockCombatDuringCountdown` | boolean | 카운트다운 중 이동/공격 잠금 여부 |
+| `CountdownPauseReason` | string | 외부 pause 맵에서 사용하는 카운트다운 사유 키 |
+| `CountdownReadyPrefix` | string | 카운트다운 표시 접두 문자열 |
+| `CountdownGoText` | string | 카운트다운 종료 표시 문자열 |
 
 ### Functions
 | 함수명 | 파라미터 | 리턴값 | 설명 |
@@ -297,7 +339,13 @@
 | `OnInitialize` | void | void | 타이머 상태/외부 일시정지 맵 초기화 |
 | `OnBeginPlay` | void | void | 클라이언트 텍스트 루프 시작 |
 | `OnUpdate` | `number delta` | void | 서버 경과 시간 누적 |
-| `StartRun` | void | void | 런 시작 |
+| `StartRun` | void | void | 카운트다운 없이 즉시 런 시작 |
+| `StartRunWithCountdown` | void | void | 서버 권위 카운트다운 후 런 시작 |
+| `CancelCountdown` | void | void | 카운트다운 타이머/잠금 상태 정리 |
+| `ApplyCountdownCombatLockServer` | `boolean isLocked` | void | 카운트다운 중 이동/공격 잠금 제어 |
+| `ResolveProjectMovementComponent` | void | `Component` | script 우선으로 CanMove 필드를 가진 이동 컴포넌트 탐색 |
+| `TrySetMovementCanMove` | `boolean canMove` | `boolean` | CanMove 대입을 pcall로 보호해 런타임 예외 차단 |
+| `CanWriteComponentField` | `any targetComponent`, `string fieldName` | `boolean` | 읽기+동일값 재대입 probe로 필드 쓰기 가능 여부 판정 |
 | `SetExternalPauseState` | `string reason`, `boolean paused` | void | 외부 일시정지 플래그 설정 |
 | `IsExternallyPaused` | void | `boolean` | 외부 일시정지 여부 판정 |
 | `CompleteRun` | void | void | 런 종료/기록 갱신/랭킹 전달 |
@@ -308,13 +356,20 @@
 | `LoadBestTimeFromStorage` | void | void | 최고 기록 로드 |
 | `NotifyRankingSystem` | void | void | RankingComponent로 결과 전달 |
 | `PlayNewRecordFeedbackClient` | void | void | 신기록 클라이언트 피드백 |
+| `PlayCountdownFeedbackClient` | `integer remaining` | void | 카운트다운 단계별 클라이언트 피드백 |
+| `PlayCountdownGoFeedbackClient` | void | void | 카운트다운 종료 클라이언트 피드백 |
+| `OnSyncProperty` | `string propertyName`, `any value` | void | 타이머 Sync 수신 시 UI 텍스트 즉시 갱신 |
+| `RefreshTimerTextClient` | void | void | 현재 상태(카운트다운/시간)에 맞춰 타이머 텍스트 강제 갱신 |
 | `ResolveTimerTextEntityClient` | void | `Entity` | Resolve timer text from UI path |
+| `TrySetTimerTextVisibleClient` | `boolean visible` | void | 카운트다운/런 중 타이머 텍스트 표시를 강제 |
+| `BuildCountdownText` | `integer remaining` | `string` | 카운트다운 HUD 표시 문자열 생성 |
 | `FormatElapsedTime` | `number elapsed` | `string` | `MM:SS.ms` 포맷 변환 |
 | `StopClientTimerTextLoop` | void | void | 클라이언트 텍스트 루프 종료 |
 | `OnEndPlay` | void | void | 종료 시 텍스트 루프 정리 |
+| `OnDestroy` | void | void | 서버 카운트다운 타이머 정리 |
 
 ## [RankingComponent]
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/RankingComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/RankingComponent.codeblock`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -350,7 +405,7 @@
 | `GetOwnerDisplayName` | void | `string` | 오너 표시명 조회 |
 
 ## [RankingUIComponent]
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/RankingUIComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/RankingUIComponent.codeblock`
 - **수정일:** `2026-02-17`
 
 ### Properties
@@ -375,8 +430,8 @@
 | `ResolveTextEntityByPath` | `Entity currentEntity`, `string targetPath` | `Entity` | Shared resolver for UI text entities |
 
 ## [LobbyFlowComponent]
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/LobbyFlowComponent.mlua`
-- **수정일:** `2026-02-17`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/LobbyFlowComponent.codeblock`
+- **수정일:** `2026-02-18`
 
 ### Properties
 | 이름 | 타입 | 설명 |
@@ -391,9 +446,15 @@
 | `LobbyRankingTab` | integer | 로비에서 열 랭킹 탭 (1=TimeAttack, 2=Infinite) |
 | `AutoStartTimerWhenGameStart` | boolean | 시작 버튼 이후 타이머 자동 시작 여부 |
 | `ResetTimerWhenLobbyActive` | boolean | 로비 상태 복귀 시 타이머 리셋 여부 |
+| `ReturnToLobbyOnRunComplete` | boolean | 런 결과 확정 후 로비 복귀 여부 |
 | `HideRankingDuringGameplay` | boolean | 인게임에서 랭킹 UI 숨김 여부 |
 | `HideTimerDuringLobby` | boolean | 로비에서 타이머 UI 숨김 여부 |
 | `HideCombatHUDInLobby` | boolean | 로비에서 조작 HUD 숨김 여부 |
+| `LockPlayerControllerInLobby` | boolean | 로비 상태에서 기본 PlayerController 비활성화 여부 |
+| `LockTagInLobby` | boolean | 로비 상태에서 태그 입력 잠금 여부 |
+| `HidePlayerVisualInLobby` | boolean | 로비 상태에서 플레이어 렌더 숨김 여부 |
+| `HideMapLayerInLobby` | boolean | 로비 상태에서 맵 레이어 숨김 여부 |
+| `MapLayerEntityName` | string | 가시성 제어 대상 맵 레이어 이름 |
 | `StartButtonPath` | string | 시작 버튼 UI 경로 |
 | `RankingTextPath` | string | 랭킹 텍스트 UI 경로 |
 | `MyRankTextPath` | string | 내 순위 텍스트 UI 경로 |
@@ -412,25 +473,38 @@
 |---|---|---|---|
 | `OnInitialize` | void | void | 초기 로비 상태 설정 |
 | `OnBeginPlay` | void | void | 초기 서버/클라이언트 상태 적용 |
-| `OnMapEnter` | void | void | 맵 분리 시 로비/인게임 상태 자동 동기화 |
-| `OnUpdate` | `number delta` | void | 클라이언트 UI 상태 폴링 및 바인딩 복구 |
-| `RequestStartGameServer` | void | void | 시작 버튼 서버 요청 처리 |
+| `OnMapEnter` | `Entity enteredMap` | void | 맵 분리 시 로비/인게임 상태 자동 동기화 |
+| `OnUpdate` | `number delta` | void | 클라이언트 UI 상태 폴링 및 바인딩 복구 (MapSplit 맵명 기반 상태를 주기적으로 강제 적용) |
+| `RequestStartGameServer` | void | void | 시작 버튼 서버 요청 처리 (맵 분리 시 즉시 인게임 상태 전환) |
+| `HandleRunCompletedServer` | `boolean isClear` | void | 결과 확정 시 타이머 종료/로비 복귀 처리 |
+| `HandleStageClearServer` | void | void | 클리어 결과 진입점 |
+| `HandleStageFailedServer` | void | void | 실패 결과 진입점 |
 | `HandleLobbyStartKeyDownEvent` | `KeyDownEvent event` | void | Enter/Space 키로 시작 요청 처리 |
 | `OnStartButtonClickedClient` | `any event` | void | 시작 버튼 클릭/프레스 입력 처리 |
 | `ApplyInitialServerState` | void | void | 초기 상태 분기(로비/인게임) |
-| `SetLobbyStateServer` | `boolean isLobby` | void | 이동/공격/무기교체/타이머 상태 전환 |
-| `MoveOwnerToInGameMapIfNeeded` | void | void | 맵 분리 모드에서 인게임 맵 이동 |
+| `SetLobbyStateServer` | `boolean isLobby` | void | 이동/공격/태그/HP/타이머 상태 전환 및 시작 카운트다운 연결 |
+| `ResolveProjectMovementComponent` | void | `Component` | script 우선으로 CanMove 필드를 가진 이동 컴포넌트 탐색 |
+| `TrySetMovementCanMove` | `boolean canMove` | `boolean` | CanMove 대입을 pcall로 보호해 런타임 예외 차단 |
+| `CanWriteComponentField` | `any targetComponent`, `string fieldName` | `boolean` | 읽기+동일값 재대입 probe로 필드 쓰기 가능 여부 판정 |
+| `ApplyLobbyControlLockServer` | `boolean isLobby` | void | 로비 상태에서 PlayerController/NativeMovement 강제 잠금 |
+| `ApplyLobbyVisualMaskClient` | `boolean isLobby` | void | 로비 상태 시 플레이어/맵 시각 요소 마스킹 |
+| `SetPlayerVisualVisibleClient` | `boolean visible` | void | 플레이어 렌더 알파 토글 |
+| `SetCurrentMapLayerVisibleClient` | `boolean visible` | void | 현재 맵 레이어 가시성 토글 |
+| `MoveOwnerToInGameMapIfNeeded` | void | `boolean` | 맵 분리 모드에서 인게임 맵 이동 요청 성공 여부 반환 |
 | `ApplyLobbyUIClient` | `boolean isLobby` | void | 로비/인게임 UI 가시성 전환 |
+| `ResolveEffectiveLobbyStateClient` | void | `boolean` | MapSplit 시 현재 맵 이름 기준으로 로비 상태를 보정 |
 | `BindStartButtonClient` | void | `boolean` | 시작 버튼 클릭/프레스 이벤트 바인딩 |
 | `ScheduleStartButtonBindRetryClient` | void | void | UI 지연 로딩 시 바인딩 재시도 타이머 시작 |
 | `SetEntityEnableByPath` | `string entityPath`, `boolean enabled` | void | 경로 기반 UI 활성 상태 변경 |
+| `TrySetComponentEnable` | `any targetComponent`, `boolean enabled` | void | UI 컴포넌트별 Enable 안전 적용 |
+| `TrySetEntityVisualAlpha` | `Entity targetEntity`, `boolean enabled` | void | Enable 적용 후에도 남는 UI 잔상을 알파로 강제 숨김 |
 | `ResolveEntityByPath` | `string entityPath` | `Entity` | 경로 기반 엔티티 조회 |
 | `IsRequestFromOwner` | void | `boolean` | 요청 소유자 검증 |
 | `OnEndPlay` | void | void | 클릭 이벤트 해제 |
 
 ## [Map01BootstrapComponent]
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Map01BootstrapComponent.mlua`
-- **수정일:** `2026-02-17`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Map01BootstrapComponent.codeblock`
+- **수정일:** `2026-02-18`
 
 ### Properties
 | 이름 | 타입 | 설명 |
@@ -449,10 +523,16 @@
 | `HandleUserEnterEvent` | `UserEnterEvent event` | void | 새로 입장한 유저 자동 설정 |
 | `ConfigureCurrentMapUsers` | void | void | 현재 맵 유저 전체 순회 |
 | `ConfigurePlayerIfInTargetMap` | `Entity playerEntity` | void | TargetMapName 일치 유저 필터링 후 설정 진입 |
-| `ConfigurePlayer` | `Entity playerEntity` | void | 전투/이동/UI/로비 흐름 컴포넌트 자동 부착 및 씬분리 값 주입 |
+| `ConfigurePlayer` | `Entity playerEntity` | void | 커스텀 컴포넌트 우선 탐색 후 안전 필드 대입으로 플레이어 초기화 |
 | `RebindRuntimeReferences` | `Entity playerEntity` | void | Rebind server-authoritative projectile template reference |
 | `SeedWeaponSlots` | `Component weaponSwapComponent` | void | 4개 슬롯 기본 무기 데이터 주입 |
 | `BuildWeaponData` | 무기 스펙 파라미터 | `table` | 슬롯 데이터 테이블 생성 |
 | `FindMapEntityByName` | `string entityName` | `Entity` | 맵 하위 엔티티 탐색 |
 | `AddOrGetComponent` | `Entity targetEntity`, `string typeName` | `Component` | 컴포넌트 중복 없이 조회/추가 |
+| `FindProjectComponent` | `Entity targetEntity`, `string scriptName`, `string markerField` | `Component` | script-prefix/plain-name fallback으로 커스텀 컴포넌트 탐색 |
+| `GetOrAddProjectComponent` | `Entity targetEntity`, `string scriptName`, `string markerField` | `Component` | script-prefixed 우선 추가 후 마커 검증 및 충돌 경고 로그 출력 |
+| `HasComponentMember` | `any targetComponent`, `string memberName` | `boolean` | 읽기+동일값 재대입 probe로 nil 필드/미존재 필드를 구분 |
+| `TrySetComponentField` | `any targetComponent`, `string fieldName`, `any value` | `boolean` | 존재 필드만 안전하게 대입(런타임 예외 차단) |
+
+
 

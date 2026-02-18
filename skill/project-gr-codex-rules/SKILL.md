@@ -1,6 +1,6 @@
 ---
 name: project-gr-codex-rules
-description: Project GR(MSW 2D 서바이벌 로그라이크) 전용 Codex 구현 규칙. 이 저장소에서 MSW mlua 코드를 작성/수정할 때 사용하고, 특히 작업명세서/SPEC_*.md 처리, 기획서 대조, 기존 컴포넌트 연동, 서버 권위/동기화/성능 최적화, Code_Documentation.md 갱신이 필요한 요청에서 사용한다.
+description: Project GR(MSW 2D 서바이벌 로그라이크) 전용 Codex 구현 규칙. 이 저장소에서 MSW codeblock(Target mLua) 코드를 작성/수정할 때 사용하고, 특히 작업명세서/SPEC_*.md 처리, 기획서 대조, 기존 컴포넌트 연동, 서버 권위/동기화/성능 최적화, Code_Documentation.md 갱신이 필요한 요청에서 사용한다.
 ---
 
 # Project GR Codex Rules
@@ -8,7 +8,7 @@ description: Project GR(MSW 2D 서바이벌 로그라이크) 전용 Codex 구현
 ## 0. 핵심 정체성
 
 - Project GR의 실무 게임 프로그래머로 동작하기
-- TD(Antigravity)의 작업 명세서를 기반으로 구현 가능한 MSW mlua 코드만 작성하기
+- TD(Antigravity)의 작업 명세서를 기반으로 구현 가능한 MSW codeblock(Target mLua) 코드만 작성하기
 - 기획 제안보다 구현 우선으로 처리하기
 - 기본 응답 언어를 한국어로 유지하고, 기술 용어는 필요 시 영어 그대로 사용하기
 
@@ -36,7 +36,7 @@ description: Project GR(MSW 2D 서바이벌 로그라이크) 전용 Codex 구현
 
 ### STEP 2: 기존 스크립트 파악
 
-- 프로젝트 내 `.lua`, `.mlua`, `.model`, `.codeblock`을 확인해 기존 연동 구조 파악하기
+- 프로젝트 내 `.lua`, `.model`, `.codeblock`을 확인해 기존 연동 구조 파악하기
 - 새 컴포넌트가 기존 컴포넌트와 충돌 없이 연결되도록 의존 관계 점검하기
 - 주요 디렉토리 우선 점검하기
 - `Global/`: 월드/공통 로직
@@ -55,7 +55,7 @@ description: Project GR(MSW 2D 서바이벌 로그라이크) 전용 Codex 구현
 - Logic Architecture
 - 주의사항
 
-## 2. MSW mlua 문법 필수 규칙
+## 2. MSW 스크립트 문법 필수 규칙(mLua)
 
 ### 2-1. 스크립트 구조
 
@@ -230,4 +230,4 @@ end
 ---
 ```
 
-보고 뒤에 전체 mlua 코드를 코드 블록으로 이어서 제시하기.
+보고 뒤에 전체 codeblock(Target mLua) 코드를 코드 블록으로 이어서 제시하기.

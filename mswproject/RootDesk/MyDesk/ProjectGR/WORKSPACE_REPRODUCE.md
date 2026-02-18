@@ -3,6 +3,11 @@
 ## 1. Goal
 이 문서는 현재 구현 상태를 로컬 워크스페이스에서 동일하게 재현하기 위한 절차를 정의합니다.
 
+## 1.1 Related Plan
+기능 플로우차트, 테스트 매트릭스, 누락 우선순위는 아래 문서를 기준으로 관리합니다.
+
+- `mswproject/RootDesk/MyDesk/ProjectGR/FLOW_TEST_GAP_PLAN.md`
+
 ## 2. Fast Check
 아래 명령으로 재현 가능 상태를 검증합니다.
 
@@ -16,10 +21,17 @@ SPEC 상태 자동 보정까지 하려면:
 powershell -ExecutionPolicy Bypass -File _scripts/repro_projectgr_workspace.ps1 -Fix
 ```
 
-## 2.1 Script Format Requirement
-Project GR 스크립트는 `.mlua` 기반입니다. 따라서 `Global/WorldConfig.config`에서 아래 값이 필요합니다.
+ProjectGR 스크립트를 `.codeblock` Source/Target 형태로 강제 동기화하려면:
 
-- `UseExtendedScriptFormat = true`
+```powershell
+powershell -ExecutionPolicy Bypass -File _scripts/convert_projectgr_mlua_to_codeblock.ps1
+```
+
+## 2.1 Script Format Requirement
+Project GR 스크립트는 `.codeblock`(Target 내 mLua 소스) 기준입니다.
+
+- `RootDesk/MyDesk/ProjectGR/Components/*.codeblock` 파일의 `ContentProto.Json.Source = 1`
+- `RootDesk/MyDesk/ProjectGR/Components/*.codeblock` 파일의 `ContentProto.Json.Target`에 실제 스크립트 본문 존재
 
 변경 후 Maker에서 아래 순서로 반영하세요.
 1. `Reimport All`
@@ -28,20 +40,20 @@ Project GR 스크립트는 `.mlua` 기반입니다. 따라서 `Global/WorldConfi
 ## 3. Required Files
 다음 컴포넌트/맵 파일이 모두 존재해야 합니다.
 
-- `mswproject/RootDesk/MyDesk/ProjectGR/Components/MovementComponent.mlua`
-- `mswproject/RootDesk/MyDesk/ProjectGR/Components/CameraFollowComponent.mlua`
-- `mswproject/RootDesk/MyDesk/ProjectGR/Components/HPSystemComponent.mlua`
-- `mswproject/RootDesk/MyDesk/ProjectGR/Components/ReloadComponent.mlua`
-- `mswproject/RootDesk/MyDesk/ProjectGR/Components/FireSystemComponent.mlua`
-- `mswproject/RootDesk/MyDesk/ProjectGR/Components/ProjectileComponent.mlua`
-- `mswproject/RootDesk/MyDesk/ProjectGR/Components/WeaponSwapComponent.mlua`
-- `mswproject/RootDesk/MyDesk/ProjectGR/Components/WeaponWheelUIComponent.mlua`
-- `mswproject/RootDesk/MyDesk/ProjectGR/Components/TagManagerComponent.mlua`
-- `mswproject/RootDesk/MyDesk/ProjectGR/Components/SpeedrunTimerComponent.mlua`
-- `mswproject/RootDesk/MyDesk/ProjectGR/Components/RankingComponent.mlua`
-- `mswproject/RootDesk/MyDesk/ProjectGR/Components/RankingUIComponent.mlua`
-- `mswproject/RootDesk/MyDesk/ProjectGR/Components/LobbyFlowComponent.mlua`
-- `mswproject/RootDesk/MyDesk/ProjectGR/Components/Map01BootstrapComponent.mlua`
+- `mswproject/RootDesk/MyDesk/ProjectGR/Components/MovementComponent.codeblock`
+- `mswproject/RootDesk/MyDesk/ProjectGR/Components/CameraFollowComponent.codeblock`
+- `mswproject/RootDesk/MyDesk/ProjectGR/Components/HPSystemComponent.codeblock`
+- `mswproject/RootDesk/MyDesk/ProjectGR/Components/ReloadComponent.codeblock`
+- `mswproject/RootDesk/MyDesk/ProjectGR/Components/FireSystemComponent.codeblock`
+- `mswproject/RootDesk/MyDesk/ProjectGR/Components/ProjectileComponent.codeblock`
+- `mswproject/RootDesk/MyDesk/ProjectGR/Components/WeaponSwapComponent.codeblock`
+- `mswproject/RootDesk/MyDesk/ProjectGR/Components/WeaponWheelUIComponent.codeblock`
+- `mswproject/RootDesk/MyDesk/ProjectGR/Components/TagManagerComponent.codeblock`
+- `mswproject/RootDesk/MyDesk/ProjectGR/Components/SpeedrunTimerComponent.codeblock`
+- `mswproject/RootDesk/MyDesk/ProjectGR/Components/RankingComponent.codeblock`
+- `mswproject/RootDesk/MyDesk/ProjectGR/Components/RankingUIComponent.codeblock`
+- `mswproject/RootDesk/MyDesk/ProjectGR/Components/LobbyFlowComponent.codeblock`
+- `mswproject/RootDesk/MyDesk/ProjectGR/Components/Map01BootstrapComponent.codeblock`
 - `mswproject/map/lobby.map`
 
 ## 4. Workspace Binding Checklist
@@ -62,7 +74,7 @@ Maker에서 실제 플레이 재현을 위해 아래 바인딩을 확인합니�
 아래가 모두 만족되면 재현 성공입니다.
 
 - `_scripts/repro_projectgr_workspace.ps1` 결과가 `PASS`
-- `Global/WorldConfig.config`의 `UseExtendedScriptFormat`이 `true`
+- `RootDesk/MyDesk/ProjectGR/Components/*.codeblock`의 `Source=1` 및 `Target` 스크립트 본문 존재
 - `작업명세서/SPEC_*.md` 8개 상태가 모두 `# 🟢 완료`
 - `기획서/4.부록/Code_Documentation.md`에 14개 컴포넌트 섹션 존재
 
