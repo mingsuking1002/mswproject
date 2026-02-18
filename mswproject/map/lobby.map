@@ -111,65 +111,6 @@
           ],
           "@version": 1
         }
-      },
-      {
-        "id": "e43766ee-ab57-49e8-b607-a7689fe8e0c6",
-        "path": "/maps/lobby/LobbyBootstrap",
-        "componentNames": "MOD.Core.TransformComponent,script.Map01BootstrapComponent",
-        "jsonString": {
-          "name": "LobbyBootstrap",
-          "path": "/maps/lobby/LobbyBootstrap",
-          "nameEditable": true,
-          "enable": true,
-          "visible": true,
-          "localize": false,
-          "displayOrder": 2,
-          "pathConstraints": "///",
-          "revision": 1,
-          "modelId": null,
-          "@components": [
-            {
-              "@type": "MOD.Core.TransformComponent",
-              "Rotation": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "Position": {
-                "x": 0.0,
-                "y": -1.0,
-                "z": 0.0
-              },
-              "QuaternionRotation": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0,
-                "w": 1.0
-              },
-              "Scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-              },
-              "ZRotation": 0.0,
-              "Enable": true
-            },
-            {
-              "@type": "script.Map01BootstrapComponent",
-              "TargetMapName": "lobby",
-              "ProjectileTemplateName": "",
-              "EnableLobbyMapSplit": true,
-              "LobbyMapName": "lobby",
-              "InGameMapName": "map01",
-              "InGameSpawnPosition": {
-                "x": 0.0,
-                "y": 0.0
-              },
-              "Enable": true
-            }
-          ],
-          "@version": 1
-        }
       }
     ]
   }

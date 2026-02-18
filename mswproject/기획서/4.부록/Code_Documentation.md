@@ -73,10 +73,11 @@
 | `Heal` | `integer amount` | void | 서버 회복 처리 (상한 적용) |
 | `ReviveToFullHP` | void | void | 다음 런 시작을 위한 HP/사망 상태 전체 복구 |
 | `EvaluateDeath` | void | void | 사망 상태 확정 및 이동 차단 |
+| `ResolveProjectComponent` | `string scriptName`, `string markerField` | `Component` | script-prefix/plain-name 탐색으로 컴포넌트 참조 안정화 |
 | `ResolveProjectMovementComponent` | void | `Component` | script 우선으로 CanMove 필드를 가진 이동 컴포넌트 탐색 |
 | `TrySetMovementCanMove` | `boolean canMove` | `boolean` | CanMove 대입을 pcall로 보호해 런타임 예외 차단 |
 | `CanWriteComponentField` | `any targetComponent`, `string fieldName` | `boolean` | 읽기+동일값 재대입 probe로 필드 쓰기 가능 여부 판정 |
-| `NotifyGameOver` | void | void | LobbyFlow/GameManager 폴백 체인으로 게임오버 결과 처리 |
+| `NotifyGameOver` | void | void | ResolveProjectComponent 기반으로 LobbyFlow/GameManager/Timer 폴백 체인 처리 |
 | `BroadcastHPState` | void | void | 서버 상태를 클라이언트 연출 함수로 전송 |
 | `UpdateHPFeedbackClient` | `integer currentHp`, `integer maxHp`, `boolean isInvincible`, `boolean isDead` | void | 클라이언트 HP/무적/사망 연출 갱신 |
 | `UpdateInvincibleBlink` | `boolean isInvincible` | void | 무적 점멸 시작/종료 분기 |
@@ -325,7 +326,7 @@
 | `DataStorageName` | string | 기록 저장소 이름 |
 | `TimerTextEntity` | Entity | 타이머 텍스트 UI 엔티티 |
 | `TimerTextPath` | string | Timer UI entity path (`/ui/DefaultGroup/GRTimerText`) |
-| `TimerTextFallbackPath` | string | 타이머 텍스트 UI fallback path (`/maps/map01/GRTimerText`) |
+| `TimerTextFallbackPath` | string | map fallback 비활성화 기본값 (`""`) |
 | `EnableStartCountdown` | boolean | 런 시작 전 카운트다운 사용 여부 |
 | `StartCountdownSeconds` | integer | 시작 카운트다운 길이(초) |
 | `LockCombatDuringCountdown` | boolean | 카운트다운 중 이동/공격 잠금 여부 |
@@ -343,6 +344,7 @@
 | `StartRunWithCountdown` | void | void | 서버 권위 카운트다운 후 런 시작 |
 | `CancelCountdown` | void | void | 카운트다운 타이머/잠금 상태 정리 |
 | `ApplyCountdownCombatLockServer` | `boolean isLocked` | void | 카운트다운 중 이동/공격 잠금 제어 |
+| `ResolveProjectComponent` | `string scriptName`, `string markerField` | `Component` | script-prefix/plain-name 탐색으로 LobbyFlow/Fire 참조 안정화 |
 | `ResolveProjectMovementComponent` | void | `Component` | script 우선으로 CanMove 필드를 가진 이동 컴포넌트 탐색 |
 | `TrySetMovementCanMove` | `boolean canMove` | `boolean` | CanMove 대입을 pcall로 보호해 런타임 예외 차단 |
 | `CanWriteComponentField` | `any targetComponent`, `string fieldName` | `boolean` | 읽기+동일값 재대입 probe로 필드 쓰기 가능 여부 판정 |
@@ -358,10 +360,12 @@
 | `PlayNewRecordFeedbackClient` | void | void | 신기록 클라이언트 피드백 |
 | `PlayCountdownFeedbackClient` | `integer remaining` | void | 카운트다운 단계별 클라이언트 피드백 |
 | `PlayCountdownGoFeedbackClient` | void | void | 카운트다운 종료 클라이언트 피드백 |
+| `StartClientTimerTextLoop` | void | void | 클라이언트 HUD 텍스트 루프 시작 (로비 상태 가시성 가드 포함) |
 | `OnSyncProperty` | `string propertyName`, `any value` | void | 타이머 Sync 수신 시 UI 텍스트 즉시 갱신 |
 | `RefreshTimerTextClient` | void | void | 현재 상태(카운트다운/시간)에 맞춰 타이머 텍스트 강제 갱신 |
 | `ResolveTimerTextEntityClient` | void | `Entity` | Resolve timer text from UI path |
-| `TrySetTimerTextVisibleClient` | `boolean visible` | void | 카운트다운/런 중 타이머 텍스트 표시를 강제 |
+| `ResolveTimerTextVisibleByLobbyClient` | `boolean visible` | `boolean` | 로비 활성 시 타이머 표시 요청을 false로 보정 |
+| `TrySetTimerTextVisibleClient` | `boolean visible` | void | LobbyFlow 상태를 반영해 타이머 텍스트 표시를 안전 적용 |
 | `BuildCountdownText` | `integer remaining` | `string` | 카운트다운 HUD 표시 문자열 생성 |
 | `FormatElapsedTime` | `number elapsed` | `string` | `MM:SS.ms` 포맷 변환 |
 | `StopClientTimerTextLoop` | void | void | 클라이언트 텍스트 루프 종료 |
@@ -387,6 +391,7 @@
 |---|---|---|---|
 | `SubmitTimeAttackResult` | `number elapsedTime`, `integer stageId` | void | 타임어택 기록 제출/갱신 |
 | `SubmitInfiniteModeResult` | `integer kills` | void | 무한모드 기록 제출/갱신 |
+| `ResolveProjectComponent` | `string scriptName` | `Component` | script-prefix/plain-name 양방향 탐색으로 참조 불일치 완화 |
 | `RequestRankingDataServer` | `integer mode`, `integer displayCount` | void | 서버 랭킹 조회 요청 처리 |
 | `IsValidTimeAttackScore` | `number score` | `boolean` | 타임어택 유효성 검사 |
 | `GetModeTag` | `integer mode` | `string` | 모드 태그 반환 |
@@ -395,9 +400,9 @@
 | `LoadAndSortRecords` | `string modeTag` | `table` | 저장 레코드 로드 및 정렬 |
 | `BuildTopEntries` | `integer mode`, `table sortedRecords`, `integer displayCount` | `table` | UI 표시용 상위 목록 생성 |
 | `FindMyRank` | `integer mode`, `table sortedRecords` | `integer`, `string` | 내 순위/기록 계산 |
-| `UpdateRankingDataClient` | `integer mode`, `table entries`, `integer myRank`, `string myValue` | void | 클라이언트 UI 갱신 전달 |
+| `UpdateRankingDataClient` | `integer mode`, `table entries`, `integer myRank`, `string myValue` | void | ResolveProjectComponent 기반으로 클라이언트 UI 갱신 전달 |
 | `TrySubmitLeaderBoardService` | `string modeTag`, `any scoreValue` | void | LeaderBoardService 옵션 제출 |
-| `FormatScore` | `integer mode`, `number score` | `string` | 모드별 점수 포맷 |
+| `FormatScore` | `integer mode`, `number score` | `string` | ResolveProjectComponent 기반으로 타임어택 시간 포맷/모드별 점수 포맷 |
 | `SerializeRecord` | `number score`, `string userName`, `number timestamp`, `integer stageId` | `string` | 랭킹 레코드 직렬화 |
 | `DeserializeRecord` | `string serialized` | `number`, `string`, `number`, `integer` | 레코드 역직렬화 |
 | `ExtractUserIdFromKey` | `string key` | `string` | 키에서 userId 추출 |
@@ -417,8 +422,8 @@
 | `MyRankTextEntity` | Entity | 내 순위 텍스트 UI 엔티티 |
 | `RankingTextPath` | string | Ranking list UI path (`/ui/DefaultGroup/GRRankingText`) |
 | `MyRankTextPath` | string | My-rank UI path (`/ui/DefaultGroup/GRMyRankText`) |
-| `RankingTextFallbackPath` | string | map fallback path (`/maps/map01/GRRankingText`) |
-| `MyRankTextFallbackPath` | string | map fallback path (`/maps/map01/GRMyRankText`) |
+| `RankingTextFallbackPath` | string | map fallback 비활성화 기본값 (`""`) |
+| `MyRankTextFallbackPath` | string | map fallback 비활성화 기본값 (`""`) |
 
 ### Functions
 | 함수명 | 파라미터 | 리턴값 | 설명 |
@@ -431,7 +436,7 @@
 | `ResolveUIEntitiesClient` | void | void | Resolve ranking text entities from UI paths |
 | `SetRankingVisibleClient` | `boolean visible` | void | 로비/인게임 상태에 맞춰 랭킹 텍스트 가시성 강제 토글 |
 | `ApplyEntityVisibleStateClient` | `Entity targetEntity`, `boolean visible` | void | Entity/UI component별 Enable/Visible 안전 적용 |
-| `ResolveTextEntityWithFallback` | `Entity currentEntity`, `string primaryPath`, `string fallbackPath` | `Entity` | UI 경로 우선, 실패 시 map 경로 폴백 |
+| `ResolveTextEntityWithFallback` | `Entity currentEntity`, `string primaryPath`, `string fallbackPath` | `Entity` | UI 경로 우선, fallbackPath가 설정된 경우에만 map 폴백 |
 | `ResolveTextEntityByPath` | `Entity currentEntity`, `string targetPath` | `Entity` | Shared resolver for UI text entities |
 
 ## [LobbyFlowComponent]
@@ -462,11 +467,11 @@
 | `HideMapLayerInLobby` | boolean | 로비 상태에서 맵 레이어 숨김 여부 |
 | `MapLayerEntityName` | string | 가시성 제어 대상 맵 레이어 이름 |
 | `StartButtonPath` | string | 시작 버튼 UI 경로 |
-| `StartButtonFallbackPath` | string | 시작 버튼 map fallback 경로 (`/maps/map01/GRStartButton`) |
+| `StartButtonFallbackPath` | string | 시작 버튼 map fallback 비활성화 기본값 (`""`) |
 | `RankingTextPath` | string | 랭킹 텍스트 UI 경로 |
 | `MyRankTextPath` | string | 내 순위 텍스트 UI 경로 |
-| `RankingTextFallbackPath` | string | map fallback 랭킹 텍스트 경로 (`/maps/map01/GRRankingText`) |
-| `MyRankTextFallbackPath` | string | map fallback 내 순위 텍스트 경로 (`/maps/map01/GRMyRankText`) |
+| `RankingTextFallbackPath` | string | map fallback 랭킹 텍스트 비활성화 기본값 (`""`) |
+| `MyRankTextFallbackPath` | string | map fallback 내 순위 텍스트 비활성화 기본값 (`""`) |
 | `TimerTextPath` | string | 타이머 텍스트 UI 경로 |
 | `UIRootPath` | string | UI 그룹 루트 경로 (`/ui/DefaultGroup`) |
 | `AttackButtonPath` | string | 공격 버튼 UI 경로 |
@@ -475,24 +480,29 @@
 | `ClientUiPollInterval` | number | 클라이언트 UI 동기화 폴링 주기 |
 | `StartButtonBindRetryInterval` | number | 시작 버튼 바인딩 재시도 간격 |
 | `StartButtonBindRetryMaxAttempts` | integer | 시작 버튼 바인딩 최대 재시도 횟수 |
-| `UseButtonPressedFallback` | boolean | 클릭 이벤트 미수신 시 Pressed 이벤트 폴백 사용 여부 |
-| `EnableKeyboardStartFallback` | boolean | Enter/Space 키 시작 폴백 사용 여부 |
+| `UseButtonPressedFallback` | boolean | 레거시 옵션(중복 입력 방지를 위해 런타임에서 미사용 처리) |
+| `StartInputDebounceSeconds` | number | 시작 버튼 입력 연타 방지 디바운스 시간(초) |
+| `MaskJumpButtonSpaceInLobby` | boolean | 로비 상태에서 Jump 버튼 Space 키코드 마스킹 여부 |
+| `EnableKeyboardStartFallback` | boolean | 키보드 시작 폴백 사용 여부(Enter만 허용, Space 제외) |
 
 ### Functions
 | 함수명 | 파라미터 | 리턴값 | 설명 |
 |---|---|---|---|
 | `OnInitialize` | void | void | 초기 로비 상태 설정 |
 | `OnBeginPlay` | void | void | 초기 서버/클라이언트 상태 적용 |
-| `OnMapEnter` | `Entity enteredMap` | void | 맵 분리 시 현재 맵명 기준으로 로비/인게임 상태 자동 동기화 |
+| `OnMapEnter` | `Entity enteredMap` | void | 맵 분리 상태 동기화 후 클라이언트 즉시 UI 보정 호출 |
+| `ApplyLobbyUIOnMapEnterClient` | void | void | 서버 OnMapEnter 직후 클라이언트에서 로비/인게임 UI를 즉시 재적용 |
 | `OnUpdate` | `number delta` | void | 클라이언트 UI 상태 폴링 및 바인딩 복구 (MapSplit 맵명 기반 상태를 주기적으로 강제 적용) |
+| `OnSyncProperty` | `string propertyName`, `any value` | void | `IsLobbyActive` 변경 시 즉시 UI/입력 마스킹을 재정렬 |
 | `RequestStartGameServer` | void | void | 시작 버튼 서버 요청 처리 (맵 분리 시 즉시 인게임 상태 전환) |
-| `HandleRunCompletedServer` | `boolean isClear` | void | 결과 확정 시 타이머 종료/로비 복귀 처리 |
+| `HandleRunCompletedServer` | `boolean isClear` | void | 결과 확정 시 로비 상태를 먼저 Sync한 뒤 로비 맵 이동/타이머 종료 처리 |
 | `HandleStageClearServer` | void | void | 클리어 결과 진입점 |
 | `HandleStageFailedServer` | void | void | 실패 결과 진입점 |
-| `HandleLobbyStartKeyDownEvent` | `KeyDownEvent event` | void | Enter/Space 키로 시작 요청 처리 |
-| `OnStartButtonClickedClient` | `any event` | void | 시작 버튼 클릭/프레스 입력 처리 |
+| `HandleLobbyStartKeyDownEvent` | `KeyDownEvent event` | void | 키보드 폴백이 켜진 경우 Enter 키로만 시작 요청 처리 |
+| `OnStartButtonClickedClient` | `any event` | void | 디바운스 기반 시작 버튼 입력 처리 |
 | `ApplyInitialServerState` | void | void | 초기 상태 분기(로비/인게임) |
 | `SetLobbyStateServer` | `boolean isLobby` | void | 이동/공격/태그/HP/타이머 상태 전환 및 시작 카운트다운 연결 |
+| `ResolveProjectComponent` | `string scriptName`, `string markerField` | `Component` | script-prefix/plain-name 탐색으로 연동 컴포넌트 참조 안정화 |
 | `ResolveProjectMovementComponent` | void | `Component` | script 우선으로 CanMove 필드를 가진 이동 컴포넌트 탐색 |
 | `TrySetMovementCanMove` | `boolean canMove` | `boolean` | CanMove 대입을 pcall로 보호해 런타임 예외 차단 |
 | `CanWriteComponentField` | `any targetComponent`, `string fieldName` | `boolean` | 읽기+동일값 재대입 probe로 필드 쓰기 가능 여부 판정 |
@@ -504,13 +514,16 @@
 | `MoveOwnerToLobbyMapIfNeeded` | void | `boolean` | 결과 확정 후 split-scene 로비 맵 이동 요청 성공 여부 반환 |
 | `ApplyLobbyUIClient` | `boolean isLobby` | void | 로비/인게임 UI 가시성 전환 |
 | `ResolveEffectiveLobbyStateClient` | void | `boolean` | MapSplit 시 현재 맵 이름 기준으로 로비 상태를 보정(불명확 시 인게임 기본값) |
-| `BindStartButtonClient` | void | `boolean` | 시작 버튼 클릭/프레스 이벤트 바인딩 |
+| `BindStartButtonClient` | void | `boolean` | 시작 버튼 클릭 이벤트 바인딩(Pressed fallback 미사용) |
+| `ApplyLobbyInputKeyMaskClient` | `boolean isLobby` | void | 로비에서 Start/Jump 버튼 키코드(특히 Space) 입력 경로 마스킹 |
+| `ResolveUIButtonEntityForKeyControl` | `string buttonPath`, `string fallbackName` | `Entity` | 버튼 경로/루트 이름 탐색으로 UI 버튼 엔티티 조회 |
+| `ResolveUIButtonComponentForKeyControl` | `string buttonPath`, `string fallbackName` | `ButtonComponent` | `ResolveUIButtonEntityForKeyControl` 기반으로 버튼 컴포넌트 조회 |
+| `SetButtonKeyCodeByPath` | `string buttonPath`, `string fallbackName`, `KeyboardKey keyCode` | void | 버튼 경로 또는 루트 이름으로 ButtonComponent.KeyCode 제어 |
 | `ScheduleStartButtonBindRetryClient` | void | void | UI 지연 로딩 시 바인딩 재시도 타이머 시작 |
 | `SetEntityEnableByPath` | `string entityPath`, `boolean enabled` | void | 경로 기반 UI 활성 상태 변경 |
 | `SetEntityEnableByPathIfExists` | `string entityPath`, `boolean enabled` | void | 폴백 경로를 경고 없이 가시성 적용 |
 | `SetEntityEnableByNameUnderUIRoot` | `string childName`, `boolean enabled` | void | UI 루트 하위 이름 탐색 폴백으로 가시성 적용 |
-| `SetEntityEnableByNameInCurrentMap` | `string childName`, `boolean enabled` | void | 현재 맵 하위 이름 탐색 폴백으로 가시성 적용 |
-| `ForceApplyLobbyNamedEntitiesInCurrentMapClient` | `boolean isLobby`, `boolean rankingVisible`, `boolean timerVisible` | void | `GRStartButton/GRRankingText/GRMyRankText/GRTimerText` 이름 기반 강제 토글 |
+| `ForceApplyLobbyNamedEntitiesInCurrentMapClient` | `boolean isLobby`, `boolean rankingVisible`, `boolean timerVisible` | void | `UIRoot(/ui/DefaultGroup)` 기준 이름 탐색으로 핵심 UI 강제 토글 |
 | `ApplyEntityEnableStateClient` | `Entity targetEntity`, `boolean enabled` | void | UI 엔티티 Enable/Visible 적용 공통 처리 (`TextRenderer/CanvasGroup` 포함) |
 | `TrySetComponentEnable` | `any targetComponent`, `boolean enabled` | void | UI 컴포넌트별 Enable 안전 적용 |
 | `TrySetEntityVisualAlpha` | `Entity targetEntity`, `boolean enabled` | void | Enable 적용 후에도 남는 UI 잔상을 알파로 강제 숨김 |

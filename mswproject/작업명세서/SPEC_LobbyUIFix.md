@@ -1,4 +1,4 @@
-# 🟡 대기중
+# 🟢 완료
 # SPEC_LobbyUIFix — 로비↔map01 UI 잔류 버그 수정 & 게임 플로우 안정화
 
 ## 1. 개요
@@ -265,18 +265,19 @@ Client: OnMapEnter(lobby)
 
 ## 9. Codex 구현 체크리스트
 
-- [ ] `@Component` 어트리뷰트로 시작
-- [ ] 밸런스 수치 전부 `property`로 선언
-- [ ] `[server only]` / `[client only]` 분리 정확하게 지정
-- [ ] `nil` 체크, `isvalid` 방어 코드 all paths
-- [ ] `EnableKeyboardStartFallback = false` 반영
-- [ ] fallback 경로들 빈 문자열(`""`) 처리 확인
-- [ ] `ForceApplyLobbyNamedEntitiesInCurrentMapClient` - UIRoot 내 탐색으로 전환 or 제거
-- [ ] `OnMapEnter` 클라이언트 분기 또는 별도 호출로 UI 즉시 갱신
-- [ ] `SpeedrunTimerComponent` 내 `LobbyFlowComponent.IsLobbyActive` 가드 추가
-- [ ] GameOver → lobby 복귀 시 UI 정상 전환 확인
-- [ ] 완료 후 상태 `🟢 완료`로 변경
-- [ ] `기획서/4.부록/Code_Documentation.md` 업데이트
+- [x] `@Component` 어트리뷰트로 시작
+- [x] 밸런스 수치 전부 `property`로 선언
+- [x] `[server only]` / `[client only]` 분리 정확하게 지정
+- [x] `nil` 체크, `isvalid` 방어 코드 all paths
+- [x] `EnableKeyboardStartFallback = false` 반영
+- [x] fallback 경로들 빈 문자열(`""`) 처리 확인
+- [x] `LobbyFlowComponent.mlua` 변경을 `LobbyFlowComponent.codeblock`에 동기화
+- [x] `ForceApplyLobbyNamedEntitiesInCurrentMapClient` - UIRoot 내 탐색으로 전환 or 제거
+- [x] `OnMapEnter` 클라이언트 분기 또는 별도 호출로 UI 즉시 갱신
+- [x] `SpeedrunTimerComponent` 내 `LobbyFlowComponent.IsLobbyActive` 가드 추가
+- [x] GameOver → lobby 복귀 시 UI 정상 전환 확인
+- [x] 완료 후 상태 `🟢 완료`로 변경
+- [x] `기획서/4.부록/Code_Documentation.md` 업데이트
 
 ---
 
@@ -287,5 +288,5 @@ Client: OnMapEnter(lobby)
 | **작성자** | Antigravity (TD) |
 | **담당자** | Codex |
 | **작성일** | 2026-02-18 |
-| **상태** | 🟡 대기중 |
+| **상태** | 🟢 완료 |
 | **근거** | TD 버그 리뷰 지침서 (implementation_plan.md) |
