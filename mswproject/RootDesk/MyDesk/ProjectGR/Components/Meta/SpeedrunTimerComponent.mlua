@@ -1,4 +1,4 @@
-@Component
+﻿@Component
 script SpeedrunTimerComponent extends Component
 
     @Sync
@@ -161,7 +161,7 @@ script SpeedrunTimerComponent extends Component
         local lobbyFlow = self:ResolveComponentSafe(self.Entity, "LobbyFlowComponent", "IsLobbyActive")
         if lobbyFlow ~= nil then
             local lobbyOk, isLobby = pcall(function()
-                return lobbyFlow.IsLobbyActive
+                return lobbyFlow["IsLobbyActive"]
             end)
             if lobbyOk == true and isLobby == true then
                 return true
@@ -290,7 +290,7 @@ script SpeedrunTimerComponent extends Component
         local lobbyFlow = self:ResolveComponentSafe(self.Entity, "LobbyFlowComponent", "IsLobbyActive")
         if lobbyFlow ~= nil then
             local lobbyOk, isLobby = pcall(function()
-                return lobbyFlow.IsLobbyActive
+                return lobbyFlow["IsLobbyActive"]
             end)
             local hideOk, hideFlag = pcall(function()
                 return lobbyFlow.HideTimerDuringLobby
@@ -443,7 +443,7 @@ script SpeedrunTimerComponent extends Component
 
     -- Utility bootstrap first; fallback local lookup is retained if global util registration is unavailable.
     method void EnsureGRUtil()
-        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
             return
         end
 
@@ -472,10 +472,13 @@ script SpeedrunTimerComponent extends Component
         end
 
         if utilComponent ~= nil and isvalid(utilComponent) == true then
-            local bootstrapOk, _ = pcall(function()
-                utilComponent:BootstrapUtil()
+            local bootstrapOk, utilApi = pcall(function()
+                return utilComponent:BootstrapUtil()
             end)
-            if bootstrapOk == true and _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            if bootstrapOk == true and utilApi ~= nil then
+                self._T.GRUtil = utilApi
+            end
+            if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
                 return
             end
         end
@@ -483,13 +486,13 @@ script SpeedrunTimerComponent extends Component
         self._T.UseGRUtilFallback = true
     end
 
-    method Component ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
         if targetEntity == nil or isvalid(targetEntity) == false then
             return nil
         end
 
-        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
-            return _GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
         end
 
         local prefixedName = scriptName

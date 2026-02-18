@@ -18,6 +18,7 @@
                                       "BaseModelId":  "player",
                                       "Id":  "defaultplayer",
                                       "Components":  [
+                                                         "GRUtilModule",
                                                          "MovementComponent",
                                                          "CameraFollowComponent",
                                                          "HPSystemComponent",
@@ -26,7 +27,8 @@
                                                          "WeaponSwapComponent",
                                                          "TagManagerComponent",
                                                          "SpeedrunTimerComponent",
-                                                         "RankingComponent"
+                                                         "RankingComponent",
+                                                         "LobbyFlowComponent"
                                                      ],
                                       "Properties":  [
 

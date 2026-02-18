@@ -1,4 +1,4 @@
-@Component
+﻿@Component
 script CameraFollowComponent extends Component
 
     property Vector2 CameraOffset = Vector2(0, 0)
@@ -33,7 +33,7 @@ script CameraFollowComponent extends Component
 
     -- Utility bootstrap keeps component lookup conventions aligned with the rest of modular scripts.
     method void EnsureGRUtil()
-        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
             return
         end
 

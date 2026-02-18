@@ -1,199 +1,210 @@
 ﻿@Component
 script GRUtilModule extends Component
 
-    -- Registers shared utility functions once so all components follow the same safe access path.
-    method void BootstrapUtil()
-        if _GRUtil == nil then
-            _GRUtil = {}
+    -- Returns utility API table so other scripts can cache it in self._T without global variables.
+    method table BootstrapUtil()
+        if self._T.UtilApi ~= nil then
+            return self._T.UtilApi
         end
 
-        if _GRUtil.ResolveComponent == nil then
-            _GRUtil.ResolveComponent = function(entity, scriptName, markerField)
-                if entity == nil or isvalid(entity) == false then
-                    return nil
-                end
-                if scriptName == nil or scriptName == "" then
-                    return nil
-                end
+        local utilApi = {}
+        utilApi.ResolveComponent = function(entity, scriptName, markerField)
+            return self:ResolveComponent(entity, scriptName, markerField)
+        end
+        utilApi.ResolveMovement = function(entity)
+            return self:ResolveMovement(entity)
+        end
+        utilApi.TrySetCanMove = function(entity, canMove)
+            return self:TrySetCanMove(entity, canMove)
+        end
+        utilApi.CanWriteField = function(component, fieldName)
+            return self:CanWriteField(component, fieldName)
+        end
+        utilApi.HasMember = function(component, memberName)
+            return self:HasMember(component, memberName)
+        end
+        utilApi.IsOwner = function(entity, requestUserId)
+            return self:IsOwner(entity, requestUserId)
+        end
+        utilApi.TrySetField = function(component, fieldName, value)
+            return self:TrySetField(component, fieldName, value)
+        end
+        utilApi.FindOrAddComponent = function(entity, typeName)
+            return self:FindOrAddComponent(entity, typeName)
+        end
 
-                local prefixedName = scriptName
-                local plainName = scriptName
-                if string.sub(scriptName, 1, 7) == "script." then
-                    plainName = string.sub(scriptName, 8)
-                else
-                    prefixedName = "script." .. scriptName
-                end
+        self._T.UtilApi = utilApi
+        return self._T.UtilApi
+    end
 
-                local component = entity:GetComponent(prefixedName)
-                if component == nil then
-                    component = entity:GetComponent(plainName)
-                end
-                if component == nil then
-                    return nil
-                end
+    method Component ResolveComponent(Entity entity, string scriptName, string markerField)
+        if entity == nil or isvalid(entity) == false then
+            return nil
+        end
+        if scriptName == nil or scriptName == "" then
+            return nil
+        end
 
-                if markerField ~= nil and markerField ~= "" then
-                    local ok, _ = pcall(function()
-                        return component[markerField]
-                    end)
-                    if ok == false then
-                        return nil
-                    end
-                end
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
 
-                return component
+        local component = entity:GetComponent(prefixedName)
+        if component == nil then
+            component = entity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
             end
         end
 
-        if _GRUtil.ResolveMovement == nil then
-            _GRUtil.ResolveMovement = function(entity)
-                return _GRUtil.ResolveComponent(entity, "MovementComponent", "CanMove")
+        return component
+    end
+
+    method Component ResolveMovement(Entity entity)
+        return self:ResolveComponent(entity, "MovementComponent", "CanMove")
+    end
+
+    method boolean TrySetCanMove(Entity entity, boolean canMove)
+        local movementComponent = self:ResolveMovement(entity)
+        if movementComponent == nil then
+            return false
+        end
+
+        local ok, _ = pcall(function()
+            movementComponent.CanMove = canMove
+        end)
+        return ok
+    end
+
+    method boolean CanWriteField(Component component, string fieldName)
+        if component == nil or isvalid(component) == false then
+            return false
+        end
+        if fieldName == nil or fieldName == "" then
+            return false
+        end
+
+        local readOk, value = pcall(function()
+            return component[fieldName]
+        end)
+        if readOk == false then
+            return false
+        end
+
+        local writeOk, _ = pcall(function()
+            component[fieldName] = value
+        end)
+        return writeOk
+    end
+
+    method boolean HasMember(Component component, string memberName)
+        if component == nil or isvalid(component) == false then
+            return false
+        end
+        if memberName == nil or memberName == "" then
+            return false
+        end
+
+        local ok, _ = pcall(function()
+            return component[memberName]
+        end)
+        return ok
+    end
+
+    method boolean IsOwner(Entity entity, string requestUserId)
+        if entity == nil or isvalid(entity) == false then
+            return false
+        end
+
+        if requestUserId ~= nil and requestUserId ~= "" then
+            local ownerUserId = ""
+            local ownerOk, _ = pcall(function()
+                local playerComponent = entity.PlayerComponent
+                if playerComponent ~= nil then
+                    ownerUserId = playerComponent.UserId
+                end
+            end)
+
+            if ownerOk == true and ownerUserId ~= "" then
+                return ownerUserId == requestUserId
             end
         end
 
-        if _GRUtil.TrySetCanMove == nil then
-            _GRUtil.TrySetCanMove = function(entity, canMove)
-                local movementComponent = _GRUtil.ResolveMovement(entity)
-                if movementComponent == nil then
-                    return false
-                end
+        local localPlayer = _UserService.LocalPlayer
+        if localPlayer == nil then
+            return true
+        end
 
-                local ok, _ = pcall(function()
-                    movementComponent.CanMove = canMove
-                end)
-                return ok
+        return entity == localPlayer
+    end
+
+    method boolean TrySetField(Component component, string fieldName, any value)
+        if component == nil or isvalid(component) == false then
+            return false
+        end
+
+        local ok, _ = pcall(function()
+            component[fieldName] = value
+        end)
+        return ok
+    end
+
+    method Component FindOrAddComponent(Entity entity, string typeName)
+        if entity == nil or isvalid(entity) == false then
+            return nil
+        end
+        if typeName == nil or typeName == "" then
+            return nil
+        end
+
+        local existingComponent = self:ResolveComponent(entity, typeName, nil)
+        if existingComponent ~= nil then
+            return existingComponent
+        end
+
+        local prefixedName = typeName
+        local plainName = typeName
+        if string.sub(typeName, 1, 7) == "script." then
+            plainName = string.sub(typeName, 8)
+        else
+            prefixedName = "script." .. typeName
+        end
+
+        local added = nil
+        local addOk1, addResult1 = pcall(function()
+            return entity:AddComponent(prefixedName)
+        end)
+        if addOk1 == true then
+            added = addResult1
+        end
+
+        if added == nil then
+            local addOk2, addResult2 = pcall(function()
+                return entity:AddComponent(plainName)
+            end)
+            if addOk2 == true then
+                added = addResult2
             end
         end
 
-        if _GRUtil.CanWriteField == nil then
-            _GRUtil.CanWriteField = function(component, fieldName)
-                if component == nil or isvalid(component) == false then
-                    return false
-                end
-                if fieldName == nil or fieldName == "" then
-                    return false
-                end
-
-                local readOk, value = pcall(function()
-                    return component[fieldName]
-                end)
-                if readOk == false then
-                    return false
-                end
-
-                local writeOk, _ = pcall(function()
-                    component[fieldName] = value
-                end)
-                return writeOk
-            end
+        if added ~= nil then
+            return added
         end
 
-        if _GRUtil.HasMember == nil then
-            _GRUtil.HasMember = function(component, memberName)
-                if component == nil or isvalid(component) == false then
-                    return false
-                end
-                if memberName == nil or memberName == "" then
-                    return false
-                end
-
-                local ok, _ = pcall(function()
-                    return component[memberName]
-                end)
-                return ok
-            end
-        end
-
-        if _GRUtil.IsOwner == nil then
-            _GRUtil.IsOwner = function(entity, senderUserId)
-                if entity == nil or isvalid(entity) == false then
-                    return false
-                end
-
-                if senderUserId ~= nil and senderUserId ~= "" then
-                    local ownerUserId = ""
-                    local ownerOk, _ = pcall(function()
-                        local playerComponent = entity.PlayerComponent
-                        if playerComponent ~= nil then
-                            ownerUserId = playerComponent.UserId
-                        end
-                    end)
-
-                    if ownerOk == true and ownerUserId ~= "" then
-                        return ownerUserId == senderUserId
-                    end
-                end
-
-                local localPlayer = _UserService.LocalPlayer
-                if localPlayer == nil then
-                    return true
-                end
-
-                return entity == localPlayer
-            end
-        end
-
-        if _GRUtil.TrySetField == nil then
-            _GRUtil.TrySetField = function(component, fieldName, value)
-                if component == nil or isvalid(component) == false then
-                    return false
-                end
-
-                local ok, _ = pcall(function()
-                    component[fieldName] = value
-                end)
-                return ok
-            end
-        end
-
-        if _GRUtil.FindOrAddComponent == nil then
-            _GRUtil.FindOrAddComponent = function(entity, typeName)
-                if entity == nil or isvalid(entity) == false then
-                    return nil
-                end
-                if typeName == nil or typeName == "" then
-                    return nil
-                end
-
-                local existingComponent = _GRUtil.ResolveComponent(entity, typeName, nil)
-                if existingComponent ~= nil then
-                    return existingComponent
-                end
-
-                local prefixedName = typeName
-                local plainName = typeName
-                if string.sub(typeName, 1, 7) == "script." then
-                    plainName = string.sub(typeName, 8)
-                else
-                    prefixedName = "script." .. typeName
-                end
-
-                local added = nil
-                local addOk1, addResult1 = pcall(function()
-                    return entity:AddComponent(prefixedName)
-                end)
-                if addOk1 == true then
-                    added = addResult1
-                end
-
-                if added == nil then
-                    local addOk2, addResult2 = pcall(function()
-                        return entity:AddComponent(plainName)
-                    end)
-                    if addOk2 == true then
-                        added = addResult2
-                    end
-                end
-
-                if added ~= nil then
-                    return added
-                end
-
-                return _GRUtil.ResolveComponent(entity, typeName, nil)
-            end
-        end
-
-        log("[GRUtilModule] _GRUtil registered.")
+        return self:ResolveComponent(entity, typeName, nil)
     end
 
     -- Server ensures utility registration for authoritative gameplay components.
