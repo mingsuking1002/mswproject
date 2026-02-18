@@ -88,13 +88,27 @@ foreach ($relativePath in $manifest.required_files) {
         $codeblock = Get-Content -Path $fullPath -Encoding UTF8 -Raw | ConvertFrom-Json
         $scriptJson = $codeblock.ContentProto.Json
 
-        if ($scriptJson.Source -ne 1) {
-            $invalid.Add(("{0} (Source must be 1)" -f $relativePath))
+        if ($scriptJson.Source -eq 1) {
+            $target = $scriptJson.Target
+            if (-not ($target -is [string]) -or [string]::IsNullOrWhiteSpace($target)) {
+                $invalid.Add(("{0} (Source=1 requires Target script text)" -f $relativePath))
+            }
         }
-
-        $target = $scriptJson.Target
-        if (-not ($target -is [string]) -or [string]::IsNullOrWhiteSpace($target)) {
-            $invalid.Add(("{0} (Target must contain script text)" -f $relativePath))
+        elseif ($scriptJson.Source -eq 0) {
+            $mluaRelativePath = [System.IO.Path]::ChangeExtension($relativePath, ".mlua")
+            $mluaFullPath = Join-Path $projectRoot $mluaRelativePath
+            if (-not (Test-Path -Path $mluaFullPath)) {
+                $invalid.Add(("{0} (Source=0 requires paired .mlua: {1})" -f $relativePath, $mluaRelativePath))
+            }
+            else {
+                $mluaText = Get-Content -Path $mluaFullPath -Encoding UTF8 -Raw
+                if ([string]::IsNullOrWhiteSpace($mluaText)) {
+                    $invalid.Add(("{0} (paired .mlua is empty: {1})" -f $relativePath, $mluaRelativePath))
+                }
+            }
+        }
+        else {
+            $invalid.Add(("{0} (unsupported Source value: {1})" -f $relativePath, $scriptJson.Source))
         }
     }
     catch {
@@ -141,13 +155,27 @@ if ($null -ne $manifest.required_map_checks) {
         }
 
         foreach ($componentName in $mapCheck.component_names) {
+            $candidateNames = New-Object System.Collections.Generic.List[string]
+            $candidateNames.Add($componentName)
+            if ($componentName.StartsWith("script.")) {
+                $candidateNames.Add($componentName.Substring(7))
+            }
+            else {
+                $candidateNames.Add("script." + $componentName)
+            }
+
             $foundComponent = $false
             foreach ($entity in $entities) {
                 $componentNames = $entity.componentNames
                 if ($null -ne $componentNames) {
                     $splitNames = $componentNames -split ","
-                    if ($splitNames -contains $componentName) {
-                        $foundComponent = $true
+                    foreach ($candidateName in $candidateNames) {
+                        if ($splitNames -contains $candidateName) {
+                            $foundComponent = $true
+                            break
+                        }
+                    }
+                    if ($foundComponent) {
                         break
                     }
                 }
@@ -157,8 +185,13 @@ if ($null -ne $manifest.required_map_checks) {
                     continue
                 }
                 foreach ($component in $components) {
-                    if ($component.'@type' -eq $componentName) {
-                        $foundComponent = $true
+                    foreach ($candidateName in $candidateNames) {
+                        if ($component.'@type' -eq $candidateName) {
+                            $foundComponent = $true
+                            break
+                        }
+                    }
+                    if ($foundComponent) {
                         break
                     }
                 }

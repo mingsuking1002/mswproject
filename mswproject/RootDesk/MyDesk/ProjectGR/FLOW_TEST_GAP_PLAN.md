@@ -13,7 +13,7 @@
 - `작업명세서/SPEC_RankingSystem.md`
 - `기획서/0.개요/projectGR_main_proposal.md`
 - 판정 방식
-- 2026-02-18 기준 로컬 워크스페이스 정적 대조(codeblock/map/model/config)
+- 2026-02-18 기준 로컬 워크스페이스 정적 대조(mlua/codeblock/map/model/config)
 - 런타임 플레이 결과는 아래 테스트 케이스로 별도 기록
 
 ## 2. 목표 기능 플로우차트 (기획서 + 지침서 기준)
@@ -42,7 +42,7 @@ flowchart TD
 ## 3. 테스트 케이스 매트릭스
 | ID | 테스트 내용 | 기대 결과 | 기준 문서 |
 |---|---|---|---|
-| ENV-01 | ProjectGR `*.codeblock`의 `Source`/`Target` 확인 | `Source=1`, `Target` 스크립트 본문 존재 | SPEC_EngineSetup |
+| ENV-01 | ProjectGR 스크립트 포맷 확인 | `Source=0`+`.mlua` 본문 또는 `Source=1`+`Target` 본문 | SPEC_EngineSetup |
 | ENV-02 | `DefaultPlayer.model` 컴포넌트/물리(중력0, Z회전 고정) 확인 | 필수 세팅 충족 | SPEC_EngineSetup |
 | ENV-03 | `map01.map`의 `GRProjectileTemplate` 컴포넌트 확인 | `SpriteRenderer`, `Trigger`, `IsLegacy=false` | SPEC_EngineSetup |
 | ENV-04 | `CollisionGroupSet` 충돌 매트릭스 확인 | Player/Enemy/Projectile/Terrain 규칙 충족 | SPEC_EngineSetup |
@@ -64,15 +64,15 @@ flowchart TD
 | 영역 | 상태 | 근거 파일 | 누락/리스크 |
 |---|---|---|---|
 | 엔진 세팅(파일 기반) | 구현됨 | `mswproject/Global/WorldConfig.config`, `mswproject/Global/CollisionGroupSet.collisiongroupset`, `mswproject/map/map01.map`, `mswproject/Global/DefaultPlayer.model` | Maker 수동 항목(리소스, 서비스 ON, 물리값)은 런타임 확인 필요 |
-| 로비 시작 플로우 | 부분구현 | `mswproject/RootDesk/MyDesk/ProjectGR/Components/LobbyFlowComponent.codeblock`, `mswproject/map/lobby.map` | 버튼 클릭 미동작 케이스 재현/원인 고정 필요 |
-| 이동/카메라 | 구현됨 | `mswproject/RootDesk/MyDesk/ProjectGR/Components/MovementComponent.codeblock`, `mswproject/RootDesk/MyDesk/ProjectGR/Components/CameraFollowComponent.codeblock` | 포커스 손실 시 키 정리 흐름 명시 부족 |
-| 발사/투사체 | 부분구현 | `mswproject/RootDesk/MyDesk/ProjectGR/Components/FireSystemComponent.codeblock`, `mswproject/RootDesk/MyDesk/ProjectGR/Components/ProjectileComponent.codeblock` | 빈 탄창 UI/사운드, 총구/피격 이펙트, 풀링 미구현 |
-| 재장전 | 부분구현 | `mswproject/RootDesk/MyDesk/ProjectGR/Components/ReloadComponent.codeblock` | "비활성 무기 백그라운드 재장전 흐름" 해석/검증 필요 |
-| 무기 교체 | 부분구현 | `mswproject/RootDesk/MyDesk/ProjectGR/Components/WeaponSwapComponent.codeblock`, `mswproject/RootDesk/MyDesk/ProjectGR/Components/WeaponWheelUIComponent.codeblock` | 월드 전체 시간정지 정책과 방사형 하이라이트 UI 미완 |
-| 태그 교체 | 부분구현 | `mswproject/RootDesk/MyDesk/ProjectGR/Components/TagManagerComponent.codeblock` | 아바타 외형 교체, Entry Skill 실동작 미구현 |
-| HP/게임오버 | 부분구현 | `mswproject/RootDesk/MyDesk/ProjectGR/Components/HPSystemComponent.codeblock` | 위기 연출/결과 UI는 로그 수준 |
-| 스피드런 타이머 | 부분구현 | `mswproject/RootDesk/MyDesk/ProjectGR/Components/SpeedrunTimerComponent.codeblock` | 카운트다운 시작 흐름 및 상점/메뉴 pause 연계 미완 |
-| 랭킹 | 부분구현 | `mswproject/RootDesk/MyDesk/ProjectGR/Components/RankingComponent.codeblock`, `mswproject/RootDesk/MyDesk/ProjectGR/Components/RankingUIComponent.codeblock` | 무한모드 실제 연계, UI 상세(날짜/메달/탭 UX) 미완 |
+| 로비 시작 플로우 | 부분구현 | `mswproject/RootDesk/MyDesk/ProjectGR/Components/LobbyFlowComponent.mlua`, `mswproject/map/lobby.map` | 버튼 클릭 미동작 케이스 재현/원인 고정 필요 |
+| 이동/카메라 | 구현됨 | `mswproject/RootDesk/MyDesk/ProjectGR/Components/MovementComponent.mlua`, `mswproject/RootDesk/MyDesk/ProjectGR/Components/CameraFollowComponent.mlua` | 포커스 손실 시 키 정리 흐름 명시 부족 |
+| 발사/투사체 | 부분구현 | `mswproject/RootDesk/MyDesk/ProjectGR/Components/FireSystemComponent.mlua`, `mswproject/RootDesk/MyDesk/ProjectGR/Components/ProjectileComponent.mlua` | 빈 탄창 UI/사운드, 총구/피격 이펙트, 풀링 미구현 |
+| 재장전 | 부분구현 | `mswproject/RootDesk/MyDesk/ProjectGR/Components/ReloadComponent.mlua` | "비활성 무기 백그라운드 재장전 흐름" 해석/검증 필요 |
+| 무기 교체 | 부분구현 | `mswproject/RootDesk/MyDesk/ProjectGR/Components/WeaponSwapComponent.mlua`, `mswproject/RootDesk/MyDesk/ProjectGR/Components/WeaponWheelUIComponent.mlua` | 월드 전체 시간정지 정책과 방사형 하이라이트 UI 미완 |
+| 태그 교체 | 부분구현 | `mswproject/RootDesk/MyDesk/ProjectGR/Components/TagManagerComponent.mlua` | 아바타 외형 교체, Entry Skill 실동작 미구현 |
+| HP/게임오버 | 부분구현 | `mswproject/RootDesk/MyDesk/ProjectGR/Components/HPSystemComponent.mlua` | 위기 연출/결과 UI는 로그 수준 |
+| 스피드런 타이머 | 부분구현 | `mswproject/RootDesk/MyDesk/ProjectGR/Components/SpeedrunTimerComponent.mlua` | 카운트다운 시작 흐름 및 상점/메뉴 pause 연계 미완 |
+| 랭킹 | 부분구현 | `mswproject/RootDesk/MyDesk/ProjectGR/Components/RankingComponent.mlua`, `mswproject/RootDesk/MyDesk/ProjectGR/Components/RankingUIComponent.mlua` | 무한모드 실제 연계, UI 상세(날짜/메달/탭 UX) 미완 |
 
 ## 5. 누락 우선순위 백로그 (차근차근 수정 순서)
 ### P0. 플레이 불가/재현 불가 차단
@@ -95,7 +95,7 @@ flowchart TD
 1. 수정은 P0 -> P1 -> P2 순서만 진행
 2. 각 수정 후 연결된 테스트 ID만 먼저 재검증
 3. PASS 확인 후 다음 항목 진행
-4. codeblock(Target mLua) 코드 수정 시 `기획서/4.부록/Code_Documentation.md` 동시 갱신
+4. `.mlua` 코드 수정 시 `기획서/4.부록/Code_Documentation.md` 동시 갱신
 
 ## 7. 테스트 결과 기록 템플릿
 | ID | 결과(PASS/FAIL) | 날짜 | 비고 |

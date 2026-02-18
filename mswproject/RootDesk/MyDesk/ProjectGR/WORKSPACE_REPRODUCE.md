@@ -28,10 +28,13 @@ powershell -ExecutionPolicy Bypass -File _scripts/convert_projectgr_mlua_to_code
 ```
 
 ## 2.1 Script Format Requirement
-Project GR 스크립트는 `.codeblock`(Target 내 mLua 소스) 기준입니다.
+Project GR 로컬 워크스페이스 기본은 `.mlua source mode`입니다.
 
-- `RootDesk/MyDesk/ProjectGR/Components/*.codeblock` 파일의 `ContentProto.Json.Source = 1`
-- `RootDesk/MyDesk/ProjectGR/Components/*.codeblock` 파일의 `ContentProto.Json.Target`에 실제 스크립트 본문 존재
+- 기본 모드(권장):
+- `RootDesk/MyDesk/ProjectGR/Components/*.codeblock`은 메타데이터(`Source = 0`)로 유지
+- 실제 실행 스크립트 본문은 동일 basename의 `.mlua` 파일에 존재
+- 대체 모드(선택):
+- `convert_projectgr_mlua_to_codeblock.ps1` 실행 시 `Source = 1` + `Target` 본문 모드로 전환 가능
 
 변경 후 Maker에서 아래 순서로 반영하세요.
 1. `Reimport All`
@@ -56,6 +59,8 @@ Project GR 스크립트는 `.codeblock`(Target 내 mLua 소스) 기준입니다.
 - `mswproject/RootDesk/MyDesk/ProjectGR/Components/Map01BootstrapComponent.codeblock`
 - `mswproject/map/lobby.map`
 
+추가로 기본 모드에서는 위 각 `.codeblock`과 동일 basename의 `.mlua` 파일이 모두 존재해야 합니다.
+
 ## 4. Workspace Binding Checklist
 Maker에서 실제 플레이 재현을 위해 아래 바인딩을 확인합니다.
 
@@ -74,7 +79,9 @@ Maker에서 실제 플레이 재현을 위해 아래 바인딩을 확인합니�
 아래가 모두 만족되면 재현 성공입니다.
 
 - `_scripts/repro_projectgr_workspace.ps1` 결과가 `PASS`
-- `RootDesk/MyDesk/ProjectGR/Components/*.codeblock`의 `Source=1` 및 `Target` 스크립트 본문 존재
+- 스크립트 포맷 조건 충족
+- 기본 모드: `*.codeblock Source=0` + 동일 basename `*.mlua` 스크립트 본문 존재
+- 대체 모드: `*.codeblock Source=1` + `Target` 스크립트 본문 존재
 - `작업명세서/SPEC_*.md` 8개 상태가 모두 `# 🟢 완료`
 - `기획서/4.부록/Code_Documentation.md`에 14개 컴포넌트 섹션 존재
 
