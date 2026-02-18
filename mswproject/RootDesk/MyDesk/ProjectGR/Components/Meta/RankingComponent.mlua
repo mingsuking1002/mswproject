@@ -131,9 +131,31 @@ script RankingComponent extends Component
             local pageItems = pages:GetCurrentPageDatas()
             if pageItems ~= nil then
                 for _, item in pairs(pageItems) do
+                    if item == nil then
+                        continue
+                    end
+
                     rankIndex += 1
-                    local userId = item.KeyInfo.Key
-                    local score = item.Value
+                    local userId = ""
+                    local userOk, _ = pcall(function()
+                        if item.KeyInfo ~= nil and item.KeyInfo.Key ~= nil then
+                            userId = tostring(item.KeyInfo.Key)
+                        end
+                    end)
+                    if userOk == false or userId == "" then
+                        userId = "Unknown"
+                    end
+
+                    local score = 0
+                    local scoreOk, _ = pcall(function()
+                        local raw = tonumber(item.Value)
+                        if raw ~= nil then
+                            score = math.max(0, math.floor(raw))
+                        end
+                    end)
+                    if scoreOk == false then
+                        score = 0
+                    end
 
                     local row = {}
                     row.Mode = finalMode
@@ -207,11 +229,32 @@ script RankingComponent extends Component
             local pageItems = pages:GetCurrentPageDatas()
             if pageItems ~= nil then
                 for _, item in pairs(pageItems) do
+                    if item == nil then
+                        continue
+                    end
+
                     rankIndex += 1
-                    if item.KeyInfo.Key == userId then
+                    local itemUserId = ""
+                    local itemUserOk, _ = pcall(function()
+                        if item.KeyInfo ~= nil and item.KeyInfo.Key ~= nil then
+                            itemUserId = tostring(item.KeyInfo.Key)
+                        end
+                    end)
+                    if itemUserOk == true and itemUserId == userId then
+                        local score = 0
+                        local scoreOk, _ = pcall(function()
+                            local raw = tonumber(item.Value)
+                            if raw ~= nil then
+                                score = math.max(0, math.floor(raw))
+                            end
+                        end)
+                        if scoreOk == false then
+                            score = 0
+                        end
+
                         result.Rank = rankIndex
-                        result.Score = item.Value
-                        result.DisplayValue = self:FormatScoreForDisplay(finalMode, item.Value)
+                        result.Score = score
+                        result.DisplayValue = self:FormatScoreForDisplay(finalMode, score)
                         return result
                     end
 
@@ -237,9 +280,13 @@ script RankingComponent extends Component
         local getOk, getCode, myScore = pcall(function()
             return storage:GetAndWait(userId)
         end)
-        if getOk == true and getCode == 0 then
-            result.Score = myScore
-            result.DisplayValue = self:FormatScoreForDisplay(finalMode, myScore)
+        if getOk == true and getCode == 0 and myScore ~= nil then
+            local parsed = tonumber(myScore)
+            if parsed ~= nil then
+                local safeScore = math.max(0, math.floor(parsed))
+                result.Score = safeScore
+                result.DisplayValue = self:FormatScoreForDisplay(finalMode, safeScore)
+            end
         end
 
         return result
@@ -379,22 +426,32 @@ script RankingComponent extends Component
     end
 
     -- Converts stored integer score to mode-specific UI text format.
-    method string FormatScoreForDisplay(integer mode, integer scoreValue)
+    method string FormatScoreForDisplay(integer mode, any scoreValue)
         local finalMode = self:NormalizeMode(mode)
+        local parsed = tonumber(scoreValue)
+        if parsed == nil then
+            parsed = 0
+        end
+        local safeScore = math.max(0, math.floor(parsed))
+
         if finalMode == 1 then
-            local total = math.max(0, scoreValue)
+            local total = safeScore
             local minute = math.floor(total / 60000)
             local second = math.floor((total % 60000) / 1000)
             local centisecond = math.floor((total % 1000) / 10)
             return string.format("%02d:%02d.%02d", minute, second, centisecond)
         end
 
-        return tostring(math.max(0, scoreValue))
+        return tostring(safeScore)
     end
 
     -- Nickname resolver prefers user service cache and falls back to userId for offline entries.
-    method string ResolveNicknameByUserId(string userId)
-        if userId == nil or userId == "" then
+    method string ResolveNicknameByUserId(any userIdValue)
+        if userIdValue == nil then
+            return "Unknown"
+        end
+        local userId = tostring(userIdValue)
+        if userId == "" then
             return "Unknown"
         end
 

@@ -1,7 +1,7 @@
 {
   "Id": "",
   "GameId": "",
-  "EntryKey": "map://1stage",
+  "EntryKey": "map://games",
   "ContentType": "x-mod/map",
   "Content": "",
   "Usage": 0,
@@ -14,13 +14,13 @@
     "Use": "Binary",
     "Entities": [
       {
-        "id": "09138b5a-9022-4b86-b5b1-2cb7a5435506",
-        "path": "/maps/1stage",
+        "id": "9f3f13f2-6248-4f6e-b0f5-cff32e9622b7",
+        "path": "/maps/games",
         "componentNames": "MOD.Core.MapComponent,MOD.Core.FootholdComponent",
         "jsonString": {
-          "name": "1stage",
-          "path": "/maps/1stage",
-          "nameEditable": false,
+          "name": "games",
+          "path": "/maps/games",
+          "nameEditable": true,
           "enable": true,
           "visible": true,
           "localize": false,
@@ -32,8 +32,7 @@
             {
               "@type": "MOD.Core.MapComponent",
               "IsInstanceMap": false,
-              "TileMapMode": 0,
-              "UseCustomBound": false,
+              "TileMapMode": 1,
               "Enable": true
             },
             {
@@ -46,12 +45,12 @@
         }
       },
       {
-        "id": "85163694-7cc4-41fe-8145-cf0e6b7cf5ae",
-        "path": "/maps/1stage/Background",
+        "id": "45f17964-bf06-4de5-8de2-f533278c8369",
+        "path": "/maps/games/Background",
         "componentNames": "MOD.Core.BackgroundComponent",
         "jsonString": {
           "name": "Background",
-          "path": "/maps/1stage/Background",
+          "path": "/maps/games/Background",
           "nameEditable": false,
           "enable": true,
           "visible": true,
@@ -63,8 +62,14 @@
           "@components": [
             {
               "@type": "MOD.Core.BackgroundComponent",
+              "SolidColor": {
+                "r": 0.113725491,
+                "g": 0.156862751,
+                "b": 0.211764708,
+                "a": 1.0
+              },
               "TemplateRUID": "794ad8421e2543d8a6d2c70307637450",
-              "Type": 1,
+              "Type": 2,
               "Enable": true
             }
           ],
@@ -72,12 +77,12 @@
         }
       },
       {
-        "id": "5214cf96-e1ba-4f1f-9e99-38b0523f5bdd",
-        "path": "/maps/1stage/MapleMapLayer",
+        "id": "18182d28-cefa-4f3d-90ef-67df686f4f1d",
+        "path": "/maps/games/MapleMapLayer",
         "componentNames": "MOD.Core.MapLayerComponent",
         "jsonString": {
           "name": "MapleMapLayer",
-          "path": "/maps/1stage/MapleMapLayer",
+          "path": "/maps/games/MapleMapLayer",
           "nameEditable": false,
           "enable": true,
           "visible": true,
@@ -108,34 +113,27 @@
         }
       },
       {
-        "id": "d8342e65-ff59-405d-832f-55e1e826804e",
-        "path": "/maps/1stage/TileMap",
-        "componentNames": "MOD.Core.TransformComponent,MOD.Core.TileMapComponent",
+        "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "path": "/maps/games/LobbyBootstrap",
+        "componentNames": "MOD.Core.TransformComponent,script.Map01BootstrapComponent",
         "jsonString": {
-          "name": "TileMap",
-          "path": "/maps/1stage/TileMap",
-          "nameEditable": false,
+          "name": "LobbyBootstrap",
+          "path": "/maps/games/LobbyBootstrap",
+          "nameEditable": true,
           "enable": true,
           "visible": true,
           "localize": false,
           "displayOrder": 2,
           "pathConstraints": "///",
           "revision": 1,
-          "origin": {
-            "type": "Model",
-            "entry_id": "tilemap",
-            "sub_entity_id": null,
-            "root_entity_id": null,
-            "replaced_model_id": null
-          },
-          "modelId": "tilemap",
+          "modelId": null,
           "@components": [
             {
               "@type": "MOD.Core.TransformComponent",
               "Position": {
-                "x": -0.225,
-                "y": -0.15,
-                "z": 1000.0
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
               },
               "QuaternionRotation": {
                 "x": 0.0,
@@ -143,23 +141,20 @@
                 "z": 0.0,
                 "w": 1.0
               },
-              "Scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-              },
               "Enable": true
             },
             {
-              "@type": "MOD.Core.TileMapComponent",
-              "IsOddGridPosition": false,
-              "SortingLayer": "MapLayer0",
-              "TileMapVersion": 1,
-              "TileSetRUID": {
-                "DataId": ""
-              },
-              "Tiles": [],
-              "Enable": true
+              "@type": "script.Map01BootstrapComponent",
+              "Enable": true,
+              "ConfigureOnBeginPlay": true,
+              "ConfigureOnUserEnter": true,
+              "AutoAttachMissingComponents": true,
+              "EnableLobbyMapSplit": false,
+              "LobbyMapName": "lobby",
+              "InGameMapName": "lobby",
+              "AutoOpenRankingOnLobby": true,
+              "LobbyRankingTab": 1,
+              "LobbyUIRootPath": "/ui/DefaultGroup"
             }
           ],
           "@version": 1
