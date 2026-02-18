@@ -1,4 +1,4 @@
-# 🟢 완료
+﻿# 🟢 완료
 # SPEC_ModularRefactor — 전체 스크립트 모듈화 리팩토링
 
 ## 1. 개요
@@ -278,7 +278,7 @@ script XxxComponent extends Component
 검증 메모:
 - 기본 맵 정책은 `games`로 정규화 (`LobbyMapName/InGameMapName = games`).
 - `UseMapSplit=false` 시 `GRStartButton` 동작은 UI 비활성/상태 전환이 정상 동작.
-- `_GRUtil` 글로벌 직접 의존 문구 제거, `self._T.GRUtil` 표준으로 통일.
+- `self._T.GRUtil` 글로벌 직접 의존 문구 제거, `self._T.GRUtil` 표준으로 통일.
 - 리소스 회귀 경계: `ui/`, `Global/DefaultPlayer.model` 변경 없음.
 
 ---
@@ -291,3 +291,4 @@ script XxxComponent extends Component
 | **담당자** | Codex |
 | **작성일** | 2026-02-18 |
 | **상태** | 🟢 완료 |
+

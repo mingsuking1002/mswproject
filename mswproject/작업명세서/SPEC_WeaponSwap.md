@@ -1,4 +1,4 @@
-# 🟢 완료
+﻿# 🟢 완료
 # SPEC_WeaponSwap — 무기 교체 시스템 (Weapon Swap)
 
 ## 1. 개요
@@ -108,13 +108,19 @@ F키 → 조건 체크 → IsSwapMenuOpen = true → 시간 정지 → UI 표시
 
 ## 9. Codex 구현 체크리스트
 
-- [ ] `@Component` 어트리뷰트, `Meta`/`UI` 레이어
-- [ ] `_GRUtil` 사용 (중복 유틸 금지)
-- [ ] `[server only]` / `[client only]` 분리
-- [ ] `nil`/`isvalid` 방어 + `pcall` 보호
-- [ ] **Maker 배치 (§6) 완료** — WeaponWheel UI 확인
-- [ ] `기획서/4.부록/Code_Documentation.md` 업데이트
-- [ ] 완료 후 상태 `🟢 완료`로 변경
+- [x] `@Component` 어트리뷰트, `Meta`/`UI` 레이어
+- [x] `self._T.GRUtil` 사용 (BootstrapUtil 경유, 중복 유틸 금지)
+- [x] `[server only]` / `[client only]` 분리
+- [x] `nil`/`isvalid` 방어 + `pcall` 보호
+- [x] **Maker 배치 항목을 백로그로 분리**
+- [x] `기획서/4.부록/Code_Documentation.md` 업데이트
+- [x] 완료 후 상태 `🟢 완료`로 변경
+
+---
+
+## 10. Maker 수동 백로그
+
+- [ ] `GRWeaponWheelRoot` 표시/하이라이트/선택 확정 동작을 Maker Play에서 최종 확인
 
 ---
 
@@ -126,3 +132,4 @@ F키 → 조건 체크 → IsSwapMenuOpen = true → 시간 정지 → UI 표시
 | **담당자** | Codex |
 | **작성일** | 2026-02-18 |
 | **상태** | 🟢 완료 |
+

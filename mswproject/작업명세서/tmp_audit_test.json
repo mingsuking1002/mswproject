@@ -1,0 +1,17 @@
+﻿{
+    "a":  1,
+    "specs":  [
+                  "SPEC_EngineSetup.md",
+                  "SPEC_FireSystem.md",
+                  "SPEC_HPSystem.md",
+                  "SPEC_Lobby.md",
+                  "SPEC_LobbyUIFix.md",
+                  "SPEC_ModularRefactor.md",
+                  "SPEC_Movement.md",
+                  "SPEC_RankingSystem.md",
+                  "SPEC_ReloadSystem.md",
+                  "SPEC_SpeedrunTimer.md",
+                  "SPEC_TagSystem.md",
+                  "SPEC_WeaponSwap.md"
+              ]
+}

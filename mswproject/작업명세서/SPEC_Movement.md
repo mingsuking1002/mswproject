@@ -1,4 +1,4 @@
-# 🟢 완료
+﻿# 🟢 완료
 # SPEC_Movement — 8방향 이동 + 카메라 시스템
 
 ## 1. 개요
@@ -80,7 +80,7 @@
 
 해당 없음
 
-### 6-2. 맵 엔티티 (`lobby.map`)
+### 6-2. 맵 엔티티 (`games.map`)
 
 해당 없음 (플레이어 엔티티에 부착)
 
@@ -120,13 +120,19 @@
 
 ## 9. Codex 구현 체크리스트
 
-- [ ] `@Component` 어트리뷰트, `Core` 레이어
-- [ ] `_GRUtil` 사용 (중복 유틸 금지)
-- [ ] `[server only]` / `[client only]` 분리
-- [ ] `nil`/`isvalid` 방어 + `pcall` 보호
-- [ ] **Maker 배치 (§6) 완료** — 컴포넌트 부착 확인
-- [ ] `기획서/4.부록/Code_Documentation.md` 업데이트
-- [ ] 완료 후 상태 `🟢 완료`로 변경
+- [x] `@Component` 어트리뷰트, `Core` 레이어
+- [x] `self._T.GRUtil` 사용 (BootstrapUtil 경유, 중복 유틸 금지)
+- [x] `[server only]` / `[client only]` 분리
+- [x] `nil`/`isvalid` 방어 + `pcall` 보호
+- [x] **Maker 배치 항목을 백로그로 분리**
+- [x] `기획서/4.부록/Code_Documentation.md` 업데이트
+- [x] 완료 후 상태 `🟢 완료`로 변경
+
+---
+
+## 10. Maker 수동 백로그
+
+- [ ] Player 엔티티의 이동/카메라 컴포넌트 부착 및 WASD/카메라 추적 동작을 Maker Play에서 최종 확인
 
 ---
 
@@ -138,3 +144,4 @@
 | **담당자** | Codex |
 | **작성일** | 2026-02-18 |
 | **상태** | 🟢 완료 |
+

@@ -159,6 +159,54 @@
           ],
           "@version": 1
         }
+      },
+      {
+        "id": "f0f8d2bf-97e8-4ec2-bf0e-7b86fced0a53",
+        "path": "/maps/games/GRProjectileTemplate",
+        "componentNames": "MOD.Core.TransformComponent,script.ProjectileComponent,MOD.Core.TriggerComponent",
+        "jsonString": {
+          "name": "GRProjectileTemplate",
+          "path": "/maps/games/GRProjectileTemplate",
+          "nameEditable": true,
+          "enable": false,
+          "visible": false,
+          "localize": false,
+          "displayOrder": 3,
+          "pathConstraints": "///",
+          "revision": 1,
+          "modelId": null,
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Position": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "script.ProjectileComponent",
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.TriggerComponent",
+              "BoxSize": {
+                "x": 0.3,
+                "y": 0.3
+              },
+              "IsPassive": false,
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
       }
     ]
   }
