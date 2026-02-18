@@ -1,0 +1,405 @@
+@Component
+script HPSystemComponent extends Component
+
+    @Sync
+    property integer MaxHP = 100
+    @Sync
+    property integer CurrentHP = 100
+    @Sync
+    property boolean IsInvincible = false
+    @Sync
+    property boolean IsDead = false
+
+    property integer DamageReduction = 0
+    property number InvincibleDuration = 1.0
+    property number CriticalHPRatio = 0.3
+    property integer FallbackDamage = 1
+
+    -- Server initializes HP state once to prevent first-frame sync mismatch.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self.CurrentHP = math.max(0, math.min(self.CurrentHP, self.MaxHP))
+        self.IsInvincible = false
+        self.IsDead = (self.CurrentHP <= 0)
+        self._T.InvincibleTimerId = 0
+        self._T.IsDeadUIOpened = false
+        self:EnsureGRUtil()
+    end
+
+    -- Initial HP sync is pushed once so HUD has deterministic startup state.
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self:EnsureGRUtil()
+        self:BroadcastHPState()
+    end
+
+    -- Damage intake is server-authoritative and validated per collision source.
+    @ExecSpace("ServerOnly")
+    @EventSender("Self")
+    handler HandleTriggerEnterEvent(TriggerEnterEvent event)
+        local triggerBodyEntity = event.TriggerBodyEntity
+        local incomingDamage = self:ResolveIncomingDamage(triggerBodyEntity)
+        if incomingDamage <= 0 then
+            return
+        end
+
+        self:ApplyDamage(incomingDamage)
+    end
+
+    -- Reads attack power through known combat components with safe fallback damage.
+    @ExecSpace("ServerOnly")
+    method integer ResolveIncomingDamage(Entity sourceEntity)
+        if sourceEntity == nil or isvalid(sourceEntity) == false then
+            return 0
+        end
+
+        local projectile = self:ResolveComponentSafe(sourceEntity, "ProjectileComponent", "Damage")
+        if projectile ~= nil then
+            local valueOk, value = pcall(function()
+                return projectile.Damage
+            end)
+            if valueOk == true and value ~= nil then
+                return math.max(math.floor(value), 0)
+            end
+        end
+
+        local monsterAttack = self:ResolveComponentSafe(sourceEntity, "MonsterAttackComponent", "AttackPower")
+        if monsterAttack ~= nil then
+            local valueOk, value = pcall(function()
+                return monsterAttack.AttackPower
+            end)
+            if valueOk == true and value ~= nil then
+                return math.max(math.floor(value), 0)
+            end
+        end
+
+        return math.max(self.FallbackDamage, 0)
+    end
+
+    -- Damage application centralizes invincibility, reduction, and death checks in one server path.
+    @ExecSpace("ServerOnly")
+    method void ApplyDamage(integer rawDamage)
+        if self.IsDead == true then
+            return
+        end
+        if self.IsInvincible == true then
+            return
+        end
+        if rawDamage <= 0 then
+            return
+        end
+
+        local actualDamage = rawDamage - self.DamageReduction
+        if actualDamage < 0 then
+            actualDamage = 0
+        end
+
+        self.CurrentHP = math.max(self.CurrentHP - actualDamage, 0)
+        if actualDamage > 0 then
+            self:StartInvincibleWindow()
+        end
+
+        self:EvaluateDeath()
+        self:BroadcastHPState()
+    end
+
+    -- Invincibility uses timer scheduling to avoid per-frame state polling.
+    @ExecSpace("ServerOnly")
+    method void StartInvincibleWindow()
+        if self.InvincibleDuration <= 0 then
+            self.IsInvincible = false
+            return
+        end
+
+        if self._T.InvincibleTimerId ~= nil and self._T.InvincibleTimerId > 0 then
+            _TimerService:ClearTimer(self._T.InvincibleTimerId)
+            self._T.InvincibleTimerId = 0
+        end
+
+        self.IsInvincible = true
+
+        local releaseInvincible = function()
+            self.IsInvincible = false
+            self._T.InvincibleTimerId = 0
+            self:BroadcastHPState()
+        end
+
+        self._T.InvincibleTimerId = _TimerService:SetTimerOnce(releaseInvincible, self.InvincibleDuration)
+    end
+
+    -- Healing is clamped on server to enforce max HP boundary.
+    @ExecSpace("ServerOnly")
+    method void Heal(integer amount)
+        if amount <= 0 then
+            return
+        end
+        if self.IsDead == true then
+            return
+        end
+
+        self.CurrentHP = math.min(self.CurrentHP + amount, self.MaxHP)
+        self:BroadcastHPState()
+    end
+
+    -- Revive path resets all lethal-state flags for retry flow.
+    @ExecSpace("ServerOnly")
+    method void ReviveToFullHP()
+        if self._T.InvincibleTimerId ~= nil and self._T.InvincibleTimerId > 0 then
+            _TimerService:ClearTimer(self._T.InvincibleTimerId)
+            self._T.InvincibleTimerId = 0
+        end
+
+        self.CurrentHP = math.max(self.MaxHP, 1)
+        self.IsInvincible = false
+        self.IsDead = false
+        self._T.IsDeadUIOpened = false
+        self:BroadcastHPState()
+    end
+
+    -- Death finalization runs once and forwards game-over to orchestrators.
+    @ExecSpace("ServerOnly")
+    method void EvaluateDeath()
+        if self.CurrentHP > 0 then
+            return
+        end
+        if self.IsDead == true then
+            return
+        end
+
+        self.IsDead = true
+        self.IsInvincible = false
+
+        self:SetCanMoveSafely(false)
+        self:NotifyGameOver()
+    end
+
+    -- Movement lock prefers _GRUtil to keep cross-component access policy centralized.
+    method boolean SetCanMoveSafely(boolean canMove)
+        if _GRUtil ~= nil and _GRUtil.TrySetCanMove ~= nil then
+            return _GRUtil.TrySetCanMove(self.Entity, canMove)
+        end
+
+        local movementComponent = self:ResolveComponentSafe(self.Entity, "MovementComponent", "CanMove")
+        if movementComponent == nil then
+            return false
+        end
+
+        local ok, _ = pcall(function()
+            movementComponent.CanMove = canMove
+        end)
+        return ok
+    end
+
+    -- Game-over routing attempts LobbyFlow first, then GameManager, then timer fallback.
+    @ExecSpace("ServerOnly")
+    method void NotifyGameOver()
+        local lobbyFlow = self:ResolveComponentSafe(self.Entity, "LobbyFlowComponent", "IsLobbyActive")
+        if lobbyFlow ~= nil then
+            if lobbyFlow.HandleStageFailedServer ~= nil then
+                lobbyFlow:HandleStageFailedServer()
+                return
+            end
+            if lobbyFlow.HandleRunCompletedServer ~= nil then
+                lobbyFlow:HandleRunCompletedServer(false)
+                return
+            end
+        end
+
+        local gameManager = self:ResolveComponentSafe(self.Entity, "GameManagerComponent", "Entity")
+        if gameManager ~= nil and gameManager.OnPlayerDead ~= nil then
+            gameManager:OnPlayerDead(self.Entity)
+            return
+        end
+
+        local timerComponent = self:ResolveComponentSafe(self.Entity, "SpeedrunTimerComponent", "ElapsedTime")
+        if timerComponent ~= nil and timerComponent.CompleteRun ~= nil then
+            timerComponent:CompleteRun()
+        end
+
+        log_warning("[HPSystemComponent] Fallback game-over flow used.")
+    end
+
+    -- Server sends current HP state to client-only feedback routine.
+    @ExecSpace("ServerOnly")
+    method void BroadcastHPState()
+        self:UpdateHPFeedbackClient(self.CurrentHP, self.MaxHP, self.IsInvincible, self.IsDead)
+    end
+
+    -- Client routine keeps visual-only response while authority remains server-side.
+    @ExecSpace("Client")
+    method void UpdateHPFeedbackClient(integer currentHp, integer maxHp, boolean isInvincible, boolean isDead)
+        self:UpdateInvincibleBlink(isInvincible)
+        self:UpdateCriticalWarning(currentHp, maxHp)
+
+        if isDead == true then
+            self:HandleDeadUI()
+        end
+    end
+
+    -- Blink toggling is separated for deterministic enter/exit behavior.
+    @ExecSpace("ClientOnly")
+    method void UpdateInvincibleBlink(boolean isInvincible)
+        if isInvincible == true then
+            self:StartInvincibleBlink()
+            return
+        end
+
+        self:StopInvincibleBlink()
+    end
+
+    -- Blink uses timer tick to avoid heavy per-frame material changes.
+    @ExecSpace("ClientOnly")
+    method void StartInvincibleBlink()
+        if self._T.BlinkTimerId ~= nil and self._T.BlinkTimerId > 0 then
+            return
+        end
+
+        local spriteRenderer = self.Entity.SpriteRendererComponent
+        if spriteRenderer == nil or isvalid(spriteRenderer) == false then
+            return
+        end
+
+        self._T.BlinkVisible = true
+
+        local blinkTick = function()
+            if self.IsInvincible == false then
+                self:StopInvincibleBlink()
+                return
+            end
+
+            self._T.BlinkVisible = not self._T.BlinkVisible
+            if self._T.BlinkVisible == true then
+                spriteRenderer.Color = Color(1, 1, 1, 1)
+            else
+                spriteRenderer.Color = Color(1, 1, 1, 0.35)
+            end
+        end
+
+        self._T.BlinkTimerId = _TimerService:SetTimerRepeat(blinkTick, 0.1, 0)
+    end
+
+    -- Restores sprite color and clears timer handle after invincible state ends.
+    @ExecSpace("ClientOnly")
+    method void StopInvincibleBlink()
+        if self._T.BlinkTimerId ~= nil and self._T.BlinkTimerId > 0 then
+            _TimerService:ClearTimer(self._T.BlinkTimerId)
+            self._T.BlinkTimerId = 0
+        end
+
+        local spriteRenderer = self.Entity.SpriteRendererComponent
+        if spriteRenderer ~= nil and isvalid(spriteRenderer) == true then
+            spriteRenderer.Color = Color.white
+        end
+    end
+
+    -- Critical state is computed from ratio so threshold tuning only needs property changes.
+    @ExecSpace("ClientOnly")
+    method void UpdateCriticalWarning(integer currentHp, integer maxHp)
+        if maxHp <= 0 then
+            self._T.IsCritical = false
+            return
+        end
+
+        local hpRatio = currentHp / maxHp
+        self._T.IsCritical = (hpRatio < self.CriticalHPRatio)
+    end
+
+    -- Dead UI trigger is debounced to avoid repeated popup requests.
+    @ExecSpace("ClientOnly")
+    method void HandleDeadUI()
+        if self._T.IsDeadUIOpened == true then
+            return
+        end
+
+        self._T.IsDeadUIOpened = true
+        log("[HPSystemComponent] Game Over UI trigger requested.")
+    end
+
+    -- End play clears outstanding timers to prevent stale callbacks after entity destruction.
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self._T.InvincibleTimerId ~= nil and self._T.InvincibleTimerId > 0 then
+            _TimerService:ClearTimer(self._T.InvincibleTimerId)
+            self._T.InvincibleTimerId = 0
+        end
+    end
+
+    -- Utility bootstrap first; fallback flag enables local direct path when global util is unavailable.
+    method void EnsureGRUtil()
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, _ = pcall(function()
+                utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    method Component ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return _GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+end

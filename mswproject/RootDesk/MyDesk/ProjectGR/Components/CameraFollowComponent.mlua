@@ -1,0 +1,70 @@
+@Component
+script CameraFollowComponent extends Component
+
+    property Vector2 CameraOffset = Vector2(0, 0)
+    property Vector2 MapBoundsMin = Vector2(-50, -50)
+    property Vector2 MapBoundsMax = Vector2(50, 50)
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self:EnsureGRUtil()
+        self:ApplyCameraSettings()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnMapEnter(Entity enteredMap)
+        self:EnsureGRUtil()
+        self:ApplyCameraSettings()
+    end
+
+    -- Camera bounds are clamped to map limits so out-of-map areas are never exposed to the player.
+    @ExecSpace("ClientOnly")
+    method void ApplyCameraSettings()
+        local camera = _CameraService:GetCurrentCameraComponent()
+        if camera == nil or isvalid(camera) == false then
+            return
+        end
+
+        camera.UseCustomBound = true
+        camera.LeftBottom = self.MapBoundsMin
+        camera.RightTop = self.MapBoundsMax
+        camera.CameraOffset = self.CameraOffset
+    end
+
+    -- Utility bootstrap keeps component lookup conventions aligned with the rest of modular scripts.
+    method void EnsureGRUtil()
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            pcall(function()
+                utilComponent:BootstrapUtil()
+            end)
+        end
+    end
+end

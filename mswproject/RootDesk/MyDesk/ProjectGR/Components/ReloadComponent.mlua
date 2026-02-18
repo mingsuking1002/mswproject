@@ -1,0 +1,316 @@
+@Component
+script ReloadComponent extends Component
+
+    @Sync
+    property integer CurrentAmmo = 30
+    @Sync
+    property boolean IsReloading = false
+    @Sync
+    property integer CurrentWeaponSlot = 1
+
+    property integer MaxAmmo = 30
+    property number ReloadTime = 1.5
+    property number FireRate = 0.5
+    property integer WeaponSlotCount = 4
+
+    -- Server initializes per-slot ammo/cooldown buffers for weapon-independent reload state.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self.CurrentAmmo = math.max(0, math.min(self.CurrentAmmo, self.MaxAmmo))
+        self.IsReloading = false
+        self.CurrentWeaponSlot = math.max(1, self.CurrentWeaponSlot)
+
+        self._T.AmmoBySlot = {}
+        self._T.ReloadTimerBySlot = {}
+        self._T.ReloadEndTimeBySlot = {}
+        self._T.NextFireReadyTimeBySlot = {}
+
+        local slotCount = math.max(self.WeaponSlotCount, 1)
+        for slot = 1, slotCount do
+            self._T.AmmoBySlot[slot] = self.MaxAmmo
+            self._T.ReloadTimerBySlot[slot] = 0
+            self._T.ReloadEndTimeBySlot[slot] = 0
+            self._T.NextFireReadyTimeBySlot[slot] = 0
+        end
+
+        self._T.AmmoBySlot[self.CurrentWeaponSlot] = self.CurrentAmmo
+        self:EnsureGRUtil()
+    end
+
+    -- Client also boots util so ownership checks remain consistent in request handlers.
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self:EnsureGRUtil()
+    end
+
+    -- Reload input is captured client-side and validated server-side.
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        if event.key ~= KeyboardKey.R then
+            return
+        end
+
+        self:RequestReloadServer()
+    end
+
+    -- Server-only approval blocks remote spoofed reload requests.
+    @ExecSpace("Server")
+    method void RequestReloadServer()
+        if self.Entity == nil or isvalid(self.Entity) == false then
+            return
+        end
+
+        if self:IsOwnerRequest(senderUserId) == false then
+            return
+        end
+
+        self:StartReloadForSlot(self.CurrentWeaponSlot)
+    end
+
+    -- Reload starts only when ammo is not full and slot is currently idle.
+    @ExecSpace("ServerOnly")
+    method void StartReloadForSlot(integer slot)
+        if self:IsValidSlot(slot) == false then
+            return
+        end
+        if self:IsReloadingInSlot(slot) == false then
+            local ammo = self._T.AmmoBySlot[slot]
+            if ammo == nil then
+                ammo = self.MaxAmmo
+                self._T.AmmoBySlot[slot] = ammo
+            end
+            if ammo >= self.MaxAmmo then
+                return
+            end
+        else
+            return
+        end
+
+        if slot == self.CurrentWeaponSlot then
+            self.IsReloading = true
+        end
+
+        local delay = math.max(self.ReloadTime, 0)
+        self._T.ReloadEndTimeBySlot[slot] = _UtilLogic.ServerElapsedSeconds + delay
+
+        local completeReload = function()
+            self:CompleteReload(slot)
+        end
+
+        self._T.ReloadTimerBySlot[slot] = _TimerService:SetTimerOnce(completeReload, delay)
+    end
+
+    -- Completion fills ammo only at end time to prevent swap-cancel exploit gains.
+    @ExecSpace("ServerOnly")
+    method void CompleteReload(integer slot)
+        if self:IsValidSlot(slot) == false then
+            return
+        end
+
+        self._T.ReloadTimerBySlot[slot] = 0
+        self._T.ReloadEndTimeBySlot[slot] = 0
+        self._T.AmmoBySlot[slot] = self.MaxAmmo
+
+        if slot == self.CurrentWeaponSlot then
+            self.CurrentAmmo = self.MaxAmmo
+            self.IsReloading = false
+        end
+    end
+
+    -- Cancel path is reused by tag/swap systems to preserve design rule of immediate interruption.
+    @ExecSpace("ServerOnly")
+    method void CancelReloadForSlot(integer slot)
+        if self:IsValidSlot(slot) == false then
+            return
+        end
+
+        local timerId = self._T.ReloadTimerBySlot[slot]
+        if timerId ~= nil and timerId > 0 then
+            _TimerService:ClearTimer(timerId)
+        end
+
+        self._T.ReloadTimerBySlot[slot] = 0
+        self._T.ReloadEndTimeBySlot[slot] = 0
+
+        if slot == self.CurrentWeaponSlot then
+            self.IsReloading = false
+        end
+    end
+
+    -- Public cancel endpoint keeps external systems decoupled from internal slot details.
+    @ExecSpace("ServerOnly")
+    method void CancelCurrentReload()
+        self:CancelReloadForSlot(self.CurrentWeaponSlot)
+    end
+
+    -- Slot switch persists previous slot ammo and restores target slot state.
+    @ExecSpace("ServerOnly")
+    method void SetCurrentWeaponSlot(integer slot)
+        if self:IsValidSlot(slot) == false then
+            return
+        end
+        if slot == self.CurrentWeaponSlot then
+            return
+        end
+
+        local prevSlot = self.CurrentWeaponSlot
+        self._T.AmmoBySlot[prevSlot] = self.CurrentAmmo
+
+        self:CancelReloadForSlot(prevSlot)
+
+        self.CurrentWeaponSlot = slot
+        self.CurrentAmmo = self._T.AmmoBySlot[slot]
+        if self.CurrentAmmo == nil then
+            self.CurrentAmmo = self.MaxAmmo
+            self._T.AmmoBySlot[slot] = self.MaxAmmo
+        end
+
+        self.IsReloading = self:IsReloadingInSlot(slot)
+    end
+
+    -- Fire consumption updates both ammo and per-slot fire cooldown timestamp.
+    @ExecSpace("ServerOnly")
+    method boolean ConsumeAmmoOnFire()
+        if self.IsReloading == true then
+            return false
+        end
+        if self:IsFireReady() == false then
+            return false
+        end
+        if self.CurrentAmmo <= 0 then
+            return false
+        end
+
+        self.CurrentAmmo = self.CurrentAmmo - 1
+        self._T.AmmoBySlot[self.CurrentWeaponSlot] = self.CurrentAmmo
+        self._T.NextFireReadyTimeBySlot[self.CurrentWeaponSlot] = _UtilLogic.ServerElapsedSeconds + math.max(self.FireRate, 0)
+        return true
+    end
+
+    -- Fire-ready uses server elapsed time to keep cooldown immune to client-side time hacks.
+    @ExecSpace("ServerOnly")
+    method boolean IsFireReady()
+        local readyTime = self._T.NextFireReadyTimeBySlot[self.CurrentWeaponSlot]
+        if readyTime == nil then
+            return true
+        end
+
+        return _UtilLogic.ServerElapsedSeconds >= readyTime
+    end
+
+    method boolean IsValidSlot(integer slot)
+        if slot < 1 then
+            return false
+        end
+
+        return slot <= math.max(self.WeaponSlotCount, 1)
+    end
+
+    method boolean IsReloadingInSlot(integer slot)
+        local timerId = self._T.ReloadTimerBySlot[slot]
+        return (timerId ~= nil and timerId > 0)
+    end
+
+    -- External readers use this accessor instead of touching internal table state directly.
+    @ExecSpace("ServerOnly")
+    method integer GetSlotAmmo(integer slot)
+        if self:IsValidSlot(slot) == false then
+            return 0
+        end
+
+        local ammo = self._T.AmmoBySlot[slot]
+        if ammo == nil then
+            ammo = self.MaxAmmo
+        end
+
+        return ammo
+    end
+
+    -- External writers use this setter to keep clamp logic centralized.
+    @ExecSpace("ServerOnly")
+    method void SetSlotAmmo(integer slot, integer ammo)
+        if self:IsValidSlot(slot) == false then
+            return
+        end
+
+        local clampedAmmo = math.max(0, math.min(ammo, self.MaxAmmo))
+        self._T.AmmoBySlot[slot] = clampedAmmo
+
+        if slot == self.CurrentWeaponSlot then
+            self.CurrentAmmo = clampedAmmo
+        end
+    end
+
+    -- End play clears outstanding timers to prevent stale completion callbacks.
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        local slotCount = math.max(self.WeaponSlotCount, 1)
+        for slot = 1, slotCount do
+            local timerId = self._T.ReloadTimerBySlot[slot]
+            if timerId ~= nil and timerId > 0 then
+                _TimerService:ClearTimer(timerId)
+            end
+            self._T.ReloadTimerBySlot[slot] = 0
+            self._T.ReloadEndTimeBySlot[slot] = 0
+        end
+    end
+
+    -- Utility bootstrap first; fallback owner validation is used if global utility is not available.
+    method void EnsureGRUtil()
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, _ = pcall(function()
+                utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    method boolean IsOwnerRequest(string requestUserId)
+        if _GRUtil ~= nil and _GRUtil.IsOwner ~= nil then
+            return _GRUtil.IsOwner(self.Entity, requestUserId)
+        end
+
+        local playerComponent = self.Entity.PlayerComponent
+        if playerComponent == nil then
+            return true
+        end
+
+        if requestUserId == nil or requestUserId == "" then
+            return true
+        end
+
+        return requestUserId == playerComponent.UserId
+    end
+end

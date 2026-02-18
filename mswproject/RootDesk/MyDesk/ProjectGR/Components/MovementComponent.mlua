@@ -1,0 +1,330 @@
+@Component
+script MovementComponent extends Component
+
+    @Sync
+    property number SpeedMultiplier = 1.0
+    @Sync
+    property boolean CanMove = true
+    @Sync
+    property integer FacingDirection = 1
+
+    property number MoveSpeed = 1.0
+
+    -- Server initializes authoritative input cache so movement always has a deterministic source.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self._T.ServerInputDirection = Vector2.zero
+        self:EnsureGRUtil()
+    end
+
+    -- Client bootstraps GR utility first to keep ownership checks and component lookup behavior consistent.
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self:EnsureGRUtil()
+    end
+
+    -- Every movement key transition is sampled client-side and sent to server as intent only.
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        local key = event.key
+        if self:IsMovementKey(key) == false then
+            return
+        end
+
+        self:SubmitMoveInput(self:GetMoveInputClient())
+    end
+
+    -- Key release is processed through the same path to keep stuck-key state from persisting.
+    @EventSender("Service", "InputService")
+    handler HandleKeyUpEvent(KeyUpEvent event)
+        local key = event.key
+        if self:IsMovementKey(key) == false then
+            return
+        end
+
+        self:SubmitMoveInput(self:GetMoveInputClient())
+    end
+
+    -- Server is the only place that applies final movement so modified clients cannot move directly.
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number delta)
+        local moveDirection = self._T.ServerInputDirection
+        if self.CanMove == false then
+            moveDirection = Vector2.zero
+        end
+
+        local finalSpeed = self.MoveSpeed * self.SpeedMultiplier
+        if finalSpeed < 0 then
+            finalSpeed = 0
+        end
+
+        self:ApplyMovementServer(moveDirection, finalSpeed, delta)
+        self:UpdateFacingDirection(moveDirection)
+        self:UpdateStateAnimation(moveDirection)
+    end
+
+    method boolean IsMovementKey(KeyboardKey key)
+        if key == KeyboardKey.W then
+            return true
+        end
+        if key == KeyboardKey.A then
+            return true
+        end
+        if key == KeyboardKey.S then
+            return true
+        end
+        if key == KeyboardKey.D then
+            return true
+        end
+
+        return false
+    end
+
+    -- Server-side ownership validation prevents other clients from pushing movement for this entity.
+    @ExecSpace("Server")
+    method void SubmitMoveInput(Vector2 moveDirection)
+        if moveDirection == nil then
+            return
+        end
+        if self.Entity == nil or isvalid(self.Entity) == false then
+            return
+        end
+
+        if self:IsOwnerRequest(senderUserId) == false then
+            return
+        end
+
+        self._T.ServerInputDirection = self:ClampInputDirection(moveDirection)
+    end
+
+    -- Client reads current WASD state to reduce server polling cost.
+    @ExecSpace("ClientOnly")
+    method Vector2 GetMoveInputClient()
+        if self.CanMove == false then
+            return Vector2.zero
+        end
+
+        local x = 0
+        local y = 0
+
+        local upPressed = _InputService:IsKeyPressed(KeyboardKey.W)
+        local downPressed = _InputService:IsKeyPressed(KeyboardKey.S)
+        local leftPressed = _InputService:IsKeyPressed(KeyboardKey.A)
+        local rightPressed = _InputService:IsKeyPressed(KeyboardKey.D)
+
+        if upPressed == true and downPressed == false then
+            y = 1
+        elseif downPressed == true and upPressed == false then
+            y = -1
+        end
+
+        if rightPressed == true and leftPressed == false then
+            x = 1
+        elseif leftPressed == true and rightPressed == false then
+            x = -1
+        end
+
+        local direction = Vector2(x, y)
+        return self:ClampInputDirection(direction)
+    end
+
+    -- Input direction is normalized to apply diagonal speed correction.
+    method Vector2 ClampInputDirection(Vector2 inputDirection)
+        if inputDirection == nil then
+            return Vector2.zero
+        end
+
+        local sqrMagnitude = inputDirection:SqrMagnitude()
+        if sqrMagnitude <= 0 then
+            return Vector2.zero
+        end
+
+        return inputDirection:Normalize()
+    end
+
+    -- Rigidbody is preferred for wall-slide behavior, with transform fallback for non-rigidbody entities.
+    @ExecSpace("ServerOnly")
+    method void ApplyMovementServer(Vector2 moveDirection, number speed, number delta)
+        local rigidbody = self.Entity.RigidbodyComponent
+        if rigidbody ~= nil and isvalid(rigidbody) == true then
+            rigidbody.MoveVelocity = moveDirection * speed
+            return
+        end
+
+        local transform = self.Entity.TransformComponent
+        if transform == nil or isvalid(transform) == false then
+            return
+        end
+
+        local deltaX = moveDirection.x * speed * delta
+        local deltaY = moveDirection.y * speed * delta
+        transform:Translate(deltaX, deltaY)
+    end
+
+    -- Facing direction is synchronized from server to keep sprite orientation consistent across clients.
+    @ExecSpace("ServerOnly")
+    method void UpdateFacingDirection(Vector2 moveDirection)
+        if moveDirection == nil then
+            return
+        end
+        if moveDirection:SqrMagnitude() <= 0 then
+            return
+        end
+
+        local direction = self:ComputeFacingDirection(moveDirection)
+        if direction ~= self.FacingDirection then
+            self.FacingDirection = direction
+        end
+    end
+
+    method integer ComputeFacingDirection(Vector2 direction)
+        local angle = math.deg(math.atan(direction.y, direction.x))
+        if angle < 0 then
+            angle = angle + 360
+        end
+
+        -- 8-direction index (1~8): right, up-right, up, up-left, left, down-left, down, down-right.
+        if angle >= 337.5 or angle < 22.5 then
+            return 1
+        elseif angle < 67.5 then
+            return 2
+        elseif angle < 112.5 then
+            return 3
+        elseif angle < 157.5 then
+            return 4
+        elseif angle < 202.5 then
+            return 5
+        elseif angle < 247.5 then
+            return 6
+        elseif angle < 292.5 then
+            return 7
+        else
+            return 8
+        end
+    end
+
+    -- State updates are server-authoritative to avoid divergent animation states per client.
+    @ExecSpace("ServerOnly")
+    method void UpdateStateAnimation(Vector2 moveDirection)
+        local stateComponent = self:ResolveComponentSafe(self.Entity, "StateComponent", "CurrentStateName")
+        if stateComponent == nil then
+            return
+        end
+
+        if moveDirection ~= nil and moveDirection:SqrMagnitude() > 0 then
+            if stateComponent.CurrentStateName ~= "MOVE" then
+                stateComponent:ChangeState("MOVE")
+            end
+            return
+        end
+
+        if stateComponent.CurrentStateName ~= "IDLE" then
+            stateComponent:ChangeState("IDLE")
+        end
+    end
+
+    -- Stops velocity explicitly on end play so recycled entities do not keep stale movement.
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        local rigidbody = self.Entity.RigidbodyComponent
+        if rigidbody ~= nil and isvalid(rigidbody) == true then
+            rigidbody.MoveVelocity = Vector2.zero
+        end
+    end
+
+    -- Tries to boot GR utility component first; if unavailable, downstream methods use direct safe fallback.
+    method void EnsureGRUtil()
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, _ = pcall(function()
+                utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    method Component ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return _GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+
+    method boolean IsOwnerRequest(string requestUserId)
+        if _GRUtil ~= nil and _GRUtil.IsOwner ~= nil then
+            return _GRUtil.IsOwner(self.Entity, requestUserId)
+        end
+
+        local playerComponent = self.Entity.PlayerComponent
+        if playerComponent == nil then
+            return true
+        end
+
+        if requestUserId == nil or requestUserId == "" then
+            return true
+        end
+
+        return requestUserId == playerComponent.UserId
+    end
+end

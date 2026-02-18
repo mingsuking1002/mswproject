@@ -1,0 +1,434 @@
+@Component
+script FireSystemComponent extends Component
+
+    @Sync
+    property boolean IsFireReady = true
+    @Sync
+    property boolean CanAttack = true
+
+    property number FireCooldown = 0.5
+    property Vector2 MuzzleOffset = Vector2(0.5, 0.2)
+    property string ProjectileModelId = ""
+    property Entity ProjectileTemplateEntity = nil
+
+    property integer BaseWeaponAttack = 10
+    property integer PassiveFlatAttack = 0
+    property number BuffIncreasePercent = 0
+    property number PassiveIncreasePercent = 0
+    property number ProjectileSpeed = 20.0
+    property number ProjectileRange = 15.0
+    property number ProjectileLifetime = 2.0
+    property number ProjectileSpread = 0
+
+    -- Server initializes cooldown state and utility bootstrap before combat begins.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self.IsFireReady = true
+        self._T.FireCooldownTimerId = 0
+        self:EnsureGRUtil()
+    end
+
+    -- Client initializes utility so ownership guards remain unified for input requests.
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self:EnsureGRUtil()
+    end
+
+    -- Client converts touch input into world target and sends intent to server.
+    @EventSender("Service", "InputService")
+    handler HandleScreenTouchEvent(ScreenTouchEvent event)
+        if event.TouchId ~= 1 then
+            return
+        end
+        if self.CanAttack == false or self.IsFireReady == false then
+            return
+        end
+        if _InputService:IsPointerOverUI() == true then
+            return
+        end
+
+        local worldPoint = _UILogic:ScreenToWorldPosition(event.TouchPoint)
+        self:RequestFireServer(worldPoint)
+    end
+
+    -- Request validation runs on server to block spoofed client requests.
+    @ExecSpace("Server")
+    method void RequestFireServer(Vector2 targetWorldPosition)
+        if targetWorldPosition == nil then
+            return
+        end
+        if self.Entity == nil or isvalid(self.Entity) == false then
+            return
+        end
+
+        if self:IsOwnerRequest(senderUserId) == false then
+            return
+        end
+
+        self:TryFireServer(targetWorldPosition)
+    end
+
+    -- Server executes final fire gate checks and mutates ammo/cooldown state.
+    @ExecSpace("ServerOnly")
+    method void TryFireServer(Vector2 targetWorldPosition)
+        if self:CanFireServer() == false then
+            return
+        end
+
+        local shooterPosition = self.Entity.TransformComponent.WorldPosition
+        if shooterPosition == nil then
+            return
+        end
+
+        local shooterPosition2D = Vector2(shooterPosition.x, shooterPosition.y)
+        local fireDirection = targetWorldPosition - shooterPosition2D
+        if fireDirection:SqrMagnitude() <= 0 then
+            fireDirection = self:GetFallbackDirection()
+        else
+            fireDirection = fireDirection:Normalize()
+        end
+
+        local reloadComponent = self:ResolveComponentSafe(self.Entity, "ReloadComponent", "CurrentAmmo")
+        if reloadComponent == nil then
+            return
+        end
+
+        local consumeOk, consumeResult = pcall(function()
+            return reloadComponent:ConsumeAmmoOnFire()
+        end)
+        if consumeOk == false or consumeResult ~= true then
+            return
+        end
+
+        self:RotateShooter(fireDirection)
+        self:SpawnProjectileServer(fireDirection, shooterPosition2D)
+        self:StartFireCooldown()
+    end
+
+    -- This gate consolidates ammo/reload/cooldown/attack-state checks in one authoritative function.
+    @ExecSpace("ServerOnly")
+    method boolean CanFireServer()
+        if self.CanAttack == false then
+            return false
+        end
+        if self.IsFireReady == false then
+            return false
+        end
+
+        local hasModelId = (self.ProjectileModelId ~= nil and self.ProjectileModelId ~= "")
+        local templateEntity = self:ResolveProjectileTemplateEntity()
+        if hasModelId == false and templateEntity == nil then
+            return false
+        end
+
+        local reloadComponent = self:ResolveComponentSafe(self.Entity, "ReloadComponent", "CurrentAmmo")
+        if reloadComponent == nil then
+            return false
+        end
+
+        if reloadComponent.IsReloading == true then
+            return false
+        end
+        if reloadComponent.CurrentAmmo <= 0 then
+            return false
+        end
+
+        local readyOk, readyResult = pcall(function()
+            return reloadComponent:IsFireReady()
+        end)
+        if readyOk == false or readyResult ~= true then
+            return false
+        end
+
+        return true
+    end
+
+    -- Muzzle offset is rotated by shot direction so spawned projectiles start in front of the shooter.
+    @ExecSpace("ServerOnly")
+    method Vector2 CalculateMuzzleWorldPosition(Vector2 direction, Vector2 shooterPosition)
+        local forward = direction
+        local right = Vector2(-forward.y, forward.x)
+        return shooterPosition + (forward * self.MuzzleOffset.x) + (right * self.MuzzleOffset.y)
+    end
+
+    -- Projectile is spawned and initialized with snapshot stats to keep post-swap damage immutable.
+    @ExecSpace("ServerOnly")
+    method void SpawnProjectileServer(Vector2 direction, Vector2 shooterPosition)
+        local muzzlePosition = self:CalculateMuzzleWorldPosition(direction, shooterPosition)
+        local spawnPosition3D = Vector3(muzzlePosition.x, muzzlePosition.y, 0)
+
+        local parentEntity = self.Entity.CurrentMap
+        if parentEntity == nil or isvalid(parentEntity) == false then
+            parentEntity = self.Entity
+        end
+
+        local projectileEntity = nil
+        if self.ProjectileModelId ~= nil and self.ProjectileModelId ~= "" then
+            projectileEntity = _SpawnService:SpawnByModelId(self.ProjectileModelId, "Projectile", spawnPosition3D, parentEntity)
+        else
+            local templateEntity = self:ResolveProjectileTemplateEntity()
+            if templateEntity == nil or isvalid(templateEntity) == false then
+                return
+            end
+            projectileEntity = _SpawnService:SpawnByEntity(templateEntity, "Projectile", spawnPosition3D, parentEntity, true)
+        end
+
+        if projectileEntity == nil or isvalid(projectileEntity) == false then
+            return
+        end
+
+        local triggerComponent = projectileEntity.TriggerComponent
+        if triggerComponent == nil then
+            local triggerOk, _ = pcall(function()
+                projectileEntity:AddComponent("MOD.Core.TriggerComponent")
+            end)
+            if triggerOk == true then
+                triggerComponent = projectileEntity.TriggerComponent
+            end
+        end
+
+        if triggerComponent ~= nil and isvalid(triggerComponent) == true then
+            triggerComponent.BoxSize = Vector2(0.3, 0.3)
+            triggerComponent.IsPassive = false
+        end
+
+        local projectileComponent = self:FindOrAddComponentSafe(projectileEntity, "ProjectileComponent")
+        if projectileComponent == nil then
+            _EntityService:Destroy(projectileEntity)
+            return
+        end
+
+        projectileComponent.Speed = self.ProjectileSpeed
+        projectileComponent.MaxRange = self.ProjectileRange
+        projectileComponent.Lifetime = self.ProjectileLifetime
+        projectileComponent.Damage = self:CalculateFinalDamage()
+        projectileComponent.Spread = self.ProjectileSpread
+        projectileComponent:InitializeProjectile(direction, muzzlePosition, self.Entity)
+    end
+
+    -- Template fallback keeps firing possible when model-id based spawn is not configured yet.
+    @ExecSpace("ServerOnly")
+    method Entity ResolveProjectileTemplateEntity()
+        local cachedTemplate = self.ProjectileTemplateEntity
+        if cachedTemplate ~= nil and isvalid(cachedTemplate) == true then
+            return cachedTemplate
+        end
+
+        local mapEntity = self.Entity.CurrentMap
+        if mapEntity == nil or isvalid(mapEntity) == false then
+            return nil
+        end
+
+        local templateEntity = mapEntity:GetChildByName("GRProjectileTemplate", true)
+        if templateEntity == nil or isvalid(templateEntity) == false then
+            return nil
+        end
+
+        self.ProjectileTemplateEntity = templateEntity
+        return templateEntity
+    end
+
+    -- Shooter rotation is committed on server so all clients observe identical aim direction.
+    @ExecSpace("ServerOnly")
+    method void RotateShooter(Vector2 direction)
+        local transform = self.Entity.TransformComponent
+        if transform == nil or isvalid(transform) == false then
+            return
+        end
+
+        transform.ZRotation = math.deg(math.atan(direction.y, direction.x))
+    end
+
+    -- Final damage formula is server-side to prevent packet-level damage spoofing.
+    @ExecSpace("ServerOnly")
+    method integer CalculateFinalDamage()
+        local baseDamage = self.BaseWeaponAttack + self.PassiveFlatAttack
+        local buffMultiplier = 1 + (self.BuffIncreasePercent * 0.01)
+        local passiveMultiplier = 1 + (self.PassiveIncreasePercent * 0.01)
+        local finalDamage = baseDamage * buffMultiplier * passiveMultiplier
+        return math.max(math.floor(finalDamage), 0)
+    end
+
+    -- Cooldown is timer-driven so fire-ready state is independent from frame rate.
+    @ExecSpace("ServerOnly")
+    method void StartFireCooldown()
+        if self._T.FireCooldownTimerId ~= nil and self._T.FireCooldownTimerId > 0 then
+            _TimerService:ClearTimer(self._T.FireCooldownTimerId)
+            self._T.FireCooldownTimerId = 0
+        end
+
+        self.IsFireReady = false
+
+        local cooldown = math.max(self.FireCooldown, 0)
+        local restoreFireReady = function()
+            self.IsFireReady = true
+            self._T.FireCooldownTimerId = 0
+        end
+
+        self._T.FireCooldownTimerId = _TimerService:SetTimerOnce(restoreFireReady, cooldown)
+    end
+
+    -- If click overlaps shooter position, previous facing direction is used as fallback fire direction.
+    @ExecSpace("ServerOnly")
+    method Vector2 GetFallbackDirection()
+        local transform = self.Entity.TransformComponent
+        if transform == nil or isvalid(transform) == false then
+            return Vector2.right
+        end
+
+        local radian = math.rad(transform.ZRotation)
+        local direction = Vector2(math.cos(radian), math.sin(radian))
+        if direction:SqrMagnitude() <= 0 then
+            return Vector2.right
+        end
+
+        return direction:Normalize()
+    end
+
+    -- End play clears timer handles to avoid restoring fire-ready on invalid entities.
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self._T.FireCooldownTimerId ~= nil and self._T.FireCooldownTimerId > 0 then
+            _TimerService:ClearTimer(self._T.FireCooldownTimerId)
+            self._T.FireCooldownTimerId = 0
+        end
+    end
+
+    -- Utility bootstrap first; fallback path allows direct safe lookup when global util is absent.
+    method void EnsureGRUtil()
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, _ = pcall(function()
+                utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    method Component ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return _GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+
+    method Component FindOrAddComponentSafe(Entity targetEntity, string typeName)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if _GRUtil ~= nil and _GRUtil.FindOrAddComponent ~= nil then
+            return _GRUtil.FindOrAddComponent(targetEntity, typeName)
+        end
+
+        local existing = self:ResolveComponentSafe(targetEntity, typeName, nil)
+        if existing ~= nil then
+            return existing
+        end
+
+        local prefixedName = typeName
+        local plainName = typeName
+        if string.sub(typeName, 1, 7) == "script." then
+            plainName = string.sub(typeName, 8)
+        else
+            prefixedName = "script." .. typeName
+        end
+
+        local added = nil
+        local addOk1, addResult1 = pcall(function()
+            return targetEntity:AddComponent(prefixedName)
+        end)
+        if addOk1 == true then
+            added = addResult1
+        end
+
+        if added == nil then
+            local addOk2, addResult2 = pcall(function()
+                return targetEntity:AddComponent(plainName)
+            end)
+            if addOk2 == true then
+                added = addResult2
+            end
+        end
+
+        return added
+    end
+
+    method boolean IsOwnerRequest(string requestUserId)
+        if _GRUtil ~= nil and _GRUtil.IsOwner ~= nil then
+            return _GRUtil.IsOwner(self.Entity, requestUserId)
+        end
+
+        local playerComponent = self.Entity.PlayerComponent
+        if playerComponent == nil then
+            return true
+        end
+
+        if requestUserId == nil or requestUserId == "" then
+            return true
+        end
+
+        return requestUserId == playerComponent.UserId
+    end
+end

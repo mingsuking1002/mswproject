@@ -1,0 +1,222 @@
+@Component
+script ProjectileComponent extends Component
+
+    property number Speed = 20.0
+    property number MaxRange = 15.0
+    property number Lifetime = 2.0
+    property integer Damage = 10
+    property number Spread = 0
+
+    property Vector2 MoveDirection = Vector2.right
+    property Vector2 StartPosition = Vector2.zero
+    property Entity OwnerEntity = nil
+
+    -- Server initializes lifecycle guards to make destroy path idempotent.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self._T.ElapsedLifeTime = 0
+        self._T.IsInitialized = false
+        self._T.IsDestroyed = false
+        self:EnsureGRUtil()
+    end
+
+    -- Spawn initialization captures immutable launch snapshot values.
+    @ExecSpace("ServerOnly")
+    method void InitializeProjectile(Vector2 direction, Vector2 spawnPosition, Entity ownerEntity)
+        if direction == nil then
+            direction = Vector2.right
+        end
+        if direction:SqrMagnitude() <= 0 then
+            direction = Vector2.right
+        else
+            direction = direction:Normalize()
+        end
+
+        direction = self:ApplySpread(direction)
+
+        self.MoveDirection = direction
+        self.StartPosition = spawnPosition
+        self.OwnerEntity = ownerEntity
+        self._T.ElapsedLifeTime = 0
+        self._T.IsInitialized = true
+
+        local transform = self.Entity.TransformComponent
+        if transform ~= nil and isvalid(transform) == true then
+            transform.WorldPosition = Vector3(spawnPosition.x, spawnPosition.y, 0)
+            transform.ZRotation = math.deg(math.atan(direction.y, direction.x))
+        end
+    end
+
+    -- Spread is applied once at spawn to avoid per-frame drift.
+    @ExecSpace("ServerOnly")
+    method Vector2 ApplySpread(Vector2 direction)
+        if self.Spread <= 0 then
+            return direction
+        end
+
+        local randomAngle = _UtilLogic:RandomRealRange(-self.Spread, self.Spread)
+        local radian = math.rad(randomAngle)
+        local cosValue = math.cos(radian)
+        local sinValue = math.sin(radian)
+
+        local x = direction.x * cosValue - direction.y * sinValue
+        local y = direction.x * sinValue + direction.y * cosValue
+        return Vector2(x, y):Normalize()
+    end
+
+    -- Movement, range, and lifetime are server-updated for deterministic hit outcomes.
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number delta)
+        if self._T.IsInitialized == false then
+            return
+        end
+        if self._T.IsDestroyed == true then
+            return
+        end
+
+        self._T.ElapsedLifeTime = self._T.ElapsedLifeTime + delta
+        if self._T.ElapsedLifeTime >= self.Lifetime then
+            self:DestroySelf()
+            return
+        end
+
+        local moveDelta = self.MoveDirection * self.Speed * delta
+
+        local rigidbody = self.Entity.RigidbodyComponent
+        if rigidbody ~= nil and isvalid(rigidbody) == true then
+            rigidbody.MoveVelocity = self.MoveDirection * self.Speed
+        else
+            local transform = self.Entity.TransformComponent
+            if transform ~= nil and isvalid(transform) == true then
+                transform:Translate(moveDelta.x, moveDelta.y)
+            end
+        end
+
+        local currentPosition = self.Entity.TransformComponent.WorldPosition
+        if currentPosition ~= nil then
+            local currentPosition2D = Vector2(currentPosition.x, currentPosition.y)
+            if Vector2.Distance(self.StartPosition, currentPosition2D) >= self.MaxRange then
+                self:DestroySelf()
+            end
+        end
+    end
+
+    -- Hit processing is authoritative on server and destroys projectile after first valid impact.
+    @ExecSpace("ServerOnly")
+    @EventSender("Self")
+    handler HandleTriggerEnterEvent(TriggerEnterEvent event)
+        if self._T.IsDestroyed == true then
+            return
+        end
+
+        local hitEntity = event.TriggerBodyEntity
+        if hitEntity == nil or isvalid(hitEntity) == false then
+            return
+        end
+
+        if self.OwnerEntity ~= nil and hitEntity == self.OwnerEntity then
+            return
+        end
+
+        local hpSystem = self:ResolveComponentSafe(hitEntity, "HPSystemComponent", "CurrentHP")
+        if hpSystem ~= nil then
+            hpSystem:ApplyDamage(self.Damage)
+            self:DestroySelf()
+            return
+        end
+
+        self:DestroySelf()
+    end
+
+    -- Centralized destroy path prevents duplicate Destroy calls from multiple triggers.
+    @ExecSpace("ServerOnly")
+    method void DestroySelf()
+        if self._T.IsDestroyed == true then
+            return
+        end
+
+        self._T.IsDestroyed = true
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            _EntityService:Destroy(self.Entity)
+        end
+    end
+
+    -- Utility bootstrap first; fallback direct lookup is used only when global util is unavailable.
+    method void EnsureGRUtil()
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, _ = pcall(function()
+                utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    method Component ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if _GRUtil ~= nil and _GRUtil.ResolveComponent ~= nil then
+            return _GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+end
