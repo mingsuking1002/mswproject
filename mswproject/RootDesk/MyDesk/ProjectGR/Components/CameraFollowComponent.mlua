@@ -11,7 +11,7 @@ script CameraFollowComponent extends Component
     end
 
     @ExecSpace("ClientOnly")
-    method void OnMapEnter()
+    method void OnMapEnter(Entity enteredMap)
         self:ApplyCameraSettings()
     end
 

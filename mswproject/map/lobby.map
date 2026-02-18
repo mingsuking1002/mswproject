@@ -115,7 +115,7 @@
       {
         "id": "e43766ee-ab57-49e8-b607-a7689fe8e0c6",
         "path": "/maps/lobby/LobbyBootstrap",
-        "componentNames": "MOD.Core.TransformComponent,Map01BootstrapComponent",
+        "componentNames": "MOD.Core.TransformComponent,script.Map01BootstrapComponent",
         "jsonString": {
           "name": "LobbyBootstrap",
           "path": "/maps/lobby/LobbyBootstrap",
@@ -155,7 +155,7 @@
               "Enable": true
             },
             {
-              "@type": "Map01BootstrapComponent",
+              "@type": "script.Map01BootstrapComponent",
               "TargetMapName": "lobby",
               "ProjectileTemplateName": "",
               "EnableLobbyMapSplit": true,

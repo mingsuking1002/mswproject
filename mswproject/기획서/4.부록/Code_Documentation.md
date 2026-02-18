@@ -462,11 +462,13 @@
 | `HideMapLayerInLobby` | boolean | 로비 상태에서 맵 레이어 숨김 여부 |
 | `MapLayerEntityName` | string | 가시성 제어 대상 맵 레이어 이름 |
 | `StartButtonPath` | string | 시작 버튼 UI 경로 |
+| `StartButtonFallbackPath` | string | 시작 버튼 map fallback 경로 (`/maps/map01/GRStartButton`) |
 | `RankingTextPath` | string | 랭킹 텍스트 UI 경로 |
 | `MyRankTextPath` | string | 내 순위 텍스트 UI 경로 |
 | `RankingTextFallbackPath` | string | map fallback 랭킹 텍스트 경로 (`/maps/map01/GRRankingText`) |
 | `MyRankTextFallbackPath` | string | map fallback 내 순위 텍스트 경로 (`/maps/map01/GRMyRankText`) |
 | `TimerTextPath` | string | 타이머 텍스트 UI 경로 |
+| `UIRootPath` | string | UI 그룹 루트 경로 (`/ui/DefaultGroup`) |
 | `AttackButtonPath` | string | 공격 버튼 UI 경로 |
 | `JumpButtonPath` | string | 점프 버튼 UI 경로 |
 | `JoystickPath` | string | 조이스틱 UI 경로 |
@@ -481,7 +483,7 @@
 |---|---|---|---|
 | `OnInitialize` | void | void | 초기 로비 상태 설정 |
 | `OnBeginPlay` | void | void | 초기 서버/클라이언트 상태 적용 |
-| `OnMapEnter` | void | void | 맵 분리 시 현재 맵명 기준으로 로비/인게임 상태 자동 동기화 |
+| `OnMapEnter` | `Entity enteredMap` | void | 맵 분리 시 현재 맵명 기준으로 로비/인게임 상태 자동 동기화 |
 | `OnUpdate` | `number delta` | void | 클라이언트 UI 상태 폴링 및 바인딩 복구 (MapSplit 맵명 기반 상태를 주기적으로 강제 적용) |
 | `RequestStartGameServer` | void | void | 시작 버튼 서버 요청 처리 (맵 분리 시 즉시 인게임 상태 전환) |
 | `HandleRunCompletedServer` | `boolean isClear` | void | 결과 확정 시 타이머 종료/로비 복귀 처리 |
@@ -506,7 +508,10 @@
 | `ScheduleStartButtonBindRetryClient` | void | void | UI 지연 로딩 시 바인딩 재시도 타이머 시작 |
 | `SetEntityEnableByPath` | `string entityPath`, `boolean enabled` | void | 경로 기반 UI 활성 상태 변경 |
 | `SetEntityEnableByPathIfExists` | `string entityPath`, `boolean enabled` | void | 폴백 경로를 경고 없이 가시성 적용 |
-| `ApplyEntityEnableStateClient` | `Entity targetEntity`, `boolean enabled` | void | UI 엔티티 Enable/Visible 적용 공통 처리 |
+| `SetEntityEnableByNameUnderUIRoot` | `string childName`, `boolean enabled` | void | UI 루트 하위 이름 탐색 폴백으로 가시성 적용 |
+| `SetEntityEnableByNameInCurrentMap` | `string childName`, `boolean enabled` | void | 현재 맵 하위 이름 탐색 폴백으로 가시성 적용 |
+| `ForceApplyLobbyNamedEntitiesInCurrentMapClient` | `boolean isLobby`, `boolean rankingVisible`, `boolean timerVisible` | void | `GRStartButton/GRRankingText/GRMyRankText/GRTimerText` 이름 기반 강제 토글 |
+| `ApplyEntityEnableStateClient` | `Entity targetEntity`, `boolean enabled` | void | UI 엔티티 Enable/Visible 적용 공통 처리 (`TextRenderer/CanvasGroup` 포함) |
 | `TrySetComponentEnable` | `any targetComponent`, `boolean enabled` | void | UI 컴포넌트별 Enable 안전 적용 |
 | `TrySetEntityVisualAlpha` | `Entity targetEntity`, `boolean enabled` | void | Enable 적용 후에도 남는 UI 잔상을 알파로 강제 숨김 |
 | `ResolveEntityByPath` | `string entityPath` | `Entity` | 경로 기반 엔티티 조회 |

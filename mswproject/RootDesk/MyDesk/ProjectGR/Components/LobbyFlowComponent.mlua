@@ -26,11 +26,13 @@ script LobbyFlowComponent extends Component
     property string MapLayerEntityName = "MapleMapLayer"
 
     property string StartButtonPath = "/ui/DefaultGroup/GRStartButton"
+    property string StartButtonFallbackPath = "/maps/map01/GRStartButton"
     property string RankingTextPath = "/ui/DefaultGroup/GRRankingText"
     property string MyRankTextPath = "/ui/DefaultGroup/GRMyRankText"
     property string RankingTextFallbackPath = "/maps/map01/GRRankingText"
     property string MyRankTextFallbackPath = "/maps/map01/GRMyRankText"
     property string TimerTextPath = "/ui/DefaultGroup/GRTimerText"
+    property string UIRootPath = "/ui/DefaultGroup"
     property string AttackButtonPath = "/ui/DefaultGroup/Button_Attack"
     property string JumpButtonPath = "/ui/DefaultGroup/Button_Jump"
     property string JoystickPath = "/ui/DefaultGroup/UIJoystick"
@@ -54,7 +56,7 @@ script LobbyFlowComponent extends Component
 
     -- Keeps map-split flow stable when the player re-enters maps.
     @ExecSpace("ServerOnly")
-    method void OnMapEnter()
+    method void OnMapEnter(Entity enteredMap)
         if self.EnableLobbyFlow == false then
             return
         end
@@ -524,7 +526,13 @@ script LobbyFlowComponent extends Component
     -- Applies UI-only state change on each client from authoritative server transitions.
     @ExecSpace("Client")
     method void ApplyLobbyUIClient(boolean isLobby)
+        local effectiveLobbyState = isLobby
+        if self.EnableLobbyFlow == true then
+            effectiveLobbyState = self:ResolveEffectiveLobbyStateClient()
+        end
+
         local previousLobbyState = self._T.LastAppliedLobbyState
+        isLobby = effectiveLobbyState
 
         local isButtonBound = self:BindStartButtonClient()
         if isButtonBound == false then
@@ -532,6 +540,8 @@ script LobbyFlowComponent extends Component
         end
 
         self:SetEntityEnableByPath(self.StartButtonPath, isLobby)
+        self:SetEntityEnableByPathIfExists(self.StartButtonFallbackPath, isLobby)
+        self:SetEntityEnableByNameUnderUIRoot("GRStartButton", isLobby)
 
         local rankingVisible = isLobby
         if self.HideRankingDuringGameplay == false then
@@ -541,12 +551,16 @@ script LobbyFlowComponent extends Component
         self:SetEntityEnableByPath(self.MyRankTextPath, rankingVisible)
         self:SetEntityEnableByPathIfExists(self.RankingTextFallbackPath, rankingVisible)
         self:SetEntityEnableByPathIfExists(self.MyRankTextFallbackPath, rankingVisible)
+        self:SetEntityEnableByNameUnderUIRoot("GRRankingText", rankingVisible)
+        self:SetEntityEnableByNameUnderUIRoot("GRMyRankText", rankingVisible)
 
         local timerVisible = (isLobby == false)
         if self.HideTimerDuringLobby == false then
             timerVisible = true
         end
         self:SetEntityEnableByPath(self.TimerTextPath, timerVisible)
+        self:SetEntityEnableByNameUnderUIRoot("GRTimerText", timerVisible)
+        self:ForceApplyLobbyNamedEntitiesInCurrentMapClient(isLobby, rankingVisible, timerVisible)
 
         local combatHudVisible = (isLobby == false)
         if self.HideCombatHUDInLobby == false then
@@ -698,6 +712,55 @@ script LobbyFlowComponent extends Component
         self:ApplyEntityEnableStateClient(targetEntity, enabled)
     end
 
+    -- UI group child-name fallback keeps visibility control stable when exact paths drift.
+    @ExecSpace("ClientOnly")
+    method void SetEntityEnableByNameUnderUIRoot(string childName, boolean enabled)
+        if childName == nil or childName == "" then
+            return
+        end
+
+        local uiRoot = self:ResolveEntityByPath(self.UIRootPath)
+        if uiRoot == nil or isvalid(uiRoot) == false then
+            return
+        end
+
+        local targetEntity = uiRoot:GetChildByName(childName, true)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+
+        self:ApplyEntityEnableStateClient(targetEntity, enabled)
+    end
+
+    -- Current-map fallback keeps world-space text toggles working even when map path differs.
+    @ExecSpace("ClientOnly")
+    method void SetEntityEnableByNameInCurrentMap(string childName, boolean enabled)
+        if childName == nil or childName == "" then
+            return
+        end
+
+        local mapEntity = self.Entity.CurrentMap
+        if mapEntity == nil or isvalid(mapEntity) == false then
+            return
+        end
+
+        local targetEntity = mapEntity:GetChildByName(childName, true)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+
+        self:ApplyEntityEnableStateClient(targetEntity, enabled)
+    end
+
+    -- Applies name-based map fallback for core lobby/gameplay labels to avoid stale overlay remains.
+    @ExecSpace("ClientOnly")
+    method void ForceApplyLobbyNamedEntitiesInCurrentMapClient(boolean isLobby, boolean rankingVisible, boolean timerVisible)
+        self:SetEntityEnableByNameInCurrentMap("GRStartButton", isLobby)
+        self:SetEntityEnableByNameInCurrentMap("GRRankingText", rankingVisible)
+        self:SetEntityEnableByNameInCurrentMap("GRMyRankText", rankingVisible)
+        self:SetEntityEnableByNameInCurrentMap("GRTimerText", timerVisible)
+    end
+
     -- UI 타입별 Enable/Visible 제어를 한곳에서 처리해 상태 잔류를 방지한다.
     @ExecSpace("ClientOnly")
     method void ApplyEntityEnableStateClient(Entity targetEntity, boolean enabled)
@@ -713,7 +776,9 @@ script LobbyFlowComponent extends Component
         self:TrySetComponentEnable(targetEntity.UITransformComponent, enabled)
         self:TrySetComponentEnable(targetEntity.SpriteGUIRendererComponent, enabled)
         self:TrySetComponentEnable(targetEntity.TextComponent, enabled)
+        self:TrySetComponentEnable(targetEntity.TextRendererComponent, enabled)
         self:TrySetComponentEnable(targetEntity.ButtonComponent, enabled)
+        self:TrySetComponentEnable(targetEntity.CanvasGroupComponent, enabled)
         self:TrySetEntityVisualAlpha(targetEntity, enabled)
     end
 
@@ -836,7 +901,3 @@ script LobbyFlowComponent extends Component
         return senderUserId == playerComponent.UserId
     end
 end
-
-
-
-
