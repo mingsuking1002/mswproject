@@ -5,9 +5,9 @@ script Map01BootstrapComponent extends Component
     property boolean ConfigureOnUserEnter = true
     property boolean AutoAttachMissingComponents = true
 
-    property boolean EnableLobbyMapSplit = true
+    property boolean EnableLobbyMapSplit = false
     property string LobbyMapName = "lobby"
-    property string InGameMapName = "1stage"
+    property string InGameMapName = "lobby"
     property boolean AutoOpenRankingOnLobby = true
     property integer LobbyRankingTab = 1
     property string LobbyUIRootPath = "/ui/DefaultGroup"

@@ -111,6 +111,48 @@
           ],
           "@version": 1
         }
+      },
+      {
+        "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "path": "/maps/lobby/LobbyBootstrap",
+        "componentNames": "MOD.Core.TransformComponent,script.Map01BootstrapComponent",
+        "jsonString": {
+          "name": "LobbyBootstrap",
+          "path": "/maps/lobby/LobbyBootstrap",
+          "nameEditable": true,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 0,
+          "pathConstraints": "///",
+          "revision": 1,
+          "modelId": null,
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Enable": true,
+              "Position": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            {
+              "@type": "script.Map01BootstrapComponent",
+              "ConfigureOnBeginPlay": true,
+              "ConfigureOnUserEnter": true,
+              "AutoAttachMissingComponents": true,
+              "EnableLobbyMapSplit": false,
+              "LobbyMapName": "lobby",
+              "InGameMapName": "lobby",
+              "AutoOpenRankingOnLobby": true,
+              "LobbyRankingTab": 1,
+              "LobbyUIRootPath": "/ui/DefaultGroup",
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
       }
     ]
   }

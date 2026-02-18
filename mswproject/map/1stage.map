@@ -33,6 +33,7 @@
               "@type": "MOD.Core.MapComponent",
               "IsInstanceMap": false,
               "TileMapMode": 0,
+              "UseCustomBound": false,
               "Enable": true
             },
             {

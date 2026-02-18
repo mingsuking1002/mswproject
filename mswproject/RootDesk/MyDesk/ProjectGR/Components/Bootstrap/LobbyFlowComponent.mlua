@@ -4,9 +4,9 @@ script LobbyFlowComponent extends Component
     @Sync
     property boolean IsLobbyActive = true
 
-    property boolean UseMapSplit = true
+    property boolean UseMapSplit = false
     property string LobbyMapName = "lobby"
-    property string InGameMapName = "1stage"
+    property string InGameMapName = "lobby"
 
     property boolean AutoOpenRankingOnLobby = true
     property integer LobbyRankingTab = 1
@@ -93,21 +93,30 @@ script LobbyFlowComponent extends Component
         end
         self._T.StartButtonDebounceTimerId = _TimerService:SetTimerOnce(clearDebounce, 0.25)
 
-        self:RequestStartGameServer()
+        local requestUserId = self:GetOwnerUserId()
+        log("[LobbyFlow] Start clicked. requestUserId=", requestUserId, ", map=", self.InGameMapName)
+        self:RequestStartGameServer(requestUserId)
     end
 
     -- Server validates ownership and lobby state before transitioning to in-game map.
     @ExecSpace("Server")
-    method void RequestStartGameServer()
-        if self:IsOwnerRequest(senderUserId) == false then
-            return
-        end
+    method void RequestStartGameServer(string requestUserId)
         if self.IsLobbyActive == false then
             return
         end
 
+        local targetUserId = requestUserId
+        if targetUserId == nil or targetUserId == "" then
+            targetUserId = self:GetOwnerUserId()
+        end
+        if targetUserId == nil or targetUserId == "" then
+            log_warning("[LobbyFlow] Start request blocked: empty user id.")
+            return
+        end
+
+        log("[LobbyFlow] Start request accepted. userId=", targetUserId, ", map=", self.InGameMapName)
         self:SetLobbyStateServer(false)
-        self:MoveOwnerToInGameMapIfNeeded()
+        self:MoveUserToInGameMapByUserId(targetUserId)
     end
 
     -- Run completion path keeps compatibility with existing HP/game-over integration.
@@ -295,11 +304,20 @@ script LobbyFlowComponent extends Component
                 startButton:AddComponent("MOD.Core.ButtonComponent")
             end)
         end
+        if startButton.ButtonComponent == nil then
+            return
+        end
 
         local callback = function(event)
             self:OnStartButtonClickedClient(event)
         end
-        self._T.StartButtonHandler = startButton:ConnectEvent(ButtonClickEvent, callback)
+
+        local bindOk, bindHandler = pcall(function()
+            return startButton:ConnectEvent(ButtonClickEvent, callback)
+        end)
+        if bindOk == true then
+            self._T.StartButtonHandler = bindHandler
+        end
     end
 
     -- Primary path lookup with UIRoot fallback keeps references stable across map transitions.
@@ -363,7 +381,24 @@ script LobbyFlowComponent extends Component
         return ""
     end
 
-    -- In-game map candidate list preserves SPEC map01 intent while allowing 1stage fallback in reset workspace.
+    -- Normalizes map name format so "1stage", "map://1stage", "/maps/1stage" are treated as same target.
+    method string NormalizeMapName(string mapName)
+        if mapName == nil or mapName == "" then
+            return ""
+        end
+
+        local normalized = tostring(mapName)
+        if string.sub(normalized, 1, 6) == "map://" then
+            normalized = string.sub(normalized, 7)
+        end
+        if string.sub(normalized, 1, 6) == "/maps/" then
+            normalized = string.sub(normalized, 7)
+        end
+
+        return normalized
+    end
+
+    -- In-game map candidate list includes all common map key formats for robust room-service compatibility.
     method table GetInGameMapCandidates()
         local candidates = {}
         local seen = {}
@@ -381,10 +416,22 @@ script LobbyFlowComponent extends Component
         end
 
         pushCandidate(self.InGameMapName)
-        if self.InGameMapName == "map01" then
+
+        local normalized = self:NormalizeMapName(self.InGameMapName)
+        if normalized ~= "" then
+            pushCandidate(normalized)
+            pushCandidate("map://" .. normalized)
+            pushCandidate("/maps/" .. normalized)
+        end
+
+        if normalized == "map01" then
             pushCandidate("1stage")
-        elseif self.InGameMapName == "1stage" then
+            pushCandidate("map://1stage")
+            pushCandidate("/maps/1stage")
+        elseif normalized == "1stage" then
             pushCandidate("map01")
+            pushCandidate("map://map01")
+            pushCandidate("/maps/map01")
         end
 
         return candidates
@@ -395,9 +442,20 @@ script LobbyFlowComponent extends Component
             return false
         end
 
+        local currentNormalized = self:NormalizeMapName(mapName)
+        local targetNormalized = self:NormalizeMapName(self.InGameMapName)
+        if targetNormalized ~= "" and currentNormalized == targetNormalized then
+            return true
+        end
+
         local candidates = self:GetInGameMapCandidates()
         for _, candidate in pairs(candidates) do
             if candidate == mapName then
+                return true
+            end
+
+            local candidateNormalized = self:NormalizeMapName(candidate)
+            if candidateNormalized ~= "" and candidateNormalized == currentNormalized then
                 return true
             end
         end
@@ -408,11 +466,17 @@ script LobbyFlowComponent extends Component
     -- In-game transition uses verified RoomService static-room API in current MSW version.
     @ExecSpace("ServerOnly")
     method boolean MoveOwnerToInGameMapIfNeeded()
+        local userId = self:GetOwnerUserId()
+        return self:MoveUserToInGameMapByUserId(userId)
+    end
+
+    -- Explicit user-id path is used by start RPC so transition works even when owner component lookup is delayed.
+    @ExecSpace("ServerOnly")
+    method boolean MoveUserToInGameMapByUserId(string userId)
         if self.UseMapSplit == false then
             return true
         end
 
-        local userId = self:GetOwnerUserId()
         if userId == nil or userId == "" then
             return false
         end
@@ -425,31 +489,25 @@ script LobbyFlowComponent extends Component
             if moveOk == true and moved == true then
                 return true
             end
-
-            local mapUri = mapName
-            if string.sub(mapName, 1, 6) ~= "map://" then
-                mapUri = "map://" .. mapName
-            end
-
-            local uriOk, uriMoved = pcall(function()
-                return _RoomService:MoveUserToStaticRoom(userId, mapUri)
-            end)
-            if uriOk == true and uriMoved == true then
-                return true
-            end
         end
 
+        log_warning("[LobbyFlow] Move to in-game failed. userId=", userId, ", map=", self.InGameMapName)
         return false
     end
 
     -- Lobby transition mirrors in-game transition API for consistent map split flow.
     @ExecSpace("ServerOnly")
     method boolean MoveOwnerToLobbyMapIfNeeded()
+        local userId = self:GetOwnerUserId()
+        return self:MoveUserToLobbyMapByUserId(userId)
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean MoveUserToLobbyMapByUserId(string userId)
         if self.UseMapSplit == false then
             return true
         end
 
-        local userId = self:GetOwnerUserId()
         if userId == nil or userId == "" then
             return false
         end
@@ -470,6 +528,18 @@ script LobbyFlowComponent extends Component
             return _RoomService:MoveUserToStaticRoom(userId, lobbyUri)
         end)
         if uriOk == true and uriMoved == true then
+            return true
+        end
+
+        local lobbyPath = self.LobbyMapName
+        if string.sub(self.LobbyMapName, 1, 6) ~= "/maps/" then
+            lobbyPath = "/maps/" .. self.LobbyMapName
+        end
+
+        local pathOk, pathMoved = pcall(function()
+            return _RoomService:MoveUserToStaticRoom(userId, lobbyPath)
+        end)
+        if pathOk == true and pathMoved == true then
             return true
         end
 
