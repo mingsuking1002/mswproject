@@ -7,7 +7,7 @@
 - **비고:** `.mlua` 유지 + `.codeblock(Target mLua)` 동기화 대상
 
 ## GRUtilModule
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/GRUtilModule.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Core/GRUtilModule.mlua`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -23,7 +23,7 @@
 | `OnMapEnter` | `enteredMap: Entity` | void | 클라이언트 맵 진입 시 유틸 재등록 |
 
 ## MovementComponent
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/MovementComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Core/MovementComponent.mlua`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -48,7 +48,7 @@
 | `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
 
 ## CameraFollowComponent
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/CameraFollowComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Core/CameraFollowComponent.mlua`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -67,7 +67,7 @@
 | `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
 
 ## HPSystemComponent
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/HPSystemComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.mlua`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -98,7 +98,7 @@
 | `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
 
 ## ReloadComponent
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/ReloadComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ReloadComponent.mlua`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -128,7 +128,7 @@
 | `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
 
 ## FireSystemComponent
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/FireSystemComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.mlua`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -163,7 +163,7 @@
 | `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
 
 ## ProjectileComponent
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/ProjectileComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ProjectileComponent.mlua`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -194,7 +194,7 @@
 - **범위:** `WeaponSwapComponent + TagManagerComponent + SpeedrunTimerComponent + RankingComponent`
 
 ## WeaponSwapComponent
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/WeaponSwapComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -224,7 +224,7 @@
 | `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
 
 ## TagManagerComponent
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/TagManagerComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/TagManagerComponent.mlua`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -252,7 +252,7 @@
 | `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
 
 ## SpeedrunTimerComponent
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/SpeedrunTimerComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/SpeedrunTimerComponent.mlua`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -281,7 +281,7 @@
 | `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
 
 ## RankingComponent
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/RankingComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/RankingComponent.mlua`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -313,7 +313,7 @@
 - **범위:** `WeaponWheelUIComponent + RankingUIComponent + HUDComponent + Map01BootstrapComponent + LobbyFlowComponent`
 
 ## WeaponWheelUIComponent
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/WeaponWheelUIComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/UI/WeaponWheelUIComponent.mlua`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -335,7 +335,7 @@
 | `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
 
 ## RankingUIComponent
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/RankingUIComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/UI/RankingUIComponent.mlua`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -361,7 +361,7 @@
 | `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
 
 ## HUDComponent
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/HUDComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/UI/HUDComponent.mlua`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -388,7 +388,7 @@
 | `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
 
 ## Map01BootstrapComponent
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Map01BootstrapComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -412,7 +412,7 @@
 | `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
 
 ## LobbyFlowComponent
-- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/LobbyFlowComponent.mlua`
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.mlua`
 - **수정일:** `2026-02-18`
 
 ### Properties
@@ -446,3 +446,4 @@
 | `StartRunTimerServer` | void | void | 스피드런 타이머 시작 요청 |
 | `CompleteRunTimerServer` | void | void | 스피드런 타이머 종료 요청 |
 | `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
+

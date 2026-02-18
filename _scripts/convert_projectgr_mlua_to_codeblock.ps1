@@ -54,7 +54,7 @@ function Convert-MluaPair {
 }
 
 $resolvedDir = (Resolve-Path -Path $ComponentsDir).Path
-$mluaFiles = Get-ChildItem -Path $resolvedDir -Filter "*.mlua" | Sort-Object Name
+$mluaFiles = Get-ChildItem -Path $resolvedDir -Filter "*.mlua" -Recurse | Sort-Object FullName
 
 if ($mluaFiles.Count -eq 0) {
     Write-Host "[INFO] No .mlua files found."

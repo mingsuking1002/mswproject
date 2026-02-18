@@ -38,34 +38,35 @@
 
 ```
 ProjectGR/
-├── Core/                       ← 전투 무관 기반
-│   ├── GRUtilModule            ← 🆕 글로벌 유틸리티
-│   ├── MovementComponent
-│   └── CameraFollowComponent
-│
-├── Combat/                     ← 전투 도메인
-│   ├── HPSystemComponent
-│   ├── FireSystemComponent
-│   ├── ProjectileComponent
-│   └── ReloadComponent
-│
-├── Meta/                       ← 메타 시스템
-│   ├── WeaponSwapComponent
-│   ├── TagManagerComponent
-│   ├── SpeedrunTimerComponent
-│   └── RankingComponent
-│
-├── UI/                         ← 순수 표시 (로직 금지)
-│   ├── WeaponWheelUIComponent
-│   ├── RankingUIComponent
-│   └── HUDComponent            ← 🆕 HP바/잔탄/쿨타임 통합
-│
-└── Bootstrap/                  ← 초기화/오케스트레이션
-    ├── Map01BootstrapComponent
-    └── LobbyFlowComponent
+└── Components/
+    ├── Core/                   ← 전투 무관 기반
+    │   ├── GRUtilModule        ← 🆕 글로벌 유틸리티
+    │   ├── MovementComponent
+    │   └── CameraFollowComponent
+    │
+    ├── Combat/                 ← 전투 도메인
+    │   ├── HPSystemComponent
+    │   ├── FireSystemComponent
+    │   ├── ProjectileComponent
+    │   └── ReloadComponent
+    │
+    ├── Meta/                   ← 메타 시스템
+    │   ├── WeaponSwapComponent
+    │   ├── TagManagerComponent
+    │   ├── SpeedrunTimerComponent
+    │   └── RankingComponent
+    │
+    ├── UI/                     ← 순수 표시 (로직 금지)
+    │   ├── WeaponWheelUIComponent
+    │   ├── RankingUIComponent
+    │   └── HUDComponent        ← 🆕 HP바/잔탄/쿨타임 통합
+    │
+    └── Bootstrap/              ← 초기화/오케스트레이션
+        ├── Map01BootstrapComponent
+        └── LobbyFlowComponent
 ```
 
-> **Maker 폴더 미지원 시**: `Core/GRUtilModule` → `GRUtilModule` (prefix 없이 flat), 물리 폴더 대신 논리 구분으로 대체
+> **Maker 폴더 미지원 시**: `Components/Core/GRUtilModule` → `Components/GRUtilModule` (prefix 없이 flat), 물리 폴더 대신 논리 구분으로 대체
 
 ---
 
@@ -309,7 +310,7 @@ script XxxComponent extends Component
 
 ## 7. Phase 완료 시 갱신 대상
 
-- [ ] `기획서/0.개요/FOLDER_RULES.md` — 코드 구조 섹션 업데이트
+- [x] `기획서/0.개요/FOLDER_RULES.md` — 코드 구조 섹션 업데이트
 - [x] `기획서/4.부록/Code_Documentation.md` — 전체 재작성
 - [ ] 본 SPEC 상태 `🟢 완료`로 변경
 

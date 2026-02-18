@@ -37,11 +37,12 @@ mswproject/
 │
 ├── 🎮 RootDesk/MyDesk/ProjectGR/       ← 코드 (mlua 스크립트)
 │   ├── Components/                     ← 시스템 컴포넌트 코드
-│   │   ├── MovementComponent.mlua
-│   │   ├── HPSystemComponent.mlua
-│   │   ├── FireSystemComponent.mlua
-│   │   └── ...
-│   └── Common/                         ← 공용 유틸리티 스크립트
+│   │   ├── Core/                       ← 기반 시스템 + 공통 유틸
+│   │   ├── Combat/                     ← 전투 도메인
+│   │   ├── Meta/                       ← 메타/세션 도메인
+│   │   ├── UI/                         ← 표시 전용 컴포넌트
+│   │   └── Bootstrap/                  ← 초기화/오케스트레이션
+│   └── Common/                         ← 공용 유틸리티 스크립트(레거시/선택)
 │
 ├── 📊 Data/                            ← 데이터 시트 (CSV) — MSW Maker 관리
 │   ├── WeaponTable.csv                 (예시)
@@ -72,7 +73,7 @@ mswproject/
 |---|---|---|---|
 | **기획** | `기획서/` | 시스템 설계, 밸런스 의도, 컨셉 | 기획자 (사용자) |
 | **명세** | `작업명세서/` | 구현 지침 (SPEC), 코드 작성 전 참고 | TD (Antigravity) |
-| **코드** | `Components/` | mlua 스크립트 (실제 로직) | 개발 (Codex) |
+| **코드** | `Components/<Domain>/` | mlua 스크립트 (실제 로직) | 개발 (Codex) |
 | **데이터** | `Data/` | CSV 테이블 (밸런스 수치) | 기획자 + 개발 |
 | **엔진** | `Global/`, `map/`, `ui/` | MSW Maker 자동 관리 파일 | Maker + 개발 |
 
@@ -149,27 +150,34 @@ WeaponId,WeaponName,Damage,FireRate,MaxAmmo,ReloadTime,Spread,ProjectileSpeed,Pr
 ```
 {시스템명}Component.mlua
 ```
+- 예외: 공용 유틸은 `Module` 접미사 사용 가능 (`GRUtilModule.mlua`)
 
 ### 폴더 구조
 ```
 ProjectGR/
-├── Components/          ← 시스템 컴포넌트 (1 SPEC = 1~2 컴포넌트)
-│   ├── MovementComponent.mlua
-│   ├── CameraFollowComponent.mlua
-│   ├── HPSystemComponent.mlua
-│   ├── FireSystemComponent.mlua
-│   ├── ProjectileComponent.mlua
-│   ├── ReloadComponent.mlua
-│   ├── WeaponSwapComponent.mlua
-│   ├── WeaponWheelUIComponent.mlua
-│   ├── TagManagerComponent.mlua
-│   ├── SpeedrunTimerComponent.mlua
-│   ├── RankingComponent.mlua
-│   ├── RankingUIComponent.mlua
-│   └── Map01BootstrapComponent.mlua  ← 맵 초기화 (부트스트랩)
-└── Common/              ← 공용 유틸리티 (추후 필요 시)
-    ├── MathUtils.mlua   (예시)
-    └── TableUtils.mlua  (예시)
+├── Components/                      ← 시스템 컴포넌트 루트
+│   ├── Core/                        ← 전투 무관 기반
+│   │   ├── GRUtilModule.mlua
+│   │   ├── MovementComponent.mlua
+│   │   └── CameraFollowComponent.mlua
+│   ├── Combat/                      ← 전투 도메인
+│   │   ├── HPSystemComponent.mlua
+│   │   ├── FireSystemComponent.mlua
+│   │   ├── ProjectileComponent.mlua
+│   │   └── ReloadComponent.mlua
+│   ├── Meta/                        ← 메타 시스템
+│   │   ├── WeaponSwapComponent.mlua
+│   │   ├── TagManagerComponent.mlua
+│   │   ├── SpeedrunTimerComponent.mlua
+│   │   └── RankingComponent.mlua
+│   ├── UI/                          ← 순수 UI 표시 계층
+│   │   ├── WeaponWheelUIComponent.mlua
+│   │   ├── RankingUIComponent.mlua
+│   │   └── HUDComponent.mlua
+│   └── Bootstrap/                   ← 맵/로비 초기화
+│       ├── Map01BootstrapComponent.mlua
+│       └── LobbyFlowComponent.mlua
+└── Common/                          ← 공용 유틸리티 (레거시/선택)
 ```
 
 ---
@@ -190,7 +198,7 @@ ProjectGR/
 | 데이터 설계 | `기획서/3.데이터 및 기술/[데이터] 무기 테이블 설계.md` | "컬럼: ID, 이름, 데미지, 연사속도..." |
 | 명세 | `작업명세서/SPEC_WeaponSwap.md` | "Property, Execution Space, 로직 흐름" |
 | 데이터 | `Data/WeaponTable.csv` | 실제 수치 입력 |
-| 코드 | `Components/WeaponSwapComponent.mlua` | mlua 구현 |
+| 코드 | `Components/Meta/WeaponSwapComponent.mlua` | mlua 구현 |
 | 기록 | `기획서/4.부록/Code_Documentation.md` | 코드 변경 이력 |
 
 ---
@@ -203,5 +211,5 @@ ProjectGR/
 | "테이블에 어떤 컬럼이 필요한가" | `기획서/3.데이터 및 기술/` |
 | "코드를 어떻게 짜야 하는가" | `작업명세서/SPEC_*.md` |
 | "실제 밸런스 수치" | `Data/*.csv` |
-| "실제 로직 코드" | `Components/*.mlua` |
+| "실제 로직 코드" | `Components/*/*.mlua` |
 | "이 코드가 뭐하는 건지 기록" | `기획서/4.부록/Code_Documentation.md` |
