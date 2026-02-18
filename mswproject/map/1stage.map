@@ -24,8 +24,8 @@
           "enable": true,
           "visible": true,
           "localize": false,
-          "displayOrder": -1,
-          "pathConstraints": "",
+          "displayOrder": 0,
+          "pathConstraints": "//",
           "revision": 1,
           "modelId": null,
           "@components": [
@@ -55,8 +55,8 @@
           "enable": true,
           "visible": true,
           "localize": false,
-          "displayOrder": -1,
-          "pathConstraints": "",
+          "displayOrder": 0,
+          "pathConstraints": "///",
           "revision": 1,
           "modelId": null,
           "@components": [
@@ -81,8 +81,8 @@
           "enable": true,
           "visible": true,
           "localize": false,
-          "displayOrder": -1,
-          "pathConstraints": "",
+          "displayOrder": 1,
+          "pathConstraints": "///",
           "revision": 1,
           "origin": {
             "type": "Model",
@@ -99,7 +99,7 @@
               "LayerSortOrder": 0,
               "Locked": false,
               "MapLayerName": "Layer1",
-              "Thumbnail": null,
+              "Thumbnail": "",
               "Enable": true
             }
           ],
@@ -117,8 +117,8 @@
           "enable": true,
           "visible": true,
           "localize": false,
-          "displayOrder": -1,
-          "pathConstraints": "",
+          "displayOrder": 2,
+          "pathConstraints": "///",
           "revision": 1,
           "origin": {
             "type": "Model",
@@ -132,8 +132,8 @@
             {
               "@type": "MOD.Core.TransformComponent",
               "Position": {
-                "x": 0.0,
-                "y": 0.0,
+                "x": -0.225,
+                "y": -0.15,
                 "z": 1000.0
               },
               "QuaternionRotation": {
@@ -142,10 +142,16 @@
                 "z": 0.0,
                 "w": 1.0
               },
+              "Scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
               "Enable": true
             },
             {
               "@type": "MOD.Core.TileMapComponent",
+              "IsOddGridPosition": false,
               "SortingLayer": "MapLayer0",
               "TileMapVersion": 1,
               "TileSetRUID": {

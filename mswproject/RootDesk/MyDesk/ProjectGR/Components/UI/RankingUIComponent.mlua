@@ -53,6 +53,12 @@ script RankingUIComponent extends Component
         self:RequestRankingSnapshotClient()
     end
 
+    -- Lobby flow uses this alias to open default tab without coupling to internal setter naming.
+    @ExecSpace("Client")
+    method void OpenTab(integer tab)
+        self:SetCurrentTabClient(tab)
+    end
+
     -- Client requests snapshot from server-side RankingComponent and then renders latest cached payload.
     @ExecSpace("ClientOnly")
     method void RequestRankingSnapshotClient()

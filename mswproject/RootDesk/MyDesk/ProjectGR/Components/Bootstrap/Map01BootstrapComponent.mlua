@@ -8,6 +8,9 @@ script Map01BootstrapComponent extends Component
     property boolean EnableLobbyMapSplit = true
     property string LobbyMapName = "lobby"
     property string InGameMapName = "map01"
+    property boolean AutoOpenRankingOnLobby = true
+    property integer LobbyRankingTab = 1
+    property string LobbyUIRootPath = "/ui/DefaultGroup"
 
     -- Server initializes utility and sets up per-user configuration flow.
     @ExecSpace("ServerOnly")
@@ -74,9 +77,6 @@ script Map01BootstrapComponent extends Component
         local lobbyFlow = self:ResolveComponentSafe(playerEntity, "LobbyFlowComponent", "IsLobbyActive")
         if lobbyFlow ~= nil then
             pcall(function()
-                lobbyFlow.EnableLobbyFlow = true
-            end)
-            pcall(function()
                 lobbyFlow.UseMapSplit = self.EnableLobbyMapSplit
             end)
             pcall(function()
@@ -84,6 +84,15 @@ script Map01BootstrapComponent extends Component
             end)
             pcall(function()
                 lobbyFlow.InGameMapName = self.InGameMapName
+            end)
+            pcall(function()
+                lobbyFlow.AutoOpenRankingOnLobby = self.AutoOpenRankingOnLobby
+            end)
+            pcall(function()
+                lobbyFlow.LobbyRankingTab = self.LobbyRankingTab
+            end)
+            pcall(function()
+                lobbyFlow.UIRootPath = self.LobbyUIRootPath
             end)
             if lobbyFlow.ApplyInitialServerState ~= nil then
                 pcall(function()

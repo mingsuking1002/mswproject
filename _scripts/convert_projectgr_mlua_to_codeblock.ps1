@@ -28,23 +28,16 @@ function Convert-MluaPair {
     # Convert source text to a JSON-safe string so it can be stored in Target.
     $escapedSource = $scriptSource | ConvertTo-Json -Compress
 
-    $updated = [regex]::Replace($codeblockText, '"Source"\s*:\s*\d+', '"Source": 1', 1)
-
-    $updatedTarget = [regex]::Replace($updated, '"Target"\s*:\s*null', '"Target": ' + $escapedSource, 1)
-    if ($updatedTarget -eq $updated) {
-        $updatedTarget = [regex]::Replace(
-            $updated,
-            '"Target"\s*:\s*"(?:\\\\.|[^"])*"',
-            '"Target": ' + $escapedSource,
-            1
-        )
-    }
-
-    if ($updatedTarget -eq $updated) {
+    $targetIndex = $codeblockText.IndexOf('"Target"')
+    if ($targetIndex -lt 0) {
         throw "Target field not found in .codeblock: $codeblockPath"
     }
 
-    Set-Content -Path $codeblockPath -Encoding UTF8 -Value $updatedTarget
+    $prefix = $codeblockText.Substring(0, $targetIndex)
+    $prefix = [regex]::Replace($prefix, '"Source"\s*:\s*\d+', '"Source": 1', 1)
+
+    $rebuilt = $prefix + '"Target": ' + $escapedSource + "`r`n    }`r`n  }`r`n}`r`n"
+    Set-Content -Path $codeblockPath -Encoding UTF8 -Value $rebuilt
 
     if (-not $KeepMlua) {
         Remove-Item -Path $MluaFile.FullName -Force

@@ -301,6 +301,7 @@
 | `SubmitTimeAttackRecordServer` | `elapsedTime: number` | boolean | 타임어택 신기록 검증/저장/업로드 |
 | `SubmitInfiniteRecordServer` | `killCount: integer` | boolean | 무한모드 신기록 검증/저장/업로드 |
 | `RequestRankingSnapshotServer` | `mode: integer` | void | Top/내 순위 스냅샷 요청 처리 |
+| `RequestRankingDataServer` | `mode: integer, displayCount: integer` | void | 로비 호환용 랭킹 데이터 요청 래퍼 |
 | `GetTopRanksServer` | `mode: integer, count: integer` | table | 모드별 상위 랭킹 조회 |
 | `GetMyRankServer` | `mode: integer` | table | 모드별 내 순위 조회 |
 | `LoadLocalBestRecordsServer` | void | void | 로컬 최고기록 로드 |
@@ -353,6 +354,7 @@
 | 함수명 | 파라미터 | 리턴값 | 설명 |
 |---|---|---|---|
 | `SetCurrentTabClient` | `tab: integer` | void | 탭 변경 및 서버 스냅샷 요청 |
+| `OpenTab` | `tab: integer` | void | 로비 기본 탭 오픈용 별칭 메서드 |
 | `RequestRankingSnapshotClient` | void | void | RankingComponent에 스냅샷 요청 |
 | `RefreshRankingUIClient` | void | void | 최신 스냅샷 텍스트 반영 |
 | `RenderRankingTextClient` | `topRows: table` | void | Top N 랭킹 리스트 렌더링 |
@@ -400,6 +402,9 @@
 | `EnableLobbyMapSplit` | boolean | lobby/map01 분리 이동 사용 여부 |
 | `LobbyMapName` | string | 로비 맵 이름 |
 | `InGameMapName` | string | 인게임 맵 이름 |
+| `AutoOpenRankingOnLobby` | boolean | 로비 진입 시 랭킹 자동 오픈 여부 |
+| `LobbyRankingTab` | integer | 로비 기본 랭킹 탭 |
+| `LobbyUIRootPath` | string | 로비 UI 루트 경로 |
 
 ### Functions
 | 함수명 | 파라미터 | 리턴값 | 설명 |
@@ -419,31 +424,27 @@
 | 이름 | 타입 | 설명 |
 |---|---|---|
 | `IsLobbyActive` | boolean | 현재 로비 상태 여부(Sync) |
-| `EnableLobbyFlow` | boolean | 로비 플로우 사용 여부 |
 | `UseMapSplit` | boolean | lobby/map01 분리 맵 이동 여부 |
 | `LobbyMapName` | string | 로비 맵 이름 |
 | `InGameMapName` | string | 인게임 맵 이름 |
-| `HideRankingDuringGameplay` | boolean | 인게임에서 랭킹 텍스트 숨김 |
-| `HideTimerDuringLobby` | boolean | 로비에서 타이머 텍스트 숨김 |
-| `HideCombatHUDInLobby` | boolean | 로비에서 전투 HUD 숨김 |
-| `ReturnToLobbyOnRunComplete` | boolean | 런 종료 후 로비 복귀 여부 |
-| `EnableKeyboardStartFallback` | boolean | 키보드 시작 폴백 허용 여부 |
+| `AutoOpenRankingOnLobby` | boolean | 로비 진입 시 랭킹 자동 오픈 여부 |
+| `LobbyRankingTab` | integer | 로비 기본 랭킹 탭 (1=타임어택) |
 | `StartButtonPath` | string | 시작 버튼 경로 |
 | `RankingTextPath` | string | 랭킹 텍스트 경로 |
 | `MyRankTextPath` | string | 내 순위 텍스트 경로 |
-| `TimerTextPath` | string | 타이머 텍스트 경로 |
+| `UIRootPath` | string | 로비 UI 루트 경로 |
 
 ### Functions
 | 함수명 | 파라미터 | 리턴값 | 설명 |
 |---|---|---|---|
+| `OnStartButtonClickedClient` | `event: ButtonClickEvent` | void | 버튼 클릭 디바운스 후 시작 요청 |
 | `RequestStartGameServer` | void | void | 시작 요청 서버 처리(로비->인게임) |
 | `SetLobbyStateServer` | `isLobby: boolean` | void | 로비 상태 전환 및 연동 컴포넌트 정책 적용 |
-| `ApplyLobbyUIClient` | `isLobby: boolean` | void | 시작/랭킹/타이머/HUD 가시성 클라이언트 반영 |
+| `ApplyLobbyUIClient` | `isLobby: boolean` | void | 시작/랭킹 UI 가시성 클라이언트 반영 |
+| `RequestOpenLobbyRankingClient` | void | void | 로비 진입 시 랭킹 탭 오픈/데이터 요청 |
 | `MoveOwnerToInGameMapIfNeeded` | void | boolean | 인게임 맵 이동 요청 |
 | `MoveOwnerToLobbyMapIfNeeded` | void | boolean | 로비 맵 이동 요청 |
 | `HandleRunCompletedServer` | `isClear: boolean` | void | 런 종료 처리 및 로비 복귀 |
 | `HandleStageFailedServer` | void | void | 실패 종료 래퍼 |
-| `StartRunTimerServer` | void | void | 스피드런 타이머 시작 요청 |
-| `CompleteRunTimerServer` | void | void | 스피드런 타이머 종료 요청 |
 | `EnsureGRUtil` | void | void | `_GRUtil` 자동 부팅 폴백 |
 

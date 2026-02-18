@@ -82,6 +82,19 @@ script RankingComponent extends Component
         self:ReceiveRankingSnapshotClient(finalMode, topRanks, myRank)
     end
 
+    -- Lobby flow compatibility wrapper: applies display count then forwards to snapshot API.
+    @ExecSpace("Server")
+    method void RequestRankingDataServer(integer mode, integer displayCount)
+        if self:IsOwnerRequest(senderUserId) == false then
+            return
+        end
+
+        if displayCount ~= nil and displayCount > 0 then
+            self.DisplayCount = math.floor(displayCount)
+        end
+        self:RequestRankingSnapshotServer(mode)
+    end
+
     -- Client snapshot receiver caches latest ranking payload for UI components.
     @ExecSpace("Client")
     method void ReceiveRankingSnapshotClient(integer mode, table topRanks, table myRank)
