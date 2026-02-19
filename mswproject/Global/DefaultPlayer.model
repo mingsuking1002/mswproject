@@ -27,6 +27,7 @@
                                                          "ReloadComponent",
                                                          "WeaponSwapComponent",
                                                          "ShopManagerComponent",
+                                                         "ShopUIComponent",
                                                          "TagManagerComponent",
                                                          "SpeedrunTimerComponent",
                                                          "RankingComponent",

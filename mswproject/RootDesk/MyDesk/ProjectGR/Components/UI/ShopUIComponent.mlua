@@ -1,0 +1,940 @@
+@Component
+script ShopUIComponent extends Component
+
+    property Entity ShopPanelRoot = nil
+    property string ShopPanelRootPath = "/ui/DefaultGroup/ShopPanel"
+
+    property Entity DimOverlayEntity = nil
+    property string DimOverlayPath = "/ui/DefaultGroup/ShopDimOverlay"
+
+    property Entity CloseButtonEntity = nil
+    property string CloseButtonPath = "/ui/DefaultGroup/ShopPanel/CloseButton"
+
+    property Entity Slot1Root = nil
+    property Entity Slot2Root = nil
+    property Entity Slot3Root = nil
+    property string Slot1Path = "/ui/DefaultGroup/ShopPanel/Slot1"
+    property string Slot2Path = "/ui/DefaultGroup/ShopPanel/Slot2"
+    property string Slot3Path = "/ui/DefaultGroup/ShopPanel/Slot3"
+
+    property Entity GoldDisplayEntity = nil
+    property string GoldDisplayPath = "/ui/DefaultGroup/ShopPanel/GoldText"
+
+    property number RefreshInterval = 0.1
+    property number CloseDebounceSeconds = 0.2
+
+    -- Client initializes UI cache/bindings and starts low-frequency sync watch loop.
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self:EnsureGRUtil()
+        self:InitializeRuntimeCacheClient()
+        self:ResolveAndBindUIClient()
+        self:SetShopVisibleClient(false)
+        self:StartRefreshLoopClient()
+        self:RefreshShopUIStateClient(true)
+    end
+
+    -- Map enter re-resolves UI references because map/UI reload can invalidate entity handles.
+    @ExecSpace("ClientOnly")
+    method void OnMapEnter(Entity enteredMap)
+        self:InitializeRuntimeCacheClient()
+        self:ResolveAndBindUIClient()
+        self:RefreshShopUIStateClient(true)
+    end
+
+    -- EndPlay clears timers and event handlers so callbacks do not execute on destroyed UI entities.
+    method void OnEndPlay()
+        if self._T.RefreshTimerId ~= nil and self._T.RefreshTimerId > 0 then
+            _TimerService:ClearTimer(self._T.RefreshTimerId)
+            self._T.RefreshTimerId = 0
+        end
+        if self._T.CloseDebounceTimerId ~= nil and self._T.CloseDebounceTimerId > 0 then
+            _TimerService:ClearTimer(self._T.CloseDebounceTimerId)
+            self._T.CloseDebounceTimerId = 0
+        end
+
+        self:DisconnectCloseButtonClient()
+        self:DisconnectSlotButtonsClient()
+        self._T.IsClosing = false
+    end
+
+    -- Runtime cache bootstrap centralizes state used by polling/render/binding paths.
+    @ExecSpace("ClientOnly")
+    method void InitializeRuntimeCacheClient()
+        if self._T.SlotUI == nil then
+            self._T.SlotUI = {}
+        end
+        if self._T.SlotClickable == nil then
+            self._T.SlotClickable = {}
+        end
+
+        if self._T.RefreshTimerId == nil then
+            self._T.RefreshTimerId = 0
+        end
+        if self._T.CloseDebounceTimerId == nil then
+            self._T.CloseDebounceTimerId = 0
+        end
+        if self._T.IsClosing == nil then
+            self._T.IsClosing = false
+        end
+        if self._T.LastIsShopOpen == nil then
+            self._T.LastIsShopOpen = false
+        end
+        if self._T.LastSlotSignature == nil then
+            self._T.LastSlotSignature = ""
+        end
+        if self._T.LastGold == nil then
+            self._T.LastGold = -1
+        end
+    end
+
+    -- Resolve+binder entry keeps setup order deterministic: roots -> slots -> events.
+    @ExecSpace("ClientOnly")
+    method void ResolveAndBindUIClient()
+        self:ResolveRootEntitiesClient()
+        self:CacheSlotUIClient()
+        self:BindCloseButtonClient()
+        self:BindSlotButtonsClient()
+    end
+
+    -- Root resolver supports both explicit path properties and panel-child fallback names.
+    @ExecSpace("ClientOnly")
+    method void ResolveRootEntitiesClient()
+        if self.ShopPanelRoot == nil or isvalid(self.ShopPanelRoot) == false then
+            self.ShopPanelRoot = self:ResolveEntityByPath(self.ShopPanelRootPath)
+        end
+        if self.DimOverlayEntity == nil or isvalid(self.DimOverlayEntity) == false then
+            self.DimOverlayEntity = self:ResolveEntityByPath(self.DimOverlayPath)
+        end
+        if self.CloseButtonEntity == nil or isvalid(self.CloseButtonEntity) == false then
+            self.CloseButtonEntity = self:ResolveEntityByPath(self.CloseButtonPath)
+        end
+        if self.GoldDisplayEntity == nil or isvalid(self.GoldDisplayEntity) == false then
+            self.GoldDisplayEntity = self:ResolveEntityByPath(self.GoldDisplayPath)
+        end
+
+        if self.Slot1Root == nil or isvalid(self.Slot1Root) == false then
+            self.Slot1Root = self:ResolveSlotRootClient(1, self.Slot1Path, "Slot1", "ShopSlot1", "Card1")
+        end
+        if self.Slot2Root == nil or isvalid(self.Slot2Root) == false then
+            self.Slot2Root = self:ResolveSlotRootClient(2, self.Slot2Path, "Slot2", "ShopSlot2", "Card2")
+        end
+        if self.Slot3Root == nil or isvalid(self.Slot3Root) == false then
+            self.Slot3Root = self:ResolveSlotRootClient(3, self.Slot3Path, "Slot3", "ShopSlot3", "Card3")
+        end
+
+        if (self.CloseButtonEntity == nil or isvalid(self.CloseButtonEntity) == false) and self.ShopPanelRoot ~= nil and isvalid(self.ShopPanelRoot) == true then
+            self.CloseButtonEntity = self:ResolveChildByNameCandidates(self.ShopPanelRoot, "CloseButton", "Close", "BtnClose", "XButton")
+        end
+        if (self.GoldDisplayEntity == nil or isvalid(self.GoldDisplayEntity) == false) and self.ShopPanelRoot ~= nil and isvalid(self.ShopPanelRoot) == true then
+            self.GoldDisplayEntity = self:ResolveChildByNameCandidates(self.ShopPanelRoot, "GoldText", "GoldDisplay", "GoldLabel", "CurrentGoldText")
+        end
+    end
+
+    -- Slot root resolution starts from explicit path, then falls back to ShopPanel child search.
+    @ExecSpace("ClientOnly")
+    method Entity ResolveSlotRootClient(integer slotIndex, string explicitPath, string nameA, string nameB, string nameC)
+        local entity = self:ResolveEntityByPath(explicitPath)
+        if entity ~= nil and isvalid(entity) == true then
+            return entity
+        end
+
+        if self.ShopPanelRoot == nil or isvalid(self.ShopPanelRoot) == false then
+            return nil
+        end
+
+        return self:ResolveChildByNameCandidates(self.ShopPanelRoot, nameA, nameB, nameC, "Slot" .. tostring(slotIndex))
+    end
+
+    -- Slot UI cache stores text/button/icon refs so render path avoids repeated hierarchy traversal.
+    @ExecSpace("ClientOnly")
+    method void CacheSlotUIClient()
+        self._T.SlotUI[1] = self:BuildSlotUIEntryClient(self.Slot1Root)
+        self._T.SlotUI[2] = self:BuildSlotUIEntryClient(self.Slot2Root)
+        self._T.SlotUI[3] = self:BuildSlotUIEntryClient(self.Slot3Root)
+    end
+
+    -- Per-slot entry aggregates child widgets and preferred button/text handles.
+    @ExecSpace("ClientOnly")
+    method table BuildSlotUIEntryClient(Entity slotRoot)
+        local entry = {
+            Root = slotRoot,
+            ItemNameText = nil,
+            DescriptionText = nil,
+            PriceText = nil,
+            IconRenderer = nil,
+            PriceButtonEntity = nil,
+            ButtonHandler = nil
+        }
+
+        if slotRoot == nil or isvalid(slotRoot) == false then
+            return entry
+        end
+
+        entry.ItemNameText = self:ResolveTextByNameCandidates(slotRoot, "ItemName", "NameText", "TitleText", "ItemTitle")
+        entry.DescriptionText = self:ResolveTextByNameCandidates(slotRoot, "Description", "DescText", "DescriptionText", "ItemDescription")
+
+        entry.PriceButtonEntity = self:ResolveChildByNameCandidates(slotRoot, "PriceButton", "BuyButton", "PurchaseButton", "Button")
+        if entry.PriceButtonEntity == nil or isvalid(entry.PriceButtonEntity) == false then
+            if slotRoot.ButtonComponent ~= nil then
+                entry.PriceButtonEntity = slotRoot
+            end
+        end
+        if entry.PriceButtonEntity ~= nil and isvalid(entry.PriceButtonEntity) == true then
+            self:EnsureButtonComponentClient(entry.PriceButtonEntity)
+            entry.PriceText = self:ResolvePriceTextComponentClient(entry.PriceButtonEntity)
+        end
+
+        local iconEntity = self:ResolveChildByNameCandidates(slotRoot, "Icon", "ItemIcon", "SlotIcon", "CardIcon")
+        if iconEntity ~= nil and isvalid(iconEntity) == true then
+            entry.IconRenderer = iconEntity.SpriteGUIRendererComponent
+        end
+
+        return entry
+    end
+
+    -- Price text resolver prefers button-local text then falls back to common child text names.
+    @ExecSpace("ClientOnly")
+    method TextComponent ResolvePriceTextComponentClient(Entity buttonEntity)
+        if buttonEntity == nil or isvalid(buttonEntity) == false then
+            return nil
+        end
+
+        if buttonEntity.TextComponent ~= nil then
+            return buttonEntity.TextComponent
+        end
+
+        local child = self:ResolveChildByNameCandidates(buttonEntity, "PriceText", "ButtonText", "Text", "Label")
+        if child ~= nil and isvalid(child) == true then
+            return child.TextComponent
+        end
+
+        return nil
+    end
+
+    -- Text resolver converts child entity match into text component reference with nil-safe fallback.
+    @ExecSpace("ClientOnly")
+    method TextComponent ResolveTextByNameCandidates(Entity rootEntity, string nameA, string nameB, string nameC, string nameD)
+        local child = self:ResolveChildByNameCandidates(rootEntity, nameA, nameB, nameC, nameD)
+        if child == nil or isvalid(child) == false then
+            return nil
+        end
+        return child.TextComponent
+    end
+
+    -- Close button is connected once; previous handler is disconnected on rebind/map re-enter.
+    @ExecSpace("ClientOnly")
+    method void BindCloseButtonClient()
+        self:DisconnectCloseButtonClient()
+
+        if self.CloseButtonEntity == nil or isvalid(self.CloseButtonEntity) == false then
+            return
+        end
+
+        local buttonComponent = self:EnsureButtonComponentClient(self.CloseButtonEntity)
+        if buttonComponent == nil then
+            return
+        end
+
+        local callback = function(event)
+            self:OnCloseButtonClickedClient(event)
+        end
+
+        local bindOk, bindHandler = pcall(function()
+            return self.CloseButtonEntity:ConnectEvent(ButtonClickEvent, callback)
+        end)
+        if bindOk == true then
+            self._T.CloseButtonHandler = bindHandler
+        end
+    end
+
+    -- Slot buttons are rebound each setup pass to avoid duplicate click callbacks.
+    @ExecSpace("ClientOnly")
+    method void BindSlotButtonsClient()
+        self:DisconnectSlotButtonsClient()
+
+        for slotIndex = 1, 3 do
+            local slotEntry = self._T.SlotUI[slotIndex]
+            if slotEntry ~= nil then
+                local buttonEntity = slotEntry.PriceButtonEntity
+                local buttonComponent = self:EnsureButtonComponentClient(buttonEntity)
+                if buttonComponent ~= nil then
+                    local callback = function(event)
+                        self:OnSlotButtonClickedClient(slotIndex, event)
+                    end
+
+                    local bindOk, bindHandler = pcall(function()
+                        return buttonEntity:ConnectEvent(ButtonClickEvent, callback)
+                    end)
+                    if bindOk == true then
+                        slotEntry.ButtonHandler = bindHandler
+                    end
+                end
+            end
+        end
+    end
+
+    -- Disconnector protects against stale handler reuse when UI refs change after map transitions.
+    @ExecSpace("ClientOnly")
+    method void DisconnectCloseButtonClient()
+        if self._T.CloseButtonHandler == nil then
+            return
+        end
+
+        local buttonEntity = self.CloseButtonEntity
+        if buttonEntity ~= nil and isvalid(buttonEntity) == true then
+            pcall(function()
+                buttonEntity:DisconnectEvent(ButtonClickEvent, self._T.CloseButtonHandler)
+            end)
+        end
+        self._T.CloseButtonHandler = nil
+    end
+
+    -- Slot disconnect loop removes old handlers before reconnect to keep one callback per click.
+    @ExecSpace("ClientOnly")
+    method void DisconnectSlotButtonsClient()
+        if self._T.SlotUI == nil then
+            return
+        end
+
+        for slotIndex = 1, 3 do
+            local slotEntry = self._T.SlotUI[slotIndex]
+            if slotEntry ~= nil and slotEntry.ButtonHandler ~= nil then
+                local buttonEntity = slotEntry.PriceButtonEntity
+                if buttonEntity ~= nil and isvalid(buttonEntity) == true then
+                    pcall(function()
+                        buttonEntity:DisconnectEvent(ButtonClickEvent, slotEntry.ButtonHandler)
+                    end)
+                end
+                slotEntry.ButtonHandler = nil
+            end
+        end
+    end
+
+    -- Close button debounce avoids rapid duplicate close requests while sync propagation is pending.
+    @ExecSpace("ClientOnly")
+    method void OnCloseButtonClickedClient(ButtonClickEvent event)
+        if self._T.IsClosing == true then
+            return
+        end
+        if self:IsShopOpenClient() == false then
+            return
+        end
+
+        self._T.IsClosing = true
+        self:RequestCloseShopServerSafe()
+
+        if self._T.CloseDebounceTimerId ~= nil and self._T.CloseDebounceTimerId > 0 then
+            _TimerService:ClearTimer(self._T.CloseDebounceTimerId)
+            self._T.CloseDebounceTimerId = 0
+        end
+
+        local clearClosing = function()
+            self._T.IsClosing = false
+            self._T.CloseDebounceTimerId = 0
+        end
+        local delay = math.max(0.05, self.CloseDebounceSeconds)
+        self._T.CloseDebounceTimerId = _TimerService:SetTimerOnce(clearClosing, delay)
+    end
+
+    -- Slot click is client-gated by affordability/soldout state before server purchase request.
+    @ExecSpace("ClientOnly")
+    method void OnSlotButtonClickedClient(integer slotIndex, ButtonClickEvent event)
+        if self:IsShopOpenClient() == false then
+            return
+        end
+        if self:IsSlotClickableClient(slotIndex) == false then
+            return
+        end
+
+        self:SetSlotClickableClient(slotIndex, false)
+        self:ApplyOptimisticPurchaseFeedbackClient(slotIndex)
+        self:RequestPurchaseServerSafe(slotIndex)
+    end
+
+    -- Low-frequency timer keeps UI in sync with server properties without per-frame polling overhead.
+    @ExecSpace("ClientOnly")
+    method void StartRefreshLoopClient()
+        if self._T.RefreshTimerId ~= nil and self._T.RefreshTimerId > 0 then
+            return
+        end
+
+        local interval = self.RefreshInterval
+        if interval <= 0 then
+            interval = 0.1
+        end
+        if interval < 0.05 then
+            interval = 0.05
+        end
+
+        local tick = function()
+            self:RefreshShopUIStateClient(false)
+        end
+
+        self._T.RefreshTimerId = _TimerService:SetTimerRepeat(tick, interval, 0)
+    end
+
+    -- Refresh pipeline detects shop-open/slot/gold sync changes and updates UI only when needed.
+    @ExecSpace("ClientOnly")
+    method void RefreshShopUIStateClient(boolean forceRefresh)
+        local shopManager = self:ResolveComponentSafe(self.Entity, "ShopManagerComponent", "IsShopOpen")
+        if shopManager == nil then
+            self:SetShopVisibleClient(false)
+            return
+        end
+
+        local isShopOpen = self:ReadShopOpenStateClient(shopManager)
+        if forceRefresh == true or self._T.LastIsShopOpen ~= isShopOpen then
+            self._T.LastIsShopOpen = isShopOpen
+            self:SetShopVisibleClient(isShopOpen)
+
+            if isShopOpen == false then
+                self:ClearSlotVisualStateClient()
+                self._T.LastSlotSignature = ""
+                self._T.LastGold = -1
+                return
+            end
+        end
+
+        if isShopOpen == false then
+            return
+        end
+
+        local currentGold = self:GetCurrentGoldClient()
+        local slotSignature = self:BuildSlotSignatureClient(shopManager)
+
+        local needsRender = forceRefresh
+        if needsRender ~= true and self._T.LastSlotSignature ~= slotSignature then
+            needsRender = true
+        end
+        if needsRender ~= true and self._T.LastGold ~= currentGold then
+            needsRender = true
+        end
+
+        if needsRender ~= true then
+            return
+        end
+
+        self._T.LastSlotSignature = slotSignature
+        self._T.LastGold = currentGold
+
+        self:RefreshGoldDisplayClient(currentGold)
+        self:RenderSlotsClient(shopManager, currentGold)
+    end
+
+    -- Visibility wrapper controls panel and dim overlay together from one authoritative UI state.
+    @ExecSpace("ClientOnly")
+    method void SetShopVisibleClient(boolean visible)
+        self:SetEntityVisibleClient(self.DimOverlayEntity, visible)
+        self:SetEntityVisibleClient(self.ShopPanelRoot, visible)
+
+        if visible == false then
+            for slotIndex = 1, 3 do
+                self:SetSlotClickableClient(slotIndex, false)
+            end
+            self._T.IsClosing = false
+        end
+    end
+
+    -- Entity visibility helper supports both Enable property and SetEnable API for compatibility.
+    @ExecSpace("ClientOnly")
+    method void SetEntityVisibleClient(Entity targetEntity, boolean visible)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+
+        if targetEntity.SetEnable ~= nil then
+            pcall(function()
+                targetEntity:SetEnable(visible, false, true)
+            end)
+        else
+            pcall(function()
+                targetEntity.Enable = visible
+            end)
+        end
+
+        pcall(function()
+            targetEntity.Visible = visible
+        end)
+    end
+
+    -- Renderer clears stale slot labels when panel closes before next sync payload arrives.
+    @ExecSpace("ClientOnly")
+    method void ClearSlotVisualStateClient()
+        if self._T.SlotUI == nil then
+            return
+        end
+
+        for slotIndex = 1, 3 do
+            local slotEntry = self._T.SlotUI[slotIndex]
+            if slotEntry ~= nil and slotEntry.PriceText ~= nil then
+                pcall(function()
+                    slotEntry.PriceText.Text = ""
+                end)
+            end
+            self:SetSlotClickableClient(slotIndex, false)
+        end
+    end
+
+    -- Gold text refresh keeps top-panel currency display consistent with GoldComponent sync value.
+    @ExecSpace("ClientOnly")
+    method void RefreshGoldDisplayClient(integer currentGold)
+        local goldText = self:ResolveGoldTextComponentClient()
+        if goldText == nil then
+            return
+        end
+
+        local safeGold = math.max(0, math.floor(currentGold))
+        pcall(function()
+            goldText.Text = tostring(safeGold) .. "G"
+        end)
+    end
+
+    -- Gold text resolver allows late UI instantiation while preserving property-assigned references.
+    @ExecSpace("ClientOnly")
+    method TextComponent ResolveGoldTextComponentClient()
+        if self.GoldDisplayEntity == nil or isvalid(self.GoldDisplayEntity) == false then
+            self.GoldDisplayEntity = self:ResolveEntityByPath(self.GoldDisplayPath)
+            if (self.GoldDisplayEntity == nil or isvalid(self.GoldDisplayEntity) == false) and self.ShopPanelRoot ~= nil and isvalid(self.ShopPanelRoot) == true then
+                self.GoldDisplayEntity = self:ResolveChildByNameCandidates(self.ShopPanelRoot, "GoldText", "GoldDisplay", "GoldLabel", "CurrentGoldText")
+            end
+        end
+        if self.GoldDisplayEntity == nil or isvalid(self.GoldDisplayEntity) == false then
+            return nil
+        end
+
+        return self.GoldDisplayEntity.TextComponent
+    end
+
+    -- Slot render applies sync payload, sold-out/affordability rules, and visual button state hints.
+    @ExecSpace("ClientOnly")
+    method void RenderSlotsClient(Component shopManager, integer currentGold)
+        for slotIndex = 1, 3 do
+            local slotData = self:GetSlotSyncDataClient(shopManager, slotIndex)
+            self:RenderOneSlotClient(slotIndex, slotData, currentGold)
+        end
+    end
+
+    -- One-slot render keeps business rules local so all slots share deterministic behavior.
+    @ExecSpace("ClientOnly")
+    method void RenderOneSlotClient(integer slotIndex, table slotData, integer currentGold)
+        local slotEntry = self._T.SlotUI[slotIndex]
+        if slotEntry == nil then
+            return
+        end
+
+        local slotType = "soldout"
+        local itemName = "품절"
+        local description = ""
+        local price = 0
+        local soldOut = true
+
+        if slotData ~= nil then
+            if slotData.Type ~= nil and slotData.Type ~= "" then
+                slotType = tostring(slotData.Type)
+            end
+            if slotData.Name ~= nil and slotData.Name ~= "" then
+                itemName = tostring(slotData.Name)
+            end
+            if slotData.Description ~= nil then
+                description = tostring(slotData.Description)
+            end
+            if slotData.Price ~= nil then
+                price = math.max(0, math.floor(slotData.Price))
+            end
+            if slotData.SoldOut ~= nil then
+                soldOut = slotData.SoldOut
+            else
+                soldOut = (slotType == "soldout")
+            end
+        end
+
+        local canAfford = (currentGold >= price)
+        local clickable = (self:IsShopOpenClient() == true and soldOut == false and canAfford == true)
+
+        local priceLabel = tostring(price) .. "G"
+        if soldOut == true then
+            priceLabel = "품절"
+        end
+
+        if slotEntry.ItemNameText ~= nil then
+            pcall(function()
+                slotEntry.ItemNameText.Text = itemName
+            end)
+        end
+        if slotEntry.DescriptionText ~= nil then
+            pcall(function()
+                slotEntry.DescriptionText.Text = description
+            end)
+        end
+        if slotEntry.PriceText ~= nil then
+            pcall(function()
+                slotEntry.PriceText.Text = priceLabel
+            end)
+        end
+
+        if soldOut == true then
+            self:SetPriceTextColorClient(slotEntry.PriceText, Color(0.65, 0.65, 0.65, 1))
+        elseif canAfford == true then
+            self:SetPriceTextColorClient(slotEntry.PriceText, Color(1, 1, 1, 1))
+        else
+            self:SetPriceTextColorClient(slotEntry.PriceText, Color(1, 0.3, 0.3, 1))
+        end
+
+        if slotEntry.IconRenderer ~= nil then
+            local iconAlpha = 1.0
+            if soldOut == true then
+                iconAlpha = 0.5
+            end
+            pcall(function()
+                slotEntry.IconRenderer.Color = Color(1, 1, 1, iconAlpha)
+            end)
+        end
+
+        self:SetSlotClickableClient(slotIndex, clickable)
+    end
+
+    -- Slot click state is tracked locally to enforce disabled-button behavior on client.
+    @ExecSpace("ClientOnly")
+    method void SetSlotClickableClient(integer slotIndex, boolean clickable)
+        if self._T.SlotClickable == nil then
+            self._T.SlotClickable = {}
+        end
+        self._T.SlotClickable[slotIndex] = clickable
+
+        local slotEntry = self._T.SlotUI[slotIndex]
+        if slotEntry == nil then
+            return
+        end
+
+        local buttonEntity = slotEntry.PriceButtonEntity
+        if buttonEntity == nil or isvalid(buttonEntity) == false then
+            return
+        end
+
+        local sprite = buttonEntity.SpriteGUIRendererComponent
+        if sprite ~= nil then
+            local alpha = 1.0
+            if clickable == false then
+                alpha = 0.55
+            end
+            pcall(function()
+                sprite.Color = Color(1, 1, 1, alpha)
+            end)
+        end
+    end
+
+    method boolean IsSlotClickableClient(integer slotIndex)
+        if self._T.SlotClickable == nil then
+            return false
+        end
+        return self._T.SlotClickable[slotIndex] == true
+    end
+
+    -- Optimistic feedback gives immediate click response while waiting for authoritative sync update.
+    @ExecSpace("ClientOnly")
+    method void ApplyOptimisticPurchaseFeedbackClient(integer slotIndex)
+        local slotEntry = self._T.SlotUI[slotIndex]
+        if slotEntry == nil or slotEntry.PriceText == nil then
+            return
+        end
+
+        pcall(function()
+            slotEntry.PriceText.Text = "구매 완료"
+        end)
+        self:SetPriceTextColorClient(slotEntry.PriceText, Color(0.7, 0.7, 0.7, 1))
+    end
+
+    -- Price-color wrapper keeps text color writes nil-safe and localized to one utility path.
+    @ExecSpace("ClientOnly")
+    method void SetPriceTextColorClient(TextComponent textComponent, Color colorValue)
+        if textComponent == nil then
+            return
+        end
+
+        pcall(function()
+            textComponent.FontColor = colorValue
+        end)
+    end
+
+    -- Signature combines all sync slot fields so renderer can skip updates when payload is unchanged.
+    @ExecSpace("ClientOnly")
+    method string BuildSlotSignatureClient(Component shopManager)
+        local parts = {}
+
+        for slotIndex = 1, 3 do
+            local slotData = self:GetSlotSyncDataClient(shopManager, slotIndex)
+            local token = tostring(slotData.Type) .. "|" .. tostring(slotData.Name) .. "|" .. tostring(slotData.Description) .. "|" .. tostring(slotData.Price) .. "|" .. tostring(slotData.SoldOut)
+            table.insert(parts, token)
+        end
+
+        return table.concat(parts, "||")
+    end
+
+    -- Slot payload reader maps ShopManager sync fields to a common table schema per index.
+    @ExecSpace("ClientOnly")
+    method table GetSlotSyncDataClient(Component shopManager, integer slotIndex)
+        local data = {
+            Type = "soldout",
+            Name = "품절",
+            Description = "",
+            Price = 0,
+            SoldOut = true
+        }
+
+        if shopManager == nil then
+            return data
+        end
+
+        local readOk, _ = pcall(function()
+            if slotIndex == 1 then
+                data.Type = tostring(shopManager.Slot1Type)
+                data.Name = tostring(shopManager.Slot1Name)
+                data.Description = tostring(shopManager.Slot1Description)
+                data.Price = math.max(0, math.floor(shopManager.Slot1Price))
+                data.SoldOut = (shopManager.Slot1SoldOut == true)
+            elseif slotIndex == 2 then
+                data.Type = tostring(shopManager.Slot2Type)
+                data.Name = tostring(shopManager.Slot2Name)
+                data.Description = tostring(shopManager.Slot2Description)
+                data.Price = math.max(0, math.floor(shopManager.Slot2Price))
+                data.SoldOut = (shopManager.Slot2SoldOut == true)
+            else
+                data.Type = tostring(shopManager.Slot3Type)
+                data.Name = tostring(shopManager.Slot3Name)
+                data.Description = tostring(shopManager.Slot3Description)
+                data.Price = math.max(0, math.floor(shopManager.Slot3Price))
+                data.SoldOut = (shopManager.Slot3SoldOut == true)
+            end
+        end)
+        if readOk == false then
+            return data
+        end
+
+        if data.Type == nil or data.Type == "" then
+            data.Type = "soldout"
+        end
+        if data.Name == nil or data.Name == "" then
+            data.Name = "품절"
+        end
+        if data.Description == nil then
+            data.Description = ""
+        end
+        if data.SoldOut ~= true and data.Type == "soldout" then
+            data.SoldOut = true
+        end
+
+        return data
+    end
+
+    -- Gold reader is isolated for nil-safe fallbacks when GoldComponent sync is not ready yet.
+    @ExecSpace("ClientOnly")
+    method integer GetCurrentGoldClient()
+        local goldComponent = self:ResolveComponentSafe(self.Entity, "GoldComponent", "CurrentGold")
+        if goldComponent == nil then
+            return 0
+        end
+
+        local currentGold = 0
+        local readOk, _ = pcall(function()
+            currentGold = goldComponent.CurrentGold
+        end)
+        if readOk == false then
+            return 0
+        end
+
+        return math.max(0, math.floor(currentGold))
+    end
+
+    -- Shop-open reader is separated so future rule changes stay localized.
+    @ExecSpace("ClientOnly")
+    method boolean ReadShopOpenStateClient(Component shopManager)
+        if shopManager == nil then
+            return false
+        end
+
+        local isOpen = false
+        local readOk, _ = pcall(function()
+            isOpen = (shopManager.IsShopOpen == true)
+        end)
+        if readOk == false then
+            return false
+        end
+
+        return isOpen
+    end
+
+    method boolean IsShopOpenClient()
+        return self._T.LastIsShopOpen == true
+    end
+
+    -- Purchase RPC wrapper keeps direct server-call dependency isolated to one path.
+    @ExecSpace("ClientOnly")
+    method void RequestPurchaseServerSafe(integer slotIndex)
+        local shopManager = self:ResolveComponentSafe(self.Entity, "ShopManagerComponent", "IsShopOpen")
+        if shopManager == nil then
+            return
+        end
+        if shopManager.RequestPurchaseServer == nil then
+            return
+        end
+
+        pcall(function()
+            shopManager:RequestPurchaseServer(slotIndex)
+        end)
+    end
+
+    -- Close RPC wrapper is used by close button debounce path.
+    @ExecSpace("ClientOnly")
+    method void RequestCloseShopServerSafe()
+        local shopManager = self:ResolveComponentSafe(self.Entity, "ShopManagerComponent", "IsShopOpen")
+        if shopManager == nil then
+            return
+        end
+        if shopManager.RequestCloseShopServer == nil then
+            return
+        end
+
+        pcall(function()
+            shopManager:RequestCloseShopServer()
+        end)
+    end
+
+    -- Path resolver isolates _EntityService lookup and validity checks for all UI references.
+    @ExecSpace("ClientOnly")
+    method Entity ResolveEntityByPath(string path)
+        if path == nil or path == "" then
+            return nil
+        end
+
+        local entity = _EntityService:GetEntityByPath(path)
+        if entity == nil or isvalid(entity) == false then
+            return nil
+        end
+
+        return entity
+    end
+
+    -- Child-name resolver supports naming variance across Maker prefab iterations.
+    @ExecSpace("ClientOnly")
+    method Entity ResolveChildByNameCandidates(Entity rootEntity, string nameA, string nameB, string nameC, string nameD)
+        if rootEntity == nil or isvalid(rootEntity) == false then
+            return nil
+        end
+
+        local candidates = {nameA, nameB, nameC, nameD}
+        for _, name in pairs(candidates) do
+            if name ~= nil and name ~= "" then
+                local findOk, child = pcall(function()
+                    return rootEntity:GetChildByName(name, true)
+                end)
+                if findOk == true and child ~= nil and isvalid(child) == true then
+                    return child
+                end
+            end
+        end
+
+        return nil
+    end
+
+    -- Button helper attaches ButtonComponent on demand so designer-only Sprite nodes still work.
+    @ExecSpace("ClientOnly")
+    method ButtonComponent EnsureButtonComponentClient(Entity targetEntity)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if targetEntity.ButtonComponent ~= nil then
+            return targetEntity.ButtonComponent
+        end
+
+        pcall(function()
+            targetEntity:AddComponent("MOD.Core.ButtonComponent")
+        end)
+
+        return targetEntity.ButtonComponent
+    end
+
+    -- Utility bootstrap first; fallback path remains when global util registration is unavailable.
+    method void EnsureGRUtil()
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, utilApi = pcall(function()
+                return utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and utilApi ~= nil then
+                self._T.GRUtil = utilApi
+            end
+            if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    -- Safe resolver supports both prefixed/plain component names and optional marker validation.
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local checkOk, _ = pcall(function()
+                return component[markerField]
+            end)
+            if checkOk == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+end

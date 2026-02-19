@@ -6,7 +6,7 @@ script ShopManagerComponent extends Component
     @Sync
     property integer ActiveShopIndex = 0
 
-    property number InteractionRange = 150
+    property number InteractionRange = 60
     property Entity ShopEntity1 = nil
     property Entity ShopEntity2 = nil
     property Entity ShopEntity3 = nil

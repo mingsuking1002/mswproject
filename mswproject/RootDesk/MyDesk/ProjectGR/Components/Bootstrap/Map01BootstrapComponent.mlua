@@ -134,6 +134,7 @@ script Map01BootstrapComponent extends Component
             "RankingComponent",
             "WeaponWheelUIComponent",
             "RankingUIComponent",
+            "ShopUIComponent",
             "HUDComponent",
             "LobbyFlowComponent"
         }

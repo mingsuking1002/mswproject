@@ -370,7 +370,7 @@
 
 ## Phase 4 UI/Bootstrap Modular Refactor
 - **수정일:** `2026-02-19`
-- **범위:** `WeaponWheelUIComponent + RankingUIComponent + HUDComponent + Map01BootstrapComponent + LobbyFlowComponent`
+- **범위:** `WeaponWheelUIComponent + RankingUIComponent + HUDComponent + ShopUIComponent + Map01BootstrapComponent + LobbyFlowComponent`
 
 ## WeaponWheelUIComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/UI/WeaponWheelUIComponent.mlua`
@@ -448,6 +448,61 @@
 | `StartHUDLoopClient` | void | void | 주기적 HUD 갱신 루프 시작 |
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
+## ShopUIComponent
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/UI/ShopUIComponent.mlua`
+- **수정일:** `2026-02-19`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `ShopPanelRoot` | Entity | 상점 패널 루트 UI 엔티티 |
+| `ShopPanelRootPath` | string | 상점 패널 루트 경로 |
+| `DimOverlayEntity` | Entity | 배경 딤 오버레이 엔티티 |
+| `DimOverlayPath` | string | 배경 딤 오버레이 경로 |
+| `CloseButtonEntity` | Entity | 상점 닫기 버튼 엔티티 |
+| `CloseButtonPath` | string | 상점 닫기 버튼 경로 |
+| `Slot1Root` | Entity | 슬롯1 루트 엔티티 |
+| `Slot2Root` | Entity | 슬롯2 루트 엔티티 |
+| `Slot3Root` | Entity | 슬롯3 루트 엔티티 |
+| `Slot1Path` | string | 슬롯1 루트 경로 |
+| `Slot2Path` | string | 슬롯2 루트 경로 |
+| `Slot3Path` | string | 슬롯3 루트 경로 |
+| `GoldDisplayEntity` | Entity | 골드 텍스트 엔티티 |
+| `GoldDisplayPath` | string | 골드 텍스트 경로 |
+| `RefreshInterval` | number | UI 동기 감시 주기 |
+| `CloseDebounceSeconds` | number | 닫기 버튼 디바운스 시간 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `ResolveAndBindUIClient` | void | void | 경로 기반 UI 참조 해결 + 버튼 이벤트 바인딩 |
+| `RefreshShopUIStateClient` | `forceRefresh: boolean` | void | `ShopManagerComponent` Sync 상태 변화 감지 및 UI 갱신 |
+| `RenderSlotsClient` | `shopManager: Component, currentGold: integer` | void | 슬롯 텍스트/가격/상태 렌더링 |
+| `OnSlotButtonClickedClient` | `slotIndex: integer, event: ButtonClickEvent` | void | 슬롯 구매 버튼 클릭 처리 및 서버 구매 요청 |
+| `OnCloseButtonClickedClient` | `event: ButtonClickEvent` | void | 닫기 버튼 클릭 처리 및 서버 닫기 요청 |
+| `RefreshGoldDisplayClient` | `currentGold: integer` | void | 현재 골드 텍스트 갱신 |
+| `SetShopVisibleClient` | `visible: boolean` | void | 패널/딤 오버레이 표시 상태 일괄 제어 |
+| `BuildSlotSignatureClient` | `shopManager: Component` | string | 슬롯 Sync 변경 여부 판정용 시그니처 생성 |
+| `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
+
+## ShopUILayout(DefaultGroup)
+- **파일명:** `ui/DefaultGroup.ui`
+- **수정일:** `2026-02-19`
+
+### Entities
+| 경로 | 역할 |
+|---|---|
+| `/ui/DefaultGroup/ShopDimOverlay` | 상점 오픈 시 배경 딤 오버레이 |
+| `/ui/DefaultGroup/ShopPanel` | 상점 패널 루트 |
+| `/ui/DefaultGroup/ShopPanel/TitleText` | 상점 제목 텍스트 |
+| `/ui/DefaultGroup/ShopPanel/GoldText` | 현재 골드 표시 텍스트 |
+| `/ui/DefaultGroup/ShopPanel/CloseButton` | 상점 닫기 버튼 |
+| `/ui/DefaultGroup/ShopPanel/Slot1~Slot3` | 상점 3슬롯 카드 루트 |
+| `/ui/DefaultGroup/ShopPanel/Slot*/Icon` | 슬롯 아이콘 렌더러 |
+| `/ui/DefaultGroup/ShopPanel/Slot*/ItemName` | 슬롯 아이템명 텍스트 |
+| `/ui/DefaultGroup/ShopPanel/Slot*/Description` | 슬롯 설명 텍스트 |
+| `/ui/DefaultGroup/ShopPanel/Slot*/PriceButton` | 슬롯 구매 버튼(가격 텍스트 포함) |
+
 ## Map01BootstrapComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
 - **수정일:** `2026-02-19`
@@ -471,7 +526,7 @@
 | `HandleUserEnterEvent` | `event: UserEnterEvent` | void | 신규 유저 입장 시 플레이어 설정 |
 | `ConfigurePlayerByUserIdServer` | `userId: string` | void | userId 기반 플레이어 엔티티 설정 |
 | `ConfigurePlayer` | `playerEntity: Entity` | void | 필수 컴포넌트 부착 및 LobbyFlow 설정 |
-| `AttachRequiredComponentsServer` | `playerEntity: Entity` | void | Phase 0~4 필수 컴포넌트 자동 부착 (`GoldComponent`, `ShopManagerComponent` 포함) |
+| `AttachRequiredComponentsServer` | `playerEntity: Entity` | void | Phase 0~4 필수 컴포넌트 자동 부착 (`GoldComponent`, `ShopManagerComponent`, `ShopUIComponent` 포함) |
 | `FindOrAddComponentSafe` | `targetEntity: Entity, typeName: string` | Component | 조회/추가 안전 래퍼 |
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 

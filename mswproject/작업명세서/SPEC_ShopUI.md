@@ -1,4 +1,4 @@
-# 🟡 대기중
+# 🟢 완료
 # SPEC_ShopUI — 상점 UI 시스템
 
 ## 1. 개요
@@ -215,15 +215,22 @@ RefreshGoldDisplay [client only]:
 
 ## 9. Codex 구현 체크리스트
 
-- [ ] `@Component` 어트리뷰트, `UI` 레이어
-- [ ] `_GRUtil` 사용 (중복 유틸 금지)
-- [ ] `[server only]` / `[client only]` 분리 (UI는 전부 client only)
-- [ ] `nil`/`isvalid` 방어 + `pcall` 보호
-- [ ] **Maker 배치 (§6) 완료** — UI 엔티티 전체 생성 (ShopPanel + 3슬롯 + 딤 + 닫기)
-- [ ] `Map01BootstrapComponent.AttachRequiredComponentsServer`에 `ShopUIComponent` 추가
-- [ ] Path 기반 UI 참조 Property 설정
-- [ ] `기획서/4.부록/Code_Documentation.md` 업데이트
-- [ ] 완료 후 상태 `🟢 완료`로 변경
+- [x] `@Component` 어트리뷰트, `UI` 레이어
+- [x] `_GRUtil` 사용 (중복 유틸 금지)
+- [x] `[server only]` / `[client only]` 분리 (UI는 전부 client only)
+- [x] `nil`/`isvalid` 방어 + `pcall` 보호
+- [x] **Maker 배치 반영 완료** — `ui/DefaultGroup.ui`에 Shop UI 엔티티 20개를 생성/배치
+- [x] `Map01BootstrapComponent.AttachRequiredComponentsServer`에 `ShopUIComponent` 추가
+- [x] Path 기반 UI 참조 Property 설정
+- [x] `기획서/4.부록/Code_Documentation.md` 업데이트
+- [x] 완료 후 상태 `🟢 완료`로 변경
+
+---
+
+## 10. Maker 배치 결과
+
+- [x] `DefaultGroup.ui`에 `ShopDimOverlay`, `ShopPanel`, `Slot1~3`, `CloseButton`, `GoldText` 엔티티 생성 및 컴포넌트/레이아웃 설정 완료
+- [x] `ShopUIComponent` 기본 경로와 UI 엔티티 경로 정합성 검증 완료
 
 ---
 
@@ -234,4 +241,4 @@ RefreshGoldDisplay [client only]:
 | **작성자** | Antigravity (TD) |
 | **담당자** | Codex |
 | **작성일** | 2026-02-19 |
-| **상태** | 🟡 대기중 |
+| **상태** | 🟢 완료 |
