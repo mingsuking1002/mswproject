@@ -1,4 +1,4 @@
-@Component
+﻿@Component
 script ShopManagerComponent extends Component
 
     @Sync
@@ -6,7 +6,7 @@ script ShopManagerComponent extends Component
     @Sync
     property integer ActiveShopIndex = 0
 
-    property number InteractionRange = 60
+    property number InteractionRange = 5
     property Entity ShopEntity1 = nil
     property Entity ShopEntity2 = nil
     property Entity ShopEntity3 = nil
@@ -1061,3 +1061,4 @@ script ShopManagerComponent extends Component
         return requestUserId == playerComponent.UserId
     end
 end
+
