@@ -1,4 +1,4 @@
-﻿# SPEC Audit Report
+# SPEC Audit Report
 
 - Generated: 2026-02-19 01:15:51
 - Workspace: C:\Users\ksh00\Documents\GitHub\mswproject\mswproject
