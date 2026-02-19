@@ -245,8 +245,8 @@
                 "z": 0.0
               },
               "Position": {
-                "x": 0.0,
-                "y": 0.0,
+                "x": -0.04713154,
+                "y": 0.0325202942,
                 "z": 0.0
               },
               "QuaternionRotation": {
@@ -282,20 +282,20 @@
                 "y": 0.0
               },
               "BoxSize": {
-                "x": 1.0,
-                "y": 1.0
+                "x": 5.0,
+                "y": 5.0
               },
-              "CircleRadius": 150.0,
+              "CircleRadius": 10.0,
               "ColliderOffset": {
-                "x": -10.0921192,
-                "y": -2.73169041
+                "x": 0.103317261,
+                "y": 0.4303832
               },
-              "ColliderType": 2,
+              "ColliderType": 1,
               "CollisionGroup": {
                 "Id": "MOD@TriggerBox"
               },
-              "IsLegacy": true,
-              "IsPassive": true,
+              "IsLegacy": false,
+              "IsPassive": false,
               "Enable": true
             }
           ],
