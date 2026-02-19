@@ -1,0 +1,1063 @@
+@Component
+script ShopManagerComponent extends Component
+
+    @Sync
+    property boolean IsShopOpen = false
+    @Sync
+    property integer ActiveShopIndex = 0
+
+    property number InteractionRange = 150
+    property Entity ShopEntity1 = nil
+    property Entity ShopEntity2 = nil
+    property Entity ShopEntity3 = nil
+    property Entity ShopEntity4 = nil
+
+    property string ShopDataTableName = "ShopItemData"
+    property number HealPercent = 30
+    property integer HealPrice = 100
+    property integer AmmoPrice = 50
+    property integer PassivePrice = 200
+
+    @Sync
+    property string Slot1Type = ""
+    @Sync
+    property string Slot1Name = ""
+    @Sync
+    property string Slot1Description = ""
+    @Sync
+    property integer Slot1Price = 0
+    @Sync
+    property boolean Slot1SoldOut = true
+
+    @Sync
+    property string Slot2Type = ""
+    @Sync
+    property string Slot2Name = ""
+    @Sync
+    property string Slot2Description = ""
+    @Sync
+    property integer Slot2Price = 0
+    @Sync
+    property boolean Slot2SoldOut = true
+
+    @Sync
+    property string Slot3Type = ""
+    @Sync
+    property string Slot3Name = ""
+    @Sync
+    property string Slot3Description = ""
+    @Sync
+    property integer Slot3Price = 0
+    @Sync
+    property boolean Slot3SoldOut = true
+
+    -- Server bootstraps utility and runtime caches so shop state is deterministic from first frame.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self:EnsureGRUtil()
+        self._T.CurrentSlots = {}
+        self._T.ShopDataTable = nil
+        self._T.ShopRows = {}
+    end
+
+    -- Initial begin-play prepares data, resolves map entities, and activates one random shop.
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self:LoadShopDataServer()
+        self:ResolveShopEntitiesServer()
+        self:InitializeShopsServer()
+    end
+
+    -- Map re-entry re-resolves references because map transitions can invalidate entity handles.
+    @ExecSpace("ServerOnly")
+    method void OnMapEnter(Entity enteredMap)
+        self:ResolveShopEntitiesServer()
+
+        if self.IsShopOpen == true then
+            self:SetShopEnabledByIndexServer(self.ActiveShopIndex, true)
+            return
+        end
+
+        local activeShop = self:GetShopEntityByIndex(self.ActiveShopIndex)
+        if activeShop == nil or isvalid(activeShop) == false then
+            self:InitializeShopsServer()
+            return
+        end
+
+        self:DisableAllShopsServer()
+        self:SetShopEnabledByIndexServer(self.ActiveShopIndex, true)
+    end
+
+    -- Client input only requests authoritative server actions; all validation remains server-side.
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        if event == nil then
+            return
+        end
+
+        local key = event.key
+        if key == KeyboardKey.F then
+            if self.IsShopOpen == true then
+                return
+            end
+
+            self:RequestOpenShopServer()
+            return
+        end
+
+        if key == KeyboardKey.Escape then
+            if self.IsShopOpen == false then
+                return
+            end
+
+            self:RequestCloseShopServer()
+        end
+    end
+
+    -- Open request entry is server-authoritative to block spoofed client interaction attempts.
+    @ExecSpace("Server")
+    method void RequestOpenShopServer()
+        if self:CanOpenShopForOwnerServer(senderUserId) == false then
+            return
+        end
+
+        self:OpenShopServer()
+    end
+
+    -- Public open gate is shared by WeaponSwap conflict guard to prioritize shop interaction near shop.
+    @ExecSpace("ServerOnly")
+    method boolean CanOpenShopForOwnerServer(string requestUserId)
+        if self:IsOwnerRequest(requestUserId) == false then
+            return false
+        end
+        if self.IsShopOpen == true then
+            return false
+        end
+        if self.ActiveShopIndex <= 0 then
+            return false
+        end
+
+        local activeShop = self:GetShopEntityByIndex(self.ActiveShopIndex)
+        if activeShop == nil or isvalid(activeShop) == false then
+            return false
+        end
+
+        return self:IsWithinInteractionRangeServer(activeShop)
+    end
+
+    -- Purchase requests stay server-side so currency and reward effects cannot be forged by clients.
+    @ExecSpace("Server")
+    method void RequestPurchaseServer(integer slotIndex)
+        if self:IsOwnerRequest(senderUserId) == false then
+            return
+        end
+        if self.IsShopOpen == false then
+            return
+        end
+
+        if self:IsValidSlotIndex(slotIndex) == false then
+            return
+        end
+
+        local finalSlotIndex = math.floor(slotIndex)
+        local slotData = self:GetSlotDataServer(finalSlotIndex)
+        if slotData == nil then
+            return
+        end
+        if slotData.IsSoldOut == true then
+            return
+        end
+
+        local price = math.max(0, math.floor(slotData.Price))
+        local goldComponent = self:ResolveComponentSafe(self.Entity, "GoldComponent", "CurrentGold")
+        if goldComponent == nil then
+            return
+        end
+
+        if goldComponent.CanAfford ~= nil then
+            local affordOk, canAfford = pcall(function()
+                return goldComponent:CanAfford(price)
+            end)
+            if affordOk == false or canAfford ~= true then
+                return
+            end
+        else
+            local currentGold = 0
+            local readOk, _ = pcall(function()
+                currentGold = goldComponent.CurrentGold
+            end)
+            if readOk == false or currentGold < price then
+                return
+            end
+        end
+
+        local spendOk, spendResult = pcall(function()
+            return goldComponent:SpendGold(price)
+        end)
+        if spendOk == false or spendResult ~= true then
+            return
+        end
+
+        self:ApplyPurchaseEffectServer(slotData.Type, slotData)
+
+        slotData.Type = "soldout"
+        slotData.Name = "품절"
+        slotData.Description = "이미 구매 완료"
+        slotData.Price = 0
+        slotData.IsSoldOut = true
+        self:SetSlotDataServer(finalSlotIndex, slotData)
+    end
+
+    -- Close requests are also server-authoritative to guarantee correct rotation and unlock sequence.
+    @ExecSpace("Server")
+    method void RequestCloseShopServer()
+        if self:IsOwnerRequest(senderUserId) == false then
+            return
+        end
+        if self.IsShopOpen == false then
+            return
+        end
+
+        self:CloseAndRotateShopServer()
+    end
+
+    -- Open flow sets gameplay lock first, then builds sync slot payload for client UI rendering.
+    @ExecSpace("ServerOnly")
+    method void OpenShopServer()
+        if self.IsShopOpen == true then
+            return
+        end
+
+        local activeShop = self:GetShopEntityByIndex(self.ActiveShopIndex)
+        if activeShop == nil or isvalid(activeShop) == false then
+            return
+        end
+
+        self.IsShopOpen = true
+        self:SetGameplayLockServer(true)
+        self:BuildCurrentSlotsServer()
+    end
+
+    -- Close flow deactivates current shop, rotates to another index, and resumes gameplay lock state.
+    @ExecSpace("ServerOnly")
+    method void CloseAndRotateShopServer()
+        local previousIndex = self.ActiveShopIndex
+
+        self.IsShopOpen = false
+        self:ClearCurrentSlotsServer()
+        self:SetShopEnabledByIndexServer(previousIndex, false)
+        self:ChooseAndActivateNextShopServer(previousIndex)
+        self:SetGameplayLockServer(false)
+    end
+
+    -- Reset endpoint is used by lobby flow so each run starts from a clean shop rotation/state.
+    @ExecSpace("ServerOnly")
+    method void ResetShopStateServer()
+        self.IsShopOpen = false
+        self:ClearCurrentSlotsServer()
+        self:SetGameplayLockServer(false)
+        self:DisableAllShopsServer()
+        self:ChooseAndActivateNextShopServer(0)
+    end
+
+    -- Initial activation always keeps exactly one shop enabled when at least one reference is valid.
+    @ExecSpace("ServerOnly")
+    method void InitializeShopsServer()
+        self.IsShopOpen = false
+        self:ClearCurrentSlotsServer()
+        self:DisableAllShopsServer()
+        self:ChooseAndActivateNextShopServer(0)
+    end
+
+    -- Data table load is centralized so balance values can be adjusted without code changes.
+    @ExecSpace("ServerOnly")
+    method void LoadShopDataServer()
+        self._T.ShopDataTable = nil
+        self._T.ShopRows = {}
+
+        if self.ShopDataTableName == nil or self.ShopDataTableName == "" then
+            return
+        end
+
+        local loadOk, tableData = pcall(function()
+            return _DataService:GetTable(self.ShopDataTableName)
+        end)
+        if loadOk == false or tableData == nil then
+            return
+        end
+
+        self._T.ShopDataTable = tableData
+
+        local rowsOk, rows = pcall(function()
+            return tableData:GetAllRow()
+        end)
+        if rowsOk == true and rows ~= nil then
+            self._T.ShopRows = rows
+        end
+    end
+
+    -- Resolver fills missing references from map names so Maker property wiring mistakes fail gracefully.
+    @ExecSpace("ServerOnly")
+    method void ResolveShopEntitiesServer()
+        local mapEntity = self.Entity.CurrentMap
+        if mapEntity == nil or isvalid(mapEntity) == false then
+            return
+        end
+
+        if self.ShopEntity1 == nil or isvalid(self.ShopEntity1) == false then
+            self.ShopEntity1 = self:ResolveShopByNameCandidates(mapEntity, "Shop_East", "ShopEast", "Shop1")
+        end
+        if self.ShopEntity2 == nil or isvalid(self.ShopEntity2) == false then
+            self.ShopEntity2 = self:ResolveShopByNameCandidates(mapEntity, "Shop_West", "ShopWest", "Shop2")
+        end
+        if self.ShopEntity3 == nil or isvalid(self.ShopEntity3) == false then
+            self.ShopEntity3 = self:ResolveShopByNameCandidates(mapEntity, "Shop_South", "ShopSouth", "Shop3")
+        end
+        if self.ShopEntity4 == nil or isvalid(self.ShopEntity4) == false then
+            self.ShopEntity4 = self:ResolveShopByNameCandidates(mapEntity, "Shop_North", "ShopNorth", "Shop4")
+        end
+    end
+
+    -- Name fallback list reduces hard dependency on one exact naming convention for map entities.
+    method Entity ResolveShopByNameCandidates(Entity mapEntity, string primaryName, string fallbackNameA, string fallbackNameB)
+        if mapEntity == nil or isvalid(mapEntity) == false then
+            return nil
+        end
+
+        local candidates = {primaryName, fallbackNameA, fallbackNameB}
+        for _, candidate in pairs(candidates) do
+            if candidate ~= nil and candidate ~= "" then
+                local findOk, foundEntity = pcall(function()
+                    return mapEntity:GetChildByName(candidate, true)
+                end)
+                if findOk == true and foundEntity ~= nil and isvalid(foundEntity) == true then
+                    return foundEntity
+                end
+            end
+        end
+
+        return nil
+    end
+
+    -- Batch disable keeps only one active shop visible and avoids stale overlaps from previous cycles.
+    @ExecSpace("ServerOnly")
+    method void DisableAllShopsServer()
+        for shopIndex = 1, 4 do
+            self:SetShopEnabledByIndexServer(shopIndex, false)
+        end
+    end
+
+    -- Rotation picks one random shop from remaining candidates while handling sparse reference setups.
+    @ExecSpace("ServerOnly")
+    method void ChooseAndActivateNextShopServer(integer excludedIndex)
+        local validIndices = self:GetValidShopIndicesServer()
+        if validIndices == nil or #validIndices <= 0 then
+            self.ActiveShopIndex = 0
+            return
+        end
+
+        local candidates = {}
+        local blockedIndex = math.floor(excludedIndex)
+        for _, shopIndex in pairs(validIndices) do
+            if blockedIndex <= 0 or shopIndex ~= blockedIndex then
+                table.insert(candidates, shopIndex)
+            end
+        end
+
+        if #candidates <= 0 then
+            candidates = validIndices
+        end
+
+        local selectedIndex = self:PickRandomIndex(candidates)
+        if selectedIndex <= 0 then
+            self.ActiveShopIndex = 0
+            return
+        end
+
+        self.ActiveShopIndex = selectedIndex
+        self:SetShopEnabledByIndexServer(selectedIndex, true)
+    end
+
+    -- Valid-index collector centralizes entity reference checks for all rotation paths.
+    method table GetValidShopIndicesServer()
+        local validIndices = {}
+
+        for shopIndex = 1, 4 do
+            local shopEntity = self:GetShopEntityByIndex(shopIndex)
+            if shopEntity ~= nil and isvalid(shopEntity) == true then
+                table.insert(validIndices, shopIndex)
+            end
+        end
+
+        return validIndices
+    end
+
+    -- Random picker guards empty input so callers never receive nil and can keep integer flow.
+    method integer PickRandomIndex(table candidates)
+        if candidates == nil then
+            return 0
+        end
+        if #candidates <= 0 then
+            return 0
+        end
+
+        local randomIndex = math.random(1, #candidates)
+        return math.floor(candidates[randomIndex])
+    end
+
+    -- Indexed access keeps all shop-slot references in one function for easier future scaling.
+    method Entity GetShopEntityByIndex(integer shopIndex)
+        local finalIndex = math.floor(shopIndex)
+        if finalIndex == 1 then
+            return self.ShopEntity1
+        end
+        if finalIndex == 2 then
+            return self.ShopEntity2
+        end
+        if finalIndex == 3 then
+            return self.ShopEntity3
+        end
+        if finalIndex == 4 then
+            return self.ShopEntity4
+        end
+
+        return nil
+    end
+
+    -- Single enable wrapper ensures all map-object visibility writes stay synchronized and safe.
+    @ExecSpace("ServerOnly")
+    method void SetShopEnabledByIndexServer(integer shopIndex, boolean enabled)
+        local targetEntity = self:GetShopEntityByIndex(shopIndex)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+
+        self:SetEntityEnableServer(targetEntity, enabled)
+    end
+
+    -- Uses SetEnable when available and falls back to Enable assignment to maximize compatibility.
+    @ExecSpace("ServerOnly")
+    method void SetEntityEnableServer(Entity targetEntity, boolean enabled)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+
+        if targetEntity.SetEnable ~= nil then
+            pcall(function()
+                targetEntity:SetEnable(enabled, false, true)
+            end)
+            return
+        end
+
+        pcall(function()
+            targetEntity.Enable = enabled
+        end)
+    end
+
+    -- Distance validation is server-side to prevent interaction-range spoofing from clients.
+    @ExecSpace("ServerOnly")
+    method boolean IsWithinInteractionRangeServer(Entity shopEntity)
+        local playerPosition = self:GetWorldPosition2D(self.Entity)
+        if playerPosition == nil then
+            return false
+        end
+
+        local shopPosition = self:GetWorldPosition2D(shopEntity)
+        if shopPosition == nil then
+            return false
+        end
+
+        local delta = playerPosition - shopPosition
+        local range = math.max(0, self.InteractionRange)
+        return delta:SqrMagnitude() <= (range * range)
+    end
+
+    -- Position conversion uses 2D plane coordinates because shop interaction is planar in this project.
+    method Vector2 GetWorldPosition2D(Entity targetEntity)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        local transform = targetEntity.TransformComponent
+        if transform == nil or isvalid(transform) == false then
+            return nil
+        end
+
+        local worldPosition = transform.WorldPosition
+        if worldPosition == nil then
+            return nil
+        end
+
+        return Vector2(worldPosition.x, worldPosition.y)
+    end
+
+    -- Slot builder snapshots current shop offers once per open to keep one transaction set consistent.
+    @ExecSpace("ServerOnly")
+    method void BuildCurrentSlotsServer()
+        local slot1 = self:BuildSlotDataServer("heal")
+        local slot2 = self:BuildSlotDataServer("ammo")
+        local slot3 = self:BuildSlotDataServer("passive")
+
+        self._T.CurrentSlots = {slot1, slot2, slot3}
+        self:ApplySlotSyncServer(1, slot1)
+        self:ApplySlotSyncServer(2, slot2)
+        self:ApplySlotSyncServer(3, slot3)
+    end
+
+    -- Slot clear prevents stale item text on client when panel closes and later reopens with new rolls.
+    @ExecSpace("ServerOnly")
+    method void ClearCurrentSlotsServer()
+        self._T.CurrentSlots = {}
+
+        local soldOut = {
+            Type = "soldout",
+            Name = "품절",
+            Description = "",
+            Price = 0,
+            IsSoldOut = true
+        }
+
+        self:ApplySlotSyncServer(1, soldOut)
+        self:ApplySlotSyncServer(2, soldOut)
+        self:ApplySlotSyncServer(3, soldOut)
+    end
+
+    -- Slot data creation reads DataTable first, then falls back to exposed balance properties.
+    @ExecSpace("ServerOnly")
+    method table BuildSlotDataServer(string slotType)
+        local row = self:GetShopRowByTypeServer(slotType)
+
+        if slotType == "heal" then
+            local price = self:GetRowInteger(row, "Price", self.HealPrice)
+            local effectValue = self:GetRowNumber(row, "EffectValue", self.HealPercent)
+            local itemName = self:GetRowString(row, "ItemName", "체력 회복")
+            local description = self:GetRowString(row, "Description", "최대 HP의 30% 회복")
+            return {
+                Type = "heal",
+                Name = itemName,
+                Description = description,
+                Price = price,
+                EffectValue = effectValue,
+                IsSoldOut = false
+            }
+        end
+
+        if slotType == "ammo" then
+            local price = self:GetRowInteger(row, "Price", self.AmmoPrice)
+            local effectValue = self:GetRowNumber(row, "EffectValue", 1)
+            local itemName = self:GetRowString(row, "ItemName", "탄약 보충")
+            local description = self:GetRowString(row, "Description", "전 무기 탄약 1세트 충전")
+            return {
+                Type = "ammo",
+                Name = itemName,
+                Description = description,
+                Price = price,
+                EffectValue = effectValue,
+                IsSoldOut = false
+            }
+        end
+
+        if slotType == "passive" then
+            local price = self:GetRowInteger(row, "Price", self.PassivePrice)
+            local itemName = self:GetRowString(row, "ItemName", "패시브 스킬")
+            local description = self:GetRowString(row, "Description", "추후 구현 예정")
+            return {
+                Type = "passive",
+                Name = itemName,
+                Description = description,
+                Price = price,
+                EffectValue = 0,
+                IsSoldOut = false
+            }
+        end
+
+        return {
+            Type = "soldout",
+            Name = "품절",
+            Description = "",
+            Price = 0,
+            EffectValue = 0,
+            IsSoldOut = true
+        }
+    end
+
+    -- Row resolver supports both FindRow and full-row scan to tolerate varying table authoring styles.
+    @ExecSpace("ServerOnly")
+    method UserDataRow GetShopRowByTypeServer(string slotType)
+        if self._T.ShopDataTable ~= nil and slotType ~= nil and slotType ~= "" then
+            local findOk, findRow = pcall(function()
+                return self._T.ShopDataTable:FindRow("SlotType", slotType)
+            end)
+            if findOk == true and findRow ~= nil then
+                return findRow
+            end
+        end
+
+        local rows = self._T.ShopRows
+        if rows == nil then
+            return nil
+        end
+
+        for _, row in pairs(rows) do
+            local rowType = self:GetRowString(row, "SlotType", "")
+            if rowType == slotType then
+                return row
+            end
+        end
+
+        return nil
+    end
+
+    -- String reader protects against missing columns and keeps fallback text centralized.
+    method string GetRowString(UserDataRow row, string columnName, string fallbackValue)
+        if row == nil then
+            return fallbackValue
+        end
+        if columnName == nil or columnName == "" then
+            return fallbackValue
+        end
+
+        local readOk, text = pcall(function()
+            return row:GetItem(columnName)
+        end)
+        if readOk == false or text == nil or text == "" then
+            return fallbackValue
+        end
+
+        return tostring(text)
+    end
+
+    -- Integer reader converts table text safely and prevents invalid rows from breaking purchase logic.
+    method integer GetRowInteger(UserDataRow row, string columnName, integer fallbackValue)
+        local text = self:GetRowString(row, columnName, "")
+        if text == nil or text == "" then
+            return math.max(0, math.floor(fallbackValue))
+        end
+
+        local parsed = tonumber(text)
+        if parsed == nil then
+            return math.max(0, math.floor(fallbackValue))
+        end
+
+        return math.max(0, math.floor(parsed))
+    end
+
+    -- Number reader keeps percentage/effect values data-driven while preserving sane defaults.
+    method number GetRowNumber(UserDataRow row, string columnName, number fallbackValue)
+        local text = self:GetRowString(row, columnName, "")
+        if text == nil or text == "" then
+            return fallbackValue
+        end
+
+        local parsed = tonumber(text)
+        if parsed == nil then
+            return fallbackValue
+        end
+
+        return parsed
+    end
+
+    -- Slot getter returns a clone to ensure callers cannot mutate internal slot cache accidentally.
+    method table GetSlotDataServer(integer slotIndex)
+        local finalSlotIndex = self:ClampSlotIndex(slotIndex)
+        if self._T.CurrentSlots == nil then
+            return nil
+        end
+
+        local source = self._T.CurrentSlots[finalSlotIndex]
+        if source == nil then
+            return nil
+        end
+
+        return self:CloneSlotData(source)
+    end
+
+    -- Slot setter centralizes mutation and sync-field propagation for consistent client rendering.
+    method void SetSlotDataServer(integer slotIndex, table slotData)
+        local finalSlotIndex = self:ClampSlotIndex(slotIndex)
+        if self._T.CurrentSlots == nil then
+            self._T.CurrentSlots = {}
+        end
+
+        local clone = self:CloneSlotData(slotData)
+        self._T.CurrentSlots[finalSlotIndex] = clone
+        self:ApplySlotSyncServer(finalSlotIndex, clone)
+    end
+
+    -- Clone utility avoids cross-reference side effects between runtime cache and temporary locals.
+    method table CloneSlotData(table sourceSlot)
+        local clone = {}
+        if sourceSlot == nil then
+            return clone
+        end
+
+        for key, value in pairs(sourceSlot) do
+            clone[key] = value
+        end
+        return clone
+    end
+
+    -- Sync-field projection keeps ShopUI implementation simple without exposing server-only _T tables.
+    method void ApplySlotSyncServer(integer slotIndex, table slotData)
+        local data = self:CloneSlotData(slotData)
+
+        local slotType = "soldout"
+        local slotName = "품절"
+        local slotDescription = ""
+        local slotPrice = 0
+        local slotSoldOut = true
+
+        if data.Type ~= nil then
+            slotType = tostring(data.Type)
+        end
+        if data.Name ~= nil and data.Name ~= "" then
+            slotName = tostring(data.Name)
+        end
+        if data.Description ~= nil then
+            slotDescription = tostring(data.Description)
+        end
+        if data.Price ~= nil then
+            slotPrice = math.max(0, math.floor(data.Price))
+        end
+        if data.IsSoldOut ~= nil then
+            slotSoldOut = data.IsSoldOut
+        else
+            slotSoldOut = (slotType == "soldout")
+        end
+
+        if slotIndex == 1 then
+            self.Slot1Type = slotType
+            self.Slot1Name = slotName
+            self.Slot1Description = slotDescription
+            self.Slot1Price = slotPrice
+            self.Slot1SoldOut = slotSoldOut
+            return
+        end
+        if slotIndex == 2 then
+            self.Slot2Type = slotType
+            self.Slot2Name = slotName
+            self.Slot2Description = slotDescription
+            self.Slot2Price = slotPrice
+            self.Slot2SoldOut = slotSoldOut
+            return
+        end
+
+        self.Slot3Type = slotType
+        self.Slot3Name = slotName
+        self.Slot3Description = slotDescription
+        self.Slot3Price = slotPrice
+        self.Slot3SoldOut = slotSoldOut
+    end
+
+    -- Purchase effect router keeps slot-specific reward logic isolated for easy future extension.
+    @ExecSpace("ServerOnly")
+    method void ApplyPurchaseEffectServer(string slotType, table slotData)
+        if slotType == "heal" then
+            local healPercent = self.HealPercent
+            if slotData ~= nil and slotData.EffectValue ~= nil then
+                healPercent = slotData.EffectValue
+            end
+
+            self:ApplyHealPurchaseServer(healPercent)
+            return
+        end
+
+        if slotType == "ammo" then
+            local refillValue = 1
+            if slotData ~= nil and slotData.EffectValue ~= nil then
+                refillValue = slotData.EffectValue
+            end
+
+            self:ApplyAmmoPurchaseServer(refillValue)
+            return
+        end
+
+        if slotType == "passive" then
+            log("[ShopManagerComponent] Passive purchase is placeholder in phase 1.")
+        end
+    end
+
+    -- Heal is server-applied from MaxHP percentage to preserve anti-cheat authority.
+    @ExecSpace("ServerOnly")
+    method void ApplyHealPurchaseServer(number healPercent)
+        local hpComponent = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "CurrentHP")
+        if hpComponent == nil then
+            return
+        end
+        if hpComponent.Heal == nil then
+            return
+        end
+
+        local maxHp = 0
+        local readOk, _ = pcall(function()
+            maxHp = hpComponent.MaxHP
+        end)
+        if readOk == false or maxHp <= 0 then
+            return
+        end
+
+        local clampedPercent = math.max(0, healPercent)
+        local healAmount = math.floor(maxHp * (clampedPercent * 0.01))
+        if healAmount <= 0 then
+            healAmount = 1
+        end
+
+        pcall(function()
+            hpComponent:Heal(healAmount)
+        end)
+    end
+
+    -- Ammo refill updates all weapon slots so swap flow remains consistent after leaving shop.
+    @ExecSpace("ServerOnly")
+    method void ApplyAmmoPurchaseServer(number effectValue)
+        local reloadComponent = self:ResolveComponentSafe(self.Entity, "ReloadComponent", "CurrentAmmo")
+        if reloadComponent == nil then
+            return
+        end
+
+        if reloadComponent.CancelCurrentReload ~= nil then
+            pcall(function()
+                reloadComponent:CancelCurrentReload()
+            end)
+        end
+
+        local slotCount = 1
+        pcall(function()
+            slotCount = math.max(1, math.floor(reloadComponent.WeaponSlotCount))
+        end)
+
+        local maxAmmo = 0
+        pcall(function()
+            maxAmmo = math.max(0, math.floor(reloadComponent.MaxAmmo))
+        end)
+
+        if effectValue ~= nil and effectValue <= 0 then
+            return
+        end
+
+        for slot = 1, slotCount do
+            if reloadComponent.SetSlotAmmo ~= nil then
+                pcall(function()
+                    reloadComponent:SetSlotAmmo(slot, maxAmmo)
+                end)
+            end
+        end
+
+        pcall(function()
+            reloadComponent.CurrentAmmo = maxAmmo
+        end)
+        pcall(function()
+            reloadComponent.IsReloading = false
+        end)
+    end
+
+    -- Central gameplay lock path pauses movement/attack/timer and closes swap menu to avoid UI conflicts.
+    @ExecSpace("ServerOnly")
+    method void SetGameplayLockServer(boolean locked)
+        self:SetCanMoveSafely(not locked)
+        self:SetCanAttackSafely(not locked)
+
+        local timerComponent = self:ResolveComponentSafe(self.Entity, "SpeedrunTimerComponent", "IsRunning")
+        if timerComponent ~= nil and timerComponent.SetPauseSource ~= nil then
+            pcall(function()
+                timerComponent:SetPauseSource("shop", locked)
+            end)
+        end
+
+        if locked == true then
+            self:TryCloseWeaponSwapMenuServer()
+        end
+    end
+
+    -- Swap menu is force-closed on shop open so the single-key interaction model remains deterministic.
+    @ExecSpace("ServerOnly")
+    method void TryCloseWeaponSwapMenuServer()
+        local swapComponent = self:ResolveComponentSafe(self.Entity, "WeaponSwapComponent", "IsSwapMenuOpen")
+        if swapComponent == nil then
+            return
+        end
+        if swapComponent.CloseSwapMenuServer == nil then
+            return
+        end
+
+        local openState = false
+        local readOk, _ = pcall(function()
+            openState = swapComponent.IsSwapMenuOpen
+        end)
+        if readOk == false or openState == false then
+            return
+        end
+
+        pcall(function()
+            swapComponent:CloseSwapMenuServer()
+        end)
+    end
+
+    -- Movement lock setter prefers shared utility API to keep write safety consistent project-wide.
+    method boolean SetCanMoveSafely(boolean canMove)
+        if self._T.GRUtil ~= nil and self._T.GRUtil.TrySetCanMove ~= nil then
+            return self._T.GRUtil.TrySetCanMove(self.Entity, canMove)
+        end
+
+        local movementComponent = self:ResolveComponentSafe(self.Entity, "MovementComponent", "CanMove")
+        if movementComponent == nil then
+            return false
+        end
+
+        local writeOk, _ = pcall(function()
+            movementComponent.CanMove = canMove
+        end)
+        return writeOk
+    end
+
+    -- Attack lock mirrors movement lock with fallback write path when utility API is unavailable.
+    method boolean SetCanAttackSafely(boolean canAttack)
+        local fireComponent = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "CanAttack")
+        if fireComponent == nil then
+            return false
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.TrySetField ~= nil then
+            return self._T.GRUtil.TrySetField(fireComponent, "CanAttack", canAttack)
+        end
+
+        local writeOk, _ = pcall(function()
+            fireComponent.CanAttack = canAttack
+        end)
+        return writeOk
+    end
+
+    -- EndPlay always releases shop lock so recycled entities do not keep paused gameplay state.
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self.IsShopOpen == true then
+            self.IsShopOpen = false
+        end
+        self:SetGameplayLockServer(false)
+    end
+
+    -- Slot index normalization keeps all slot table access bounded to the fixed 1~3 range.
+    method integer ClampSlotIndex(integer slotIndex)
+        local normalized = math.floor(slotIndex)
+        if normalized < 1 then
+            return 1
+        end
+        if normalized > 3 then
+            return 3
+        end
+        return normalized
+    end
+
+    -- External purchase API must reject out-of-range values instead of clamping to avoid unintended buys.
+    method boolean IsValidSlotIndex(integer slotIndex)
+        local normalized = math.floor(slotIndex)
+        if normalized < 1 then
+            return false
+        end
+        if normalized > 3 then
+            return false
+        end
+        return true
+    end
+
+    -- Utility bootstrap first; fallback local lookup remains when global util registration fails.
+    method void EnsureGRUtil()
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, utilApi = pcall(function()
+                return utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and utilApi ~= nil then
+                self._T.GRUtil = utilApi
+            end
+            if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    -- Safe resolver supports both prefixed and plain script names to avoid lookup mismatch failures.
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local checkOk, _ = pcall(function()
+                return component[markerField]
+            end)
+            if checkOk == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+
+    -- Owner check blocks cross-player RPC attempts while keeping local fallback for non-player contexts.
+    method boolean IsOwnerRequest(string requestUserId)
+        if self._T.GRUtil ~= nil and self._T.GRUtil.IsOwner ~= nil then
+            return self._T.GRUtil.IsOwner(self.Entity, requestUserId)
+        end
+
+        local playerComponent = self.Entity.PlayerComponent
+        if playerComponent == nil then
+            return true
+        end
+
+        if requestUserId == nil or requestUserId == "" then
+            return true
+        end
+
+        return requestUserId == playerComponent.UserId
+    end
+end

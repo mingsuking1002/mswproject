@@ -100,6 +100,20 @@ script Map01BootstrapComponent extends Component
                 end)
             end
         end
+
+        local shopManager = self:ResolveComponentSafe(playerEntity, "ShopManagerComponent", "ActiveShopIndex")
+        if shopManager ~= nil then
+            if shopManager.ResolveShopEntitiesServer ~= nil then
+                pcall(function()
+                    shopManager:ResolveShopEntitiesServer()
+                end)
+            end
+            if shopManager.InitializeShopsServer ~= nil then
+                pcall(function()
+                    shopManager:InitializeShopsServer()
+                end)
+            end
+        end
     end
 
     -- Required component list is attached idempotently via shared utility resolver.
@@ -114,6 +128,7 @@ script Map01BootstrapComponent extends Component
             "ReloadComponent",
             "FireSystemComponent",
             "WeaponSwapComponent",
+            "ShopManagerComponent",
             "TagManagerComponent",
             "SpeedrunTimerComponent",
             "RankingComponent",

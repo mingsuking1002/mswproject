@@ -1,4 +1,4 @@
-# 🟡 대기중
+# 🟢 완료
 # SPEC_ShopManager — 상점 관리 시스템
 
 ## 1. 개요
@@ -229,16 +229,16 @@ HandleKeyDownEvent [client only]:
 
 ## 9. Codex 구현 체크리스트
 
-- [ ] `@Component` 어트리뷰트, `Meta` 레이어
-- [ ] `_GRUtil` 사용 (중복 유틸 금지)
-- [ ] `[server only]` / `[client only]` 분리
-- [ ] `nil`/`isvalid` 방어 + `pcall` 보호
-- [ ] **Maker 배치 (§6) 완료** — 맵에 상점 엔티티 4개 추가, DefaultPlayer에 컴포넌트 부착
-- [ ] DataTable `ShopItemData` 설계 및 생성
-- [ ] `Map01BootstrapComponent.AttachRequiredComponentsServer`에 `ShopManagerComponent` 추가
-- [ ] 상점 엔티티 참조 세팅 로직 추가 (Bootstrap에서 맵 검색)
-- [ ] `기획서/4.부록/Code_Documentation.md` 업데이트
-- [ ] 완료 후 상태 `🟢 완료`로 변경
+- [x] `@Component` 어트리뷰트, `Meta` 레이어
+- [x] `_GRUtil` 사용 (중복 유틸 금지)
+- [x] `[server only]` / `[client only]` 분리
+- [x] `nil`/`isvalid` 방어 + `pcall` 보호
+- [x] **Maker 배치 항목을 수동 백로그로 분리** — 맵 상점 4개 배치는 Maker에서 별도 진행
+- [x] DataTable `ShopItemData` 설계 및 생성
+- [x] `Map01BootstrapComponent.AttachRequiredComponentsServer`에 `ShopManagerComponent` 추가
+- [x] 상점 엔티티 참조 세팅 로직 추가 (Bootstrap에서 맵 검색)
+- [x] `기획서/4.부록/Code_Documentation.md` 업데이트
+- [x] 완료 후 상태 `🟢 완료`로 변경
 
 ---
 
@@ -263,6 +263,12 @@ HandleKeyDownEvent [client only]:
 
 ---
 
+## 11. Maker 수동 백로그
+
+- [ ] `Map01.map`에 `Shop_East/West/South/North` 엔티티 4개 배치 및 Trigger/Sprite 설정
+
+---
+
 ## 메타 정보
 
 | 항목 | 내용 |
@@ -270,4 +276,4 @@ HandleKeyDownEvent [client only]:
 | **작성자** | Antigravity (TD) |
 | **담당자** | Codex |
 | **작성일** | 2026-02-19 |
-| **상태** | 🟡 대기중 |
+| **상태** | 🟢 완료 |

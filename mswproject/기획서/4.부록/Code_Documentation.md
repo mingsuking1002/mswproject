@@ -214,12 +214,12 @@
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## Phase 3 Meta Modular Refactor
-- **수정일:** `2026-02-18`
-- **범위:** `WeaponSwapComponent + TagManagerComponent + SpeedrunTimerComponent + RankingComponent`
+- **수정일:** `2026-02-19`
+- **범위:** `WeaponSwapComponent + ShopManagerComponent + TagManagerComponent + SpeedrunTimerComponent + RankingComponent`
 
 ## WeaponSwapComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua`
-- **수정일:** `2026-02-18`
+- **수정일:** `2026-02-19`
 
 ### Properties
 | 이름 | 타입 | 설명 |
@@ -238,6 +238,7 @@
 | 함수명 | 파라미터 | 리턴값 | 설명 |
 |---|---|---|---|
 | `RequestOpenSwapMenuServer` | void | void | F 입력 기반 무기 메뉴 오픈 요청 |
+| `IsShopInteractionPreferredServer` | `requestUserId: string` | boolean | 상점 상호작용이 우선인 상황(상점 열림/상호작용 가능 거리) 판정 |
 | `RequestCancelSwapMenuServer` | void | void | 메뉴 취소/닫기 요청 |
 | `RequestConfirmSwapServer` | `selectedSlot: integer` | void | 슬롯 확정 요청 |
 | `ConfirmSwapServer` | `selectedSlot: integer` | void | 슬롯 확정 후 무기 상태 스왑 |
@@ -245,6 +246,40 @@
 | `ApplySlotDataToCombat` | `slot: integer` | void | 슬롯 데이터 적용(재장전/발사 파라미터 동기화) |
 | `ExportWeaponSwapState` | void | table | 태그 시스템용 전체 슬롯 상태 내보내기 |
 | `ImportWeaponSwapState` | `state: table` | void | 태그 시스템에서 받은 슬롯 상태 복원 |
+| `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
+
+## ShopManagerComponent
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/ShopManagerComponent.mlua`
+- **수정일:** `2026-02-19`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `IsShopOpen` | boolean | 상점 UI 열림 상태 (Sync) |
+| `ActiveShopIndex` | integer | 현재 활성 상점 인덱스 (Sync, 1~4) |
+| `InteractionRange` | number | 상점 상호작용 거리(px) |
+| `ShopEntity1~4` | Entity | 동/서/남/북 상점 엔티티 참조 |
+| `ShopDataTableName` | string | 상점 데이터 테이블명 (`ShopItemData`) |
+| `HealPercent` | number | 회복 슬롯 HP 비율 |
+| `HealPrice` | integer | 회복 슬롯 가격 |
+| `AmmoPrice` | integer | 탄약 슬롯 가격 |
+| `PassivePrice` | integer | 패시브 슬롯 가격 |
+| `Slot1~3Type/Name/Description/Price/SoldOut` | string/integer/boolean | 클라이언트 UI 렌더링용 슬롯 Sync 필드 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `RequestOpenShopServer` | void | void | F 입력 기반 상점 열기 서버 요청 |
+| `CanOpenShopForOwnerServer` | `requestUserId: string` | boolean | 소유자/활성 상점/거리 기반 오픈 가능 여부 판정 |
+| `RequestPurchaseServer` | `slotIndex: integer` | void | 슬롯 구매 서버 처리(골드 차감/효과 적용) |
+| `RequestCloseShopServer` | void | void | ESC/닫기 기반 상점 종료 요청 |
+| `OpenShopServer` | void | void | 상점 오픈 + 게임플레이 잠금 + 슬롯 구성 |
+| `CloseAndRotateShopServer` | void | void | 상점 종료 + 방문 상점 비활성 + 랜덤 순환 |
+| `ResetShopStateServer` | void | void | 로비 복귀 시 상점 상태 초기화 |
+| `ResolveShopEntitiesServer` | void | void | 맵 엔티티 기반 상점 참조 자동 탐색 |
+| `LoadShopDataServer` | void | void | `ShopItemData` 로드 및 행 캐시 |
+| `ApplyPurchaseEffectServer` | `slotType: string, slotData: table` | void | 회복/탄약/패시브 구매 효과 분기 |
+| `SetGameplayLockServer` | `locked: boolean` | void | 이동/공격/타이머 정지 및 스왑 UI 충돌 방지 |
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## TagManagerComponent
@@ -334,7 +369,7 @@
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## Phase 4 UI/Bootstrap Modular Refactor
-- **수정일:** `2026-02-18`
+- **수정일:** `2026-02-19`
 - **범위:** `WeaponWheelUIComponent + RankingUIComponent + HUDComponent + Map01BootstrapComponent + LobbyFlowComponent`
 
 ## WeaponWheelUIComponent
@@ -436,7 +471,7 @@
 | `HandleUserEnterEvent` | `event: UserEnterEvent` | void | 신규 유저 입장 시 플레이어 설정 |
 | `ConfigurePlayerByUserIdServer` | `userId: string` | void | userId 기반 플레이어 엔티티 설정 |
 | `ConfigurePlayer` | `playerEntity: Entity` | void | 필수 컴포넌트 부착 및 LobbyFlow 설정 |
-| `AttachRequiredComponentsServer` | `playerEntity: Entity` | void | Phase 0~4 필수 컴포넌트 자동 부착 (`GoldComponent` 포함) |
+| `AttachRequiredComponentsServer` | `playerEntity: Entity` | void | Phase 0~4 필수 컴포넌트 자동 부착 (`GoldComponent`, `ShopManagerComponent` 포함) |
 | `FindOrAddComponentSafe` | `targetEntity: Entity, typeName: string` | Component | 조회/추가 안전 래퍼 |
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
@@ -470,6 +505,7 @@
 | `MoveOwnerToLobbyMapIfNeeded` | void | boolean | 로비 맵 이동 요청 |
 | `HandleRunCompletedServer` | `isClear: boolean` | void | 런 종료 처리 및 로비 복귀 |
 | `TryResetGoldForOwnerServer` | void | void | 런 종료 시 `GoldComponent.ResetGold()` 안전 호출 |
+| `TryResetShopForOwnerServer` | void | void | 런 종료 시 `ShopManagerComponent.ResetShopStateServer()` 안전 호출 |
 | `HandleStageFailedServer` | void | void | 실패 종료 래퍼 |
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 

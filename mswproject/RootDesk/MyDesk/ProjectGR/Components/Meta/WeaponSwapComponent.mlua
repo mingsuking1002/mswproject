@@ -80,6 +80,9 @@ script WeaponSwapComponent extends Component
         if self:IsOwnerRequest(senderUserId) == false then
             return
         end
+        if self:IsShopInteractionPreferredServer(senderUserId) == true then
+            return
+        end
         if self:IsSwapAvailableServer() == false then
             return
         end
@@ -185,6 +188,36 @@ script WeaponSwapComponent extends Component
         end
 
         return true
+    end
+
+    -- Shop interaction takes precedence near active shops so one-key(F) conflicts stay deterministic.
+    @ExecSpace("ServerOnly")
+    method boolean IsShopInteractionPreferredServer(string requestUserId)
+        local shopManager = self:ResolveComponentSafe(self.Entity, "ShopManagerComponent", "IsShopOpen")
+        if shopManager == nil then
+            return false
+        end
+
+        local shopOpen = false
+        local openOk, _ = pcall(function()
+            shopOpen = shopManager.IsShopOpen
+        end)
+        if openOk == true and shopOpen == true then
+            return true
+        end
+
+        if shopManager.CanOpenShopForOwnerServer == nil then
+            return false
+        end
+
+        local checkOk, canOpenShop = pcall(function()
+            return shopManager:CanOpenShopForOwnerServer(requestUserId)
+        end)
+        if checkOk == true and canOpenShop == true then
+            return true
+        end
+
+        return false
     end
 
     -- Slot data is initialized once so all slot read/write paths can assume schema presence.

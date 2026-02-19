@@ -125,6 +125,7 @@ script LobbyFlowComponent extends Component
     @ExecSpace("ServerOnly")
     method void HandleRunCompletedServer(boolean isClear)
         self:TryResetGoldForOwnerServer()
+        self:TryResetShopForOwnerServer()
         self:SetLobbyStateServer(true)
         self:MoveOwnerToLobbyMapIfNeeded()
     end
@@ -142,6 +143,22 @@ script LobbyFlowComponent extends Component
 
         pcall(function()
             goldComponent:ResetGold()
+        end)
+    end
+
+    -- Lobby return resets shop state so next run starts with fresh shop rotation/open state.
+    @ExecSpace("ServerOnly")
+    method void TryResetShopForOwnerServer()
+        local shopManager = self:ResolveComponentSafe(self.Entity, "ShopManagerComponent", "ActiveShopIndex")
+        if shopManager == nil then
+            return
+        end
+        if shopManager.ResetShopStateServer == nil then
+            return
+        end
+
+        pcall(function()
+            shopManager:ResetShopStateServer()
         end)
     end
 

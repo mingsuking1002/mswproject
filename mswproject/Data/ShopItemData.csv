@@ -1,0 +1,4 @@
+SlotType,ItemName,Description,Price,EffectValue,IconRUID
+heal,체력 회복,최대 HP의 30% 회복,100,30,
+ammo,탄약 보충,전 무기 탄약 1세트 충전,50,1,
+passive,패시브 스킬,랜덤 패시브 스킬 1종 획득,200,0,
