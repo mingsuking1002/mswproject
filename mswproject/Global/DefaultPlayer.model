@@ -19,6 +19,7 @@
                                       "Id":  "defaultplayer",
                                       "Components":  [
                                                          "GRUtilModule",
+                                                         "GoldComponent",
                                                          "MovementComponent",
                                                          "CameraFollowComponent",
                                                          "HPSystemComponent",

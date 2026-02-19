@@ -1,0 +1,143 @@
+@Component
+script GoldComponent extends Component
+
+    @Sync
+    property integer CurrentGold = 500
+    property integer InitialGold = 500
+    property integer MaxGold = 99999
+
+    -- Utility bootstrap is kept for consistent component access patterns across Project GR systems.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self:EnsureGRUtil()
+    end
+
+    -- Server initializes starting gold so clients cannot spoof spawn-time currency values.
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self.CurrentGold = self:ClampGold(self.InitialGold)
+        log("[GoldComponent] Initialized. CurrentGold=", self.CurrentGold)
+    end
+
+    -- Spend API is server-authoritative because purchase validation must be cheat-resistant.
+    @ExecSpace("ServerOnly")
+    method boolean SpendGold(integer amount)
+        local spendAmount = self:NormalizeAmount(amount)
+        if spendAmount <= 0 then
+            return false
+        end
+        if self.CurrentGold < spendAmount then
+            return false
+        end
+
+        self.CurrentGold = self:ClampGold(self.CurrentGold - spendAmount)
+        return true
+    end
+
+    -- Add API clamps to MaxGold so overflow from stacked rewards cannot corrupt economy state.
+    @ExecSpace("ServerOnly")
+    method void AddGold(integer amount)
+        local addAmount = self:NormalizeAmount(amount)
+        if addAmount <= 0 then
+            return
+        end
+
+        self.CurrentGold = self:ClampGold(self.CurrentGold + addAmount)
+    end
+
+    -- Read-only affordability check is shared by UI and gameplay callers without mutating state.
+    method boolean CanAfford(integer amount)
+        local requiredAmount = self:NormalizeAmount(amount)
+        if requiredAmount <= 0 then
+            return true
+        end
+
+        return self.CurrentGold >= requiredAmount
+    end
+
+    -- Reset API is used by lobby flow to guarantee a deterministic gold state between runs.
+    @ExecSpace("ServerOnly")
+    method void ResetGold()
+        self.CurrentGold = self:ClampGold(self.InitialGold)
+    end
+
+    -- Amount normalization avoids negative or non-integer values entering economy calculations.
+    method integer NormalizeAmount(integer amount)
+        if amount == nil then
+            return 0
+        end
+
+        local value = math.floor(amount)
+        if value < 0 then
+            return 0
+        end
+        return value
+    end
+
+    -- Single clamp path keeps all write operations bounded by [0, MaxGold].
+    method integer ClampGold(integer value)
+        if value == nil then
+            return 0
+        end
+
+        local maxSource = self.MaxGold
+        if maxSource == nil then
+            maxSource = 0
+        end
+
+        local maxValue = math.max(0, math.floor(maxSource))
+        local normalized = math.floor(value)
+        if normalized < 0 then
+            return 0
+        end
+        if normalized > maxValue then
+            return maxValue
+        end
+        return normalized
+    end
+
+    -- Utility bootstrap first; fallback local lookup remains when global util registration fails.
+    method void EnsureGRUtil()
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, utilApi = pcall(function()
+                return utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and utilApi ~= nil then
+                self._T.GRUtil = utilApi
+            end
+            if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+end

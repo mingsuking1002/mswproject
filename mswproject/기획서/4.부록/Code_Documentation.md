@@ -66,6 +66,30 @@
 | `ApplyCameraSettings` | void | void | 현재 카메라 컴포넌트에 Bound/Offset 적용 |
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
+## GoldComponent
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Core/GoldComponent.mlua`
+- **수정일:** `2026-02-19`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `CurrentGold` | integer | 현재 보유 골드 (Sync) |
+| `InitialGold` | integer | 시작 시 지급 골드 |
+| `MaxGold` | integer | 골드 최대 보유 한도 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `OnInitialize` | void | void | 유틸 부트스트랩 초기화 |
+| `OnBeginPlay` | void | void | 서버 권위 시작 골드 초기화 |
+| `SpendGold` | `amount: integer` | boolean | 유효 금액/잔액 검증 후 골드 차감 |
+| `AddGold` | `amount: integer` | void | 골드 획득 처리 및 최대치 클램프 |
+| `CanAfford` | `amount: integer` | boolean | 현재 골드 기반 구매 가능 여부 판정 |
+| `ResetGold` | void | void | 로비 복귀 시 시작 골드로 재설정 |
+| `NormalizeAmount` | `amount: integer` | integer | 입력 금액 정규화(음수 방지) |
+| `ClampGold` | `value: integer` | integer | 골드 값을 0~MaxGold 범위로 제한 |
+| `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
+
 ## HPSystemComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.mlua`
 - **수정일:** `2026-02-18`
@@ -391,7 +415,7 @@
 
 ## Map01BootstrapComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
-- **수정일:** `2026-02-18`
+- **수정일:** `2026-02-19`
 
 ### Properties
 | 이름 | 타입 | 설명 |
@@ -412,13 +436,13 @@
 | `HandleUserEnterEvent` | `event: UserEnterEvent` | void | 신규 유저 입장 시 플레이어 설정 |
 | `ConfigurePlayerByUserIdServer` | `userId: string` | void | userId 기반 플레이어 엔티티 설정 |
 | `ConfigurePlayer` | `playerEntity: Entity` | void | 필수 컴포넌트 부착 및 LobbyFlow 설정 |
-| `AttachRequiredComponentsServer` | `playerEntity: Entity` | void | Phase 0~4 필수 컴포넌트 자동 부착 |
+| `AttachRequiredComponentsServer` | `playerEntity: Entity` | void | Phase 0~4 필수 컴포넌트 자동 부착 (`GoldComponent` 포함) |
 | `FindOrAddComponentSafe` | `targetEntity: Entity, typeName: string` | Component | 조회/추가 안전 래퍼 |
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## LobbyFlowComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.mlua`
-- **수정일:** `2026-02-18`
+- **수정일:** `2026-02-19`
 
 ### Properties
 | 이름 | 타입 | 설명 |
@@ -445,6 +469,7 @@
 | `MoveOwnerToInGameMapIfNeeded` | void | boolean | 인게임 맵 이동 요청 |
 | `MoveOwnerToLobbyMapIfNeeded` | void | boolean | 로비 맵 이동 요청 |
 | `HandleRunCompletedServer` | `isClear: boolean` | void | 런 종료 처리 및 로비 복귀 |
+| `TryResetGoldForOwnerServer` | void | void | 런 종료 시 `GoldComponent.ResetGold()` 안전 호출 |
 | `HandleStageFailedServer` | void | void | 실패 종료 래퍼 |
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 

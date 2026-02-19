@@ -1,4 +1,4 @@
-﻿# 🟢 완료
+# 🟢 완료
 # SPEC_WeaponSwap — 무기 교체 시스템 (Weapon Swap)
 
 ## 1. 개요

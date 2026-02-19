@@ -124,8 +124,25 @@ script LobbyFlowComponent extends Component
     -- Run completion path keeps compatibility with existing HP/game-over integration.
     @ExecSpace("ServerOnly")
     method void HandleRunCompletedServer(boolean isClear)
+        self:TryResetGoldForOwnerServer()
         self:SetLobbyStateServer(true)
         self:MoveOwnerToLobbyMapIfNeeded()
+    end
+
+    -- Lobby return resets run-lifetime gold so each run starts from deterministic initial currency.
+    @ExecSpace("ServerOnly")
+    method void TryResetGoldForOwnerServer()
+        local goldComponent = self:ResolveComponentSafe(self.Entity, "GoldComponent", "CurrentGold")
+        if goldComponent == nil then
+            return
+        end
+        if goldComponent.ResetGold == nil then
+            return
+        end
+
+        pcall(function()
+            goldComponent:ResetGold()
+        end)
     end
 
     -- Stage-fail alias is referenced by HPSystem fallback flow.

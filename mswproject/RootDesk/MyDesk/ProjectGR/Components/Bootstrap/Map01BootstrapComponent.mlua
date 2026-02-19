@@ -107,6 +107,7 @@ script Map01BootstrapComponent extends Component
     method void AttachRequiredComponentsServer(Entity playerEntity)
         local required = {
             "GRUtilModule",
+            "GoldComponent",
             "MovementComponent",
             "CameraFollowComponent",
             "HPSystemComponent",
