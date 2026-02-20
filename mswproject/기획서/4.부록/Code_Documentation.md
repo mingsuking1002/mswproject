@@ -505,7 +505,7 @@
 
 ## Map01BootstrapComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
-- **수정일:** `2026-02-19`
+- **수정일:** `2026-02-20`
 
 ### Properties
 | 이름 | 타입 | 설명 |
@@ -526,8 +526,38 @@
 | `HandleUserEnterEvent` | `event: UserEnterEvent` | void | 신규 유저 입장 시 플레이어 설정 |
 | `ConfigurePlayerByUserIdServer` | `userId: string` | void | userId 기반 플레이어 엔티티 설정 |
 | `ConfigurePlayer` | `playerEntity: Entity` | void | 필수 컴포넌트 부착 및 LobbyFlow 설정 |
-| `AttachRequiredComponentsServer` | `playerEntity: Entity` | void | Phase 0~4 필수 컴포넌트 자동 부착 (`GoldComponent`, `ShopManagerComponent`, `ShopUIComponent` 포함) |
+| `AttachRequiredComponentsServer` | `playerEntity: Entity` | void | Phase 0~4 필수 컴포넌트 자동 부착 (`GoldComponent`, `ShopManagerComponent`, `ShopUIComponent`, `MonsterSpawnComponent` 포함) |
 | `FindOrAddComponentSafe` | `targetEntity: Entity, typeName: string` | Component | 조회/추가 안전 래퍼 |
+| `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
+
+## MonsterSpawnComponent
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.mlua`
+- **수정일:** `2026-02-20`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `SpawnConfigTableName` | string | 스폰 설정 DataTable 이름 (`SpawnConfig`) |
+| `MonsterDataTableName` | string | 웨이브+드랍 통합 DataTable 이름 (`MonsterData`) |
+| `SpawnWaveTableName` | string | 구버전 호환용 별칭 테이블명(비어있지 않으면 fallback 사용) |
+| `IsSpawnActive` | boolean | 서버 스폰 루프 활성 상태(Sync) |
+| `IsBossPhase` | boolean | 보스 페이즈 상태(Sync) |
+| `MonsterParentEntity` | Entity | 스폰 몬스터 부모 엔티티 |
+| `MonsterContainerName` | string | 맵에서 부모 엔티티를 찾을 이름 |
+| `StateMonitorInterval` | number | 로비/상점 상태 기반 스폰 가능 여부 재평가 주기 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `LoadSpawnDataFromTable` | void | boolean | `SpawnConfig`/`MonsterData` 로드 및 준비 상태 갱신 |
+| `LoadMonsterDataFromTable` | void | boolean | 몬스터 통합 테이블 로드 |
+| `ResolveSpawnCandidates` | `stage: integer, elapsedSec: number` | table | 현재 시점 스폰 후보(일반/보스) 분리 |
+| `BuildSpawnMetaFromRow` | `row: UserDataRow` | table | 드랍/보상 후속 연동용 메타 데이터 구성 |
+| `ApplyMonsterVisualIfAvailable` | `targetEntity: Entity, row: UserDataRow` | void | `sprite_ruid`가 있으면 SpriteRenderer 외형만 안전 교체 |
+| `ApplyMonsterStatsIfAvailable` | `targetEntity: Entity, row: UserDataRow` | void | 스탯 컴포넌트 존재 시 안전 적용(미정 명세 훅) |
+| `GetSpawnMetaByEntity` | `targetEntity: Entity` | table | 엔티티 기준 스폰 메타 조회 API |
+| `RefreshSpawnStateServer` | void | void | 로비/상점/보스/데이터 상태를 반영해 스폰 시작/정지 |
+| `SpawnTick` | void | void | 타이머 틱에서 스폰 제한/좌표/재시도/보스 판정 처리 |
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## LobbyFlowComponent

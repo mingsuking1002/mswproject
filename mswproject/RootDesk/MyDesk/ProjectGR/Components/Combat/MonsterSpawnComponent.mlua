@@ -1,0 +1,1028 @@
+@Component
+script MonsterSpawnComponent extends Component
+
+    property string SpawnConfigTableName = "SpawnConfig"
+    property string MonsterDataTableName = "MonsterData"
+    property string SpawnWaveTableName = ""
+
+    @Sync
+    property boolean IsSpawnActive = false
+    @Sync
+    property boolean IsBossPhase = false
+    property Entity MonsterParentEntity = nil
+
+    property string MonsterContainerName = "MonsterContainer"
+    property number StateMonitorInterval = 0.2
+
+    -- Server initializes all runtime caches once so spawn flow remains deterministic after hot-reload.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self:EnsureGRUtil()
+
+        self._T.SpawnTimerId = 0
+        self._T.StateMonitorTimerId = 0
+        self._T.SpawnedMonsters = {}
+        self._T.SpawnMetaByEntity = {}
+        self._T.Config = nil
+        self._T.MonsterRows = {}
+        self._T.ModelTypeByMonType = nil
+        self._T.RowFallbackModelById = nil
+        self._T.BossSpawnedEntity = nil
+        self._T.WarnedMissingContainer = false
+        self._T.DataReady = false
+
+        self.IsSpawnActive = false
+        self.IsBossPhase = false
+    end
+
+    -- BeginPlay loads DataTable snapshots first, then starts safe-zone aware monitor loop.
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self:LoadSpawnDataFromTable()
+        self:ResolveMonsterParentEntity()
+        self:StartStateMonitorTimer()
+        self:RefreshSpawnStateServer()
+    end
+
+    -- Map enter re-resolves parent entity because map transition can invalidate previous references.
+    @ExecSpace("ServerOnly")
+    method void OnMapEnter(Entity enteredMap)
+        self:ResolveMonsterParentEntity()
+        self:RefreshSpawnStateServer()
+    end
+
+    -- EndPlay clears active timers so delayed callbacks never run on recycled entities.
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        self:StopSpawning()
+
+        if self._T.StateMonitorTimerId ~= nil and self._T.StateMonitorTimerId > 0 then
+            _TimerService:ClearTimer(self._T.StateMonitorTimerId)
+            self._T.StateMonitorTimerId = 0
+        end
+    end
+
+    -- Destroy repeats timer cleanup as final safety net for unusual lifecycle paths.
+    @ExecSpace("ServerOnly")
+    method void OnDestroy()
+        if self._T.SpawnTimerId ~= nil and self._T.SpawnTimerId > 0 then
+            _TimerService:ClearTimer(self._T.SpawnTimerId)
+            self._T.SpawnTimerId = 0
+        end
+        if self._T.StateMonitorTimerId ~= nil and self._T.StateMonitorTimerId > 0 then
+            _TimerService:ClearTimer(self._T.StateMonitorTimerId)
+            self._T.StateMonitorTimerId = 0
+        end
+    end
+
+    -- One entrypoint loads both config and monster table so availability gate is centralized.
+    @ExecSpace("ServerOnly")
+    method boolean LoadSpawnDataFromTable()
+        local configLoaded = self:LoadSpawnConfigFromTable()
+        local monsterLoaded = self:LoadMonsterDataFromTable()
+
+        self._T.DataReady = (configLoaded == true and monsterLoaded == true)
+        if self._T.DataReady == false then
+            self:StopSpawning()
+        end
+
+        return self._T.DataReady
+    end
+
+    -- Config table is mandatory because all balance values are data-driven by SPEC.
+    @ExecSpace("ServerOnly")
+    method boolean LoadSpawnConfigFromTable()
+        self._T.Config = nil
+
+        if self.SpawnConfigTableName == nil or self.SpawnConfigTableName == "" then
+            self:LogError("[MonsterSpawnComponent] SpawnConfigTableName is empty.")
+            return false
+        end
+
+        local tableData = nil
+        local loadOk, loadResult = pcall(function()
+            return _DataService:GetTable(self.SpawnConfigTableName)
+        end)
+        if loadOk == true then
+            tableData = loadResult
+        end
+        if tableData == nil then
+            self:LogError("[MonsterSpawnComponent] Failed to load SpawnConfig table: " .. tostring(self.SpawnConfigTableName))
+            return false
+        end
+
+        local row = nil
+        local rowOk, rowResult = pcall(function()
+            return tableData:GetRow(1)
+        end)
+        if rowOk == true then
+            row = rowResult
+        end
+        if row == nil then
+            self:LogError("[MonsterSpawnComponent] SpawnConfig row(1) is missing.")
+            return false
+        end
+
+        local innerRadius = self:GetRowNumber(row, "InnerRadius", -1)
+        local outerRadius = self:GetRowNumber(row, "OuterRadius", -1)
+        local spawnInterval = self:GetRowNumber(row, "SpawnInterval", -1)
+        local spawnPerTick = self:GetRowInteger(row, "SpawnPerTick", -1)
+        local maxFieldMonsters = self:GetRowInteger(row, "MaxFieldMonsters", -1)
+        local maxRetryCount = self:GetRowInteger(row, "MaxRetryCount", -1)
+
+        if innerRadius < 0 or outerRadius < 0 or spawnInterval <= 0 or spawnPerTick <= 0 or maxFieldMonsters <= 0 or maxRetryCount <= 0 then
+            self:LogError("[MonsterSpawnComponent] Invalid SpawnConfig values. Check SpawnConfig.csv.")
+            return false
+        end
+        if outerRadius < innerRadius then
+            self:LogError("[MonsterSpawnComponent] OuterRadius must be >= InnerRadius.")
+            return false
+        end
+
+        local config = {}
+        config.InnerRadius = innerRadius
+        config.OuterRadius = outerRadius
+        config.SpawnInterval = spawnInterval
+        config.SpawnPerTick = spawnPerTick
+        config.MaxFieldMonsters = maxFieldMonsters
+        config.MaxRetryCount = maxRetryCount
+
+        self._T.Config = config
+        return true
+    end
+
+    -- MonsterData table is single source of truth for wave and drop metadata in current iteration.
+    @ExecSpace("ServerOnly")
+    method boolean LoadMonsterDataFromTable()
+        self._T.MonsterRows = {}
+        self._T.ModelTypeByMonType = nil
+        self._T.RowFallbackModelById = nil
+
+        local tableName = self:ResolveMonsterDataTableName()
+        if tableName == "" then
+            self:LogError("[MonsterSpawnComponent] MonsterDataTableName is empty.")
+            return false
+        end
+
+        local tableData = nil
+        local loadOk, loadResult = pcall(function()
+            return _DataService:GetTable(tableName)
+        end)
+        if loadOk == true then
+            tableData = loadResult
+        end
+        if tableData == nil then
+            self:LogError("[MonsterSpawnComponent] Failed to load MonsterData table: " .. tostring(tableName))
+            return false
+        end
+
+        local rows = nil
+        local rowsOk, rowsResult = pcall(function()
+            return tableData:GetAllRow()
+        end)
+        if rowsOk == true then
+            rows = rowsResult
+        end
+        if rows == nil or #rows <= 0 then
+            self:LogError("[MonsterSpawnComponent] MonsterData has no rows.")
+            return false
+        end
+
+        self._T.MonsterRows = rows
+        self:BuildRowModelFallbackCache(rows)
+        return true
+    end
+
+    -- Fallback cache keeps CSV authoring flexible when repetitive model_type cells are intentionally left empty.
+    method void BuildRowModelFallbackCache(table rows)
+        self._T.RowFallbackModelById = {}
+        self._T.ModelTypeByMonType = {}
+
+        if rows == nil or #rows <= 0 then
+            return
+        end
+
+        local lastModelByType = {}
+        for index = 1, #rows do
+            local row = rows[index]
+            if row == nil then
+                continue
+            end
+
+            local rowId = self:GetRowString(row, "id", "")
+            local monType = string.lower(self:GetRowString(row, "mon_type", ""))
+            local modelType = self:GetRowString(row, "model_type", "")
+
+            if monType ~= "" and modelType ~= "" and self._T.ModelTypeByMonType[monType] == nil then
+                self._T.ModelTypeByMonType[monType] = modelType
+            end
+
+            if monType ~= "" and modelType ~= "" then
+                lastModelByType[monType] = modelType
+                continue
+            end
+
+            if rowId ~= "" and monType ~= "" and lastModelByType[monType] ~= nil then
+                self._T.RowFallbackModelById[rowId] = lastModelByType[monType]
+            end
+        end
+    end
+
+    -- Backward-compatible resolver allows old SPEC alias without blocking current MonsterData naming.
+    method string ResolveMonsterDataTableName()
+        if self.MonsterDataTableName ~= nil and self.MonsterDataTableName ~= "" then
+            return self.MonsterDataTableName
+        end
+        if self.SpawnWaveTableName ~= nil and self.SpawnWaveTableName ~= "" then
+            return self.SpawnWaveTableName
+        end
+        return ""
+    end
+
+    method string GetFallbackModelType(UserDataRow row)
+        if row == nil then
+            return ""
+        end
+
+        local rowId = self:GetRowString(row, "id", "")
+        if rowId ~= "" and self._T.RowFallbackModelById ~= nil then
+            local rowFallback = self._T.RowFallbackModelById[rowId]
+            if rowFallback ~= nil and rowFallback ~= "" then
+                return rowFallback
+            end
+        end
+
+        local monType = string.lower(self:GetRowString(row, "mon_type", ""))
+        if monType == "" then
+            return ""
+        end
+
+        if self._T.ModelTypeByMonType ~= nil then
+            local defaultModel = self._T.ModelTypeByMonType[monType]
+            if defaultModel ~= nil and defaultModel ~= "" then
+                return defaultModel
+            end
+        end
+
+        return ""
+    end
+
+    -- Parent resolver enforces SPEC decision: no MonsterContainer means spawn stays disabled.
+    @ExecSpace("ServerOnly")
+    method void ResolveMonsterParentEntity()
+        self.MonsterParentEntity = nil
+
+        local mapEntity = self.Entity.CurrentMap
+        if mapEntity == nil or isvalid(mapEntity) == false then
+            return
+        end
+
+        local container = nil
+        local findOk, findResult = pcall(function()
+            return mapEntity:GetChildByName(self.MonsterContainerName, true)
+        end)
+        if findOk == true then
+            container = findResult
+        end
+
+        if container ~= nil and isvalid(container) == true then
+            self.MonsterParentEntity = container
+            self._T.WarnedMissingContainer = false
+            return
+        end
+
+        if self._T.WarnedMissingContainer ~= true then
+            log_warning("[MonsterSpawnComponent] MonsterContainer is missing. Spawning remains disabled until container is placed.")
+            self._T.WarnedMissingContainer = true
+        end
+    end
+
+    -- Monitor timer reacts to lobby/shop safe-zone state without per-frame OnUpdate overhead.
+    @ExecSpace("ServerOnly")
+    method void StartStateMonitorTimer()
+        if self._T.StateMonitorTimerId ~= nil and self._T.StateMonitorTimerId > 0 then
+            return
+        end
+
+        local interval = self.StateMonitorInterval
+        if interval <= 0 then
+            interval = 0.2
+        end
+
+        local callback = function()
+            self:RefreshSpawnStateServer()
+        end
+        self._T.StateMonitorTimerId = _TimerService:SetTimerRepeat(callback, interval, 0)
+    end
+
+    -- Single state gate keeps start/stop transitions deterministic and easy to extend later.
+    @ExecSpace("ServerOnly")
+    method void RefreshSpawnStateServer()
+        if self:CanSpawnNowServer() == true then
+            self:StartSpawning()
+            return
+        end
+
+        self:StopSpawning()
+    end
+
+    -- Spawn readiness checks are centralized so future unknown rules can be appended safely.
+    @ExecSpace("ServerOnly")
+    method boolean CanSpawnNowServer()
+        if self._T.DataReady ~= true then
+            return false
+        end
+        if self.IsBossPhase == true then
+            return false
+        end
+        if self.MonsterParentEntity == nil or isvalid(self.MonsterParentEntity) == false then
+            return false
+        end
+        if self:IsSafeZoneActiveServer() == true then
+            return false
+        end
+
+        return true
+    end
+
+    -- Safe-zone resolver depends only on stable Sync flags to avoid tight coupling to feature internals.
+    @ExecSpace("ServerOnly")
+    method boolean IsSafeZoneActiveServer()
+        local lobbyFlow = self:ResolveComponentSafe(self.Entity, "LobbyFlowComponent", "IsLobbyActive")
+        if lobbyFlow ~= nil then
+            local lobbyOk, isLobby = pcall(function()
+                return lobbyFlow.IsLobbyActive
+            end)
+            if lobbyOk == true and isLobby == true then
+                return true
+            end
+        end
+
+        local shopManager = self:ResolveComponentSafe(self.Entity, "ShopManagerComponent", "IsShopOpen")
+        if shopManager ~= nil then
+            local shopOk, isShopOpen = pcall(function()
+                return shopManager.IsShopOpen
+            end)
+            if shopOk == true and isShopOpen == true then
+                return true
+            end
+        end
+
+        return false
+    end
+
+    -- Start path is isolated so timer recreation and sync flag update always happen together.
+    @ExecSpace("ServerOnly")
+    method void StartSpawning()
+        if self._T.SpawnTimerId ~= nil and self._T.SpawnTimerId > 0 then
+            return
+        end
+        if self._T.Config == nil then
+            return
+        end
+
+        local interval = self._T.Config.SpawnInterval
+        if interval <= 0 then
+            return
+        end
+
+        local callback = function()
+            self:SpawnTick()
+        end
+        local timerId = _TimerService:SetTimerRepeat(callback, interval, 0)
+        if timerId == nil or timerId <= 0 then
+            return
+        end
+
+        self._T.SpawnTimerId = timerId
+        self.IsSpawnActive = true
+    end
+
+    -- Stop path clears only one timer id so duplicated ClearTimer calls are avoided.
+    @ExecSpace("ServerOnly")
+    method void StopSpawning()
+        if self._T.SpawnTimerId ~= nil and self._T.SpawnTimerId > 0 then
+            _TimerService:ClearTimer(self._T.SpawnTimerId)
+            self._T.SpawnTimerId = 0
+        end
+        self.IsSpawnActive = false
+    end
+
+    -- Spawn tick executes only lightweight loops and defers unknown features to dedicated extension hooks.
+    @ExecSpace("ServerOnly")
+    method void SpawnTick()
+        if self:CanSpawnNowServer() == false then
+            return
+        end
+
+        self:PruneSpawnedMonsters()
+
+        local config = self._T.Config
+        if config == nil then
+            return
+        end
+        if self:GetSpawnedMonsterCount() >= config.MaxFieldMonsters then
+            return
+        end
+
+        local context = self:ResolveCurrentSpawnContext()
+        local candidates = self:ResolveSpawnCandidates(context.Stage, context.ElapsedSec)
+
+        local bossRows = candidates.BossRows
+        if bossRows ~= nil and #bossRows > 0 then
+            local bossRow = self:SelectLatestRowBySpawnTime(bossRows)
+            local bossEntity = self:SpawnMonsterByRow(bossRow, Vector3(0, 0, 0), true)
+            if bossEntity ~= nil and isvalid(bossEntity) == true then
+                self.IsBossPhase = true
+                self:StopSpawning()
+            end
+            return
+        end
+
+        local normalRows = candidates.NormalRows
+        if normalRows == nil or #normalRows <= 0 then
+            return
+        end
+
+        for i = 1, config.SpawnPerTick do
+            self:PruneSpawnedMonsters()
+            if self:GetSpawnedMonsterCount() >= config.MaxFieldMonsters then
+                break
+            end
+
+            local selectedRow = self:PickRandomRow(normalRows)
+            if selectedRow == nil then
+                break
+            end
+
+            for retry = 1, config.MaxRetryCount do
+                local spawnPosition = self:CalcDonutPosition()
+                if self:IsValidSpawnPosition(spawnPosition) == false then
+                    continue
+                end
+
+                local spawned = self:SpawnMonsterByRow(selectedRow, spawnPosition, false)
+                if spawned ~= nil and isvalid(spawned) == true then
+                    break
+                end
+            end
+        end
+    end
+
+    -- Stage/time context is read from timer component so wave progression stays server-authoritative.
+    @ExecSpace("ServerOnly")
+    method table ResolveCurrentSpawnContext()
+        local context = {}
+        context.Stage = 1
+        context.ElapsedSec = 0
+
+        local timerComponent = self:ResolveComponentSafe(self.Entity, "SpeedrunTimerComponent", "ElapsedTime")
+        if timerComponent == nil then
+            return context
+        end
+
+        local stageOk, stageValue = pcall(function()
+            return timerComponent.CurrentStageId
+        end)
+        if stageOk == true and stageValue ~= nil then
+            context.Stage = math.max(1, math.floor(stageValue))
+        end
+
+        local elapsedOk, elapsedValue = pcall(function()
+            return timerComponent.ElapsedTime
+        end)
+        if elapsedOk == true and elapsedValue ~= nil then
+            context.ElapsedSec = math.max(0, elapsedValue)
+        end
+
+        return context
+    end
+
+    -- Resolver keeps selection logic in one function so unknown future conditions can be patched quickly.
+    @ExecSpace("ServerOnly")
+    method table ResolveSpawnCandidates(integer stage, number elapsedSec)
+        local result = {}
+        result.NormalRows = {}
+        result.BossRows = {}
+
+        local rows = self._T.MonsterRows
+        if rows == nil then
+            return result
+        end
+
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+
+            local rowStage = self:GetRowInteger(row, "spawn_stage", 1)
+            if rowStage ~= stage then
+                continue
+            end
+
+            local spawnMinute = self:GetSpawnMinuteFromRow(row)
+            if spawnMinute < 0 then
+                continue
+            end
+            if elapsedSec < (spawnMinute * 60) then
+                continue
+            end
+
+            if self:IsBossRow(row) == true then
+                table.insert(result.BossRows, row)
+            else
+                table.insert(result.NormalRows, row)
+            end
+        end
+
+        return result
+    end
+
+    method number GetSpawnMinuteFromRow(UserDataRow row)
+        local spawnMinute = self:GetRowNumber(row, "spawn_time (min)", -1)
+        if spawnMinute < 0 then
+            spawnMinute = self:GetRowNumber(row, "spawn_time_min", -1)
+        end
+        if spawnMinute < 0 then
+            spawnMinute = self:GetRowNumber(row, "spawn_time", -1)
+        end
+
+        return spawnMinute
+    end
+
+    method boolean IsBossRow(UserDataRow row)
+        local monType = string.lower(self:GetRowString(row, "mon_type", ""))
+        return monType == "boss"
+    end
+
+    method UserDataRow SelectLatestRowBySpawnTime(table rows)
+        if rows == nil or #rows <= 0 then
+            return nil
+        end
+
+        local selectedRow = rows[1]
+        local latestMinute = self:GetSpawnMinuteFromRow(selectedRow)
+
+        for _, row in pairs(rows) do
+            local rowMinute = self:GetSpawnMinuteFromRow(row)
+            if rowMinute > latestMinute then
+                latestMinute = rowMinute
+                selectedRow = row
+            end
+        end
+
+        return selectedRow
+    end
+
+    method UserDataRow PickRandomRow(table rows)
+        if rows == nil or #rows <= 0 then
+            return nil
+        end
+
+        local randomIndex = math.random(1, #rows)
+        return rows[randomIndex]
+    end
+
+    -- Donut position keeps spawn out of immediate player view while staying near combat area.
+    @ExecSpace("ServerOnly")
+    method Vector3 CalcDonutPosition()
+        local config = self._T.Config
+        if config == nil then
+            return nil
+        end
+
+        local transform = self.Entity.TransformComponent
+        if transform == nil or isvalid(transform) == false then
+            return nil
+        end
+
+        local playerPosition = transform.WorldPosition
+        if playerPosition == nil then
+            return nil
+        end
+
+        local innerRadius = config.InnerRadius
+        local outerRadius = config.OuterRadius
+        if outerRadius < innerRadius then
+            local temp = innerRadius
+            innerRadius = outerRadius
+            outerRadius = temp
+        end
+
+        local randomAngle = math.random() * 2 * math.pi
+        local randomRadius = innerRadius + (math.random() * (outerRadius - innerRadius))
+
+        local x = playerPosition.x + (randomRadius * math.cos(randomAngle))
+        local y = playerPosition.y + (randomRadius * math.sin(randomAngle))
+        return Vector3(x, y, playerPosition.z)
+    end
+
+    -- Validity check intentionally stays basic per SPEC v1.1 (no NavMesh dependency yet).
+    @ExecSpace("ServerOnly")
+    method boolean IsValidSpawnPosition(Vector3 targetPosition)
+        if targetPosition == nil then
+            return false
+        end
+
+        local config = self._T.Config
+        if config == nil then
+            return false
+        end
+
+        local transform = self.Entity.TransformComponent
+        if transform == nil or isvalid(transform) == false then
+            return false
+        end
+
+        local playerPosition = transform.WorldPosition
+        if playerPosition == nil then
+            return false
+        end
+
+        local dx = targetPosition.x - playerPosition.x
+        local dy = targetPosition.y - playerPosition.y
+        local distanceSqr = (dx * dx) + (dy * dy)
+        local innerSqr = config.InnerRadius * config.InnerRadius
+        local outerSqr = config.OuterRadius * config.OuterRadius
+
+        if distanceSqr < innerSqr then
+            return false
+        end
+        if distanceSqr > outerSqr then
+            return false
+        end
+
+        return true
+    end
+
+    -- Spawn path attaches metadata immediately so future drop/reward systems can read one source.
+    @ExecSpace("ServerOnly")
+    method Entity SpawnMonsterByRow(UserDataRow row, Vector3 spawnPosition, boolean isBoss)
+        if row == nil then
+            return nil
+        end
+        if spawnPosition == nil then
+            return nil
+        end
+        if self.MonsterParentEntity == nil or isvalid(self.MonsterParentEntity) == false then
+            return nil
+        end
+
+        local modelId = self:GetRowString(row, "model_type", "")
+        if modelId == "" then
+            modelId = self:GetFallbackModelType(row)
+        end
+        if modelId == "" then
+            local rowId = self:GetRowString(row, "id", "(unknown)")
+            log_warning("[MonsterSpawnComponent] Skip spawn because model_type is empty. rowId=", rowId)
+            return nil
+        end
+
+        local spawnName = self:GetRowString(row, "id", "Monster")
+        local spawnedEntity = nil
+        local spawnOk, spawnResult = pcall(function()
+            return _SpawnService:SpawnByModelId(modelId, spawnName, spawnPosition, self.MonsterParentEntity)
+        end)
+        if spawnOk == true then
+            spawnedEntity = spawnResult
+        end
+        if spawnedEntity == nil or isvalid(spawnedEntity) == false then
+            return nil
+        end
+
+        if self._T.SpawnedMonsters == nil then
+            self._T.SpawnedMonsters = {}
+        end
+        table.insert(self._T.SpawnedMonsters, spawnedEntity)
+
+        if self._T.SpawnMetaByEntity == nil then
+            self._T.SpawnMetaByEntity = {}
+        end
+        self._T.SpawnMetaByEntity[spawnedEntity] = self:BuildSpawnMetaFromRow(row)
+
+        self:ApplyMonsterVisualIfAvailable(spawnedEntity, row)
+        self:ApplyMonsterStatsIfAvailable(spawnedEntity, row)
+
+        if isBoss == true then
+            self._T.BossSpawnedEntity = spawnedEntity
+        end
+
+        return spawnedEntity
+    end
+
+    -- Metadata builder intentionally stores drop columns only; actual drop execution is future work.
+    method table BuildSpawnMetaFromRow(UserDataRow row)
+        local meta = {}
+        meta.Id = self:GetRowString(row, "id", "")
+        meta.Name = self:GetRowString(row, "name", "")
+        meta.MonType = self:GetRowString(row, "mon_type", "")
+        meta.ModelType = self:GetRowString(row, "model_type", "")
+        meta.MonHP = self:GetRowInteger(row, "mon_hp", 0)
+        meta.MonAtk = self:GetRowInteger(row, "mon_atk", 0)
+        meta.MonSpd = self:GetRowNumber(row, "mon_spd", 0)
+        meta.SpawnStage = self:GetRowInteger(row, "spawn_stage", 1)
+        meta.SpawnTimeMin = self:GetSpawnMinuteFromRow(row)
+        meta.Gold = self:GetRowInteger(row, "gold", 0)
+
+        meta.DropItem1Id = self:GetRowString(row, "drop_item_1_id", "")
+        meta.DropItem1Rate = self:GetRowNumber(row, "drop_item_1_rate", 0)
+        meta.DropItem1Amount = self:GetRowInteger(row, "drop_item_1_amount", 0)
+        meta.DropItem2Id = self:GetRowString(row, "drop_item_2_id", "")
+        meta.DropItem2Rate = self:GetRowNumber(row, "drop_item_2_rate", 0)
+        meta.DropItem2Amount = self:GetRowInteger(row, "drop_item_2_amount", 0)
+
+        meta.SpriteRuid = self:GetRowString(row, "sprite_ruid", "")
+        meta.SoundRuid = self:GetRowString(row, "sound_ruid", "")
+        meta.DeathEffectRuid = self:GetRowString(row, "death_effect_ruid", "")
+        meta.IsBoss = self:IsBossRow(row)
+
+        return meta
+    end
+
+    -- TODO: Replace this adapter with visual profile resolver when sprite/anim policy is finalized.
+    method void ApplyMonsterVisualIfAvailable(Entity targetEntity, UserDataRow row)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+        if row == nil then
+            return
+        end
+
+        local spriteRuid = self:GetRowString(row, "sprite_ruid", "")
+        if spriteRuid == "" then
+            return
+        end
+
+        local spriteRenderer = self:ResolveComponentSafe(targetEntity, "SpriteRendererComponent", "SpriteRUID")
+        if spriteRenderer == nil then
+            return
+        end
+
+        local applyOk, _ = pcall(function()
+            spriteRenderer.SpriteRUID = spriteRuid
+        end)
+        if applyOk == false then
+            local rowId = self:GetRowString(row, "id", "(unknown)")
+            log_warning("[MonsterSpawnComponent] Failed to apply sprite_ruid. rowId=", rowId, ", sprite_ruid=", spriteRuid)
+        end
+    end
+
+    -- TODO: Replace this adapter with dedicated monster stat component integration when spec arrives.
+    method void ApplyMonsterStatsIfAvailable(Entity targetEntity, UserDataRow row)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+        if row == nil then
+            return
+        end
+
+        local monHp = self:GetRowInteger(row, "mon_hp", -1)
+        local monAtk = self:GetRowInteger(row, "mon_atk", -1)
+        local monSpd = self:GetRowNumber(row, "mon_spd", -1)
+
+        if monHp >= 0 then
+            local hpSystem = self:ResolveComponentSafe(targetEntity, "HPSystemComponent", "CurrentHP")
+            if hpSystem ~= nil then
+                pcall(function()
+                    hpSystem.MaxHP = monHp
+                end)
+                pcall(function()
+                    hpSystem.CurrentHP = monHp
+                end)
+            end
+        end
+
+        if monAtk >= 0 then
+            local monsterAttack = self:ResolveComponentSafe(targetEntity, "MonsterAttackComponent", "AttackPower")
+            if monsterAttack ~= nil then
+                pcall(function()
+                    monsterAttack.AttackPower = monAtk
+                end)
+            end
+        end
+
+        if monSpd >= 0 then
+            local movement = self:ResolveComponentSafe(targetEntity, "MovementComponent", "MoveSpeed")
+            if movement ~= nil then
+                pcall(function()
+                    movement.MoveSpeed = monSpd
+                end)
+            end
+        end
+    end
+
+    -- Public read API exposes spawn metadata without coupling callers to internal cache structure.
+    method table GetSpawnMetaByEntity(Entity targetEntity)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+        if self._T.SpawnMetaByEntity == nil then
+            return nil
+        end
+
+        local sourceMeta = self._T.SpawnMetaByEntity[targetEntity]
+        if sourceMeta == nil then
+            return nil
+        end
+
+        return self:CloneTable(sourceMeta)
+    end
+
+    -- Pruning keeps field cap checks accurate even when external systems destroy spawned entities.
+    @ExecSpace("ServerOnly")
+    method void PruneSpawnedMonsters()
+        if self._T.SpawnedMonsters == nil then
+            self._T.SpawnedMonsters = {}
+        end
+
+        local oldMeta = self._T.SpawnMetaByEntity
+        local newList = {}
+        local newMeta = {}
+
+        for _, entity in pairs(self._T.SpawnedMonsters) do
+            if entity ~= nil and isvalid(entity) == true then
+                table.insert(newList, entity)
+                if oldMeta ~= nil and oldMeta[entity] ~= nil then
+                    newMeta[entity] = oldMeta[entity]
+                end
+            end
+        end
+
+        self._T.SpawnedMonsters = newList
+        self._T.SpawnMetaByEntity = newMeta
+    end
+
+    method integer GetSpawnedMonsterCount()
+        if self._T.SpawnedMonsters == nil then
+            return 0
+        end
+        return #self._T.SpawnedMonsters
+    end
+
+    method string GetRowString(UserDataRow row, string columnName, string fallbackValue)
+        if row == nil then
+            return fallbackValue
+        end
+        if columnName == nil or columnName == "" then
+            return fallbackValue
+        end
+
+        local text = nil
+        local readOk, readResult = pcall(function()
+            return row:GetItem(columnName)
+        end)
+        if readOk == true then
+            text = readResult
+        end
+        if text == nil or text == "" then
+            return fallbackValue
+        end
+
+        return tostring(text)
+    end
+
+    method integer GetRowInteger(UserDataRow row, string columnName, integer fallbackValue)
+        local text = self:GetRowString(row, columnName, "")
+        if text == "" then
+            return math.floor(fallbackValue)
+        end
+
+        local parsed = tonumber(text)
+        if parsed == nil then
+            return math.floor(fallbackValue)
+        end
+
+        return math.floor(parsed)
+    end
+
+    method number GetRowNumber(UserDataRow row, string columnName, number fallbackValue)
+        local text = self:GetRowString(row, columnName, "")
+        if text == "" then
+            return fallbackValue
+        end
+
+        local parsed = tonumber(text)
+        if parsed == nil then
+            return fallbackValue
+        end
+
+        return parsed
+    end
+
+    method boolean GetRowBoolean(UserDataRow row, string columnName, boolean fallbackValue)
+        local text = string.lower(self:GetRowString(row, columnName, ""))
+        if text == "" then
+            return fallbackValue
+        end
+        if text == "true" or text == "1" or text == "yes" then
+            return true
+        end
+        if text == "false" or text == "0" or text == "no" then
+            return false
+        end
+        return fallbackValue
+    end
+
+    method table CloneTable(table source)
+        local clone = {}
+        if source == nil then
+            return clone
+        end
+
+        for key, value in pairs(source) do
+            clone[key] = value
+        end
+        return clone
+    end
+
+    method void LogError(string message)
+        local loggedOk, _ = pcall(function()
+            log_error(message)
+        end)
+        if loggedOk == false then
+            log_warning(message)
+        end
+    end
+
+    -- Utility bootstrap first; fallback lookup is retained for resilience in partially configured maps.
+    method void EnsureGRUtil()
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, utilApi = pcall(function()
+                return utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and utilApi ~= nil then
+                self._T.GRUtil = utilApi
+            end
+            if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+end
