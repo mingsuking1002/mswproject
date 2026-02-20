@@ -119,11 +119,11 @@ ResetGold() [server only]:
 
 ## 7. 연동 컴포넌트
 
-| 컴포넌트 | 레이어 | 연동 방식 |
-|---|---|---|
-| `ShopManagerComponent` | `Meta` | `SpendGold()` 호출하여 구매 처리 |
-| `HUDComponent` | `UI` | `CurrentGold` Sync 값을 읽어 HUD에 표시 |
-| `LobbyFlowComponent` | `Bootstrap` | 로비 복귀 시 `ResetGold()` 호출 |
+| 컴포넌트                      | 레이어         | 연동 방식                                              |
+| ------------------------- | ----------- | -------------------------------------------------- |
+| `ShopManagerComponent`    | `Meta`      | `SpendGold()` 호출하여 구매 처리                           |
+| `HUDComponent`            | `UI`        | `CurrentGold` Sync 값을 읽어 HUD에 표시                   |
+| `LobbyFlowComponent`      | `Bootstrap` | 로비 복귀 시 `ResetGold()` 호출                           |
 | `Map01BootstrapComponent` | `Bootstrap` | `AttachRequiredComponentsServer`에 GoldComponent 추가 |
 
 ---

@@ -1,7 +1,7 @@
 {
   "Id": "",
   "GameId": "",
-  "EntryKey": "directory://587f268e95294eb5b5f4640f7c8df78c",
+  "EntryKey": "directory://320d623a235544bcb80d8b6eb1bc8b4b",
   "ContentType": "x-mod/directory",
   "Content": "",
   "Usage": 0,
@@ -13,8 +13,8 @@
   "ContentProto": {
     "Use": "Json",
     "Json": {
-      "entry_id": "directory://587f268e95294eb5b5f4640f7c8df78c",
-      "name": "ProjectGR",
+      "entry_id": "directory://320d623a235544bcb80d8b6eb1bc8b4b",
+      "name": "Data",
       "lock": false,
       "folding": false,
       "nameEditable": true
