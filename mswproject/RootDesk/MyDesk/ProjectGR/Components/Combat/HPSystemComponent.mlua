@@ -12,6 +12,9 @@ script HPSystemComponent extends Component
 
     property number CriticalHPRatio = 0.3
     property integer FallbackDamage = 1
+    property number HitInvincibleDuration = 1.0
+    property boolean EnableInvincibleBlink = true
+    property number InvincibleBlinkInterval = 0.08
 
     -- Server initializes HP state once to prevent first-frame sync mismatch.
     @ExecSpace("ServerOnly")
@@ -20,6 +23,8 @@ script HPSystemComponent extends Component
         self.IsInvincible = false
         self.IsDead = (self.CurrentHP <= 0)
         self._T.IsDeadUIOpened = false
+        self._T.InvincibleClearTimerId = 0
+        self._T.InvincibleUntilSeconds = 0
         self:EnsureGRUtil()
     end
 
@@ -28,6 +33,12 @@ script HPSystemComponent extends Component
     method void OnBeginPlay()
         self:EnsureGRUtil()
         self:BroadcastHPState()
+    end
+
+    -- Client-only blink loop toggles renderer visibility while invincible.
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number delta)
+        self:UpdateInvincibleBlinkClient(delta)
     end
 
     -- Damage intake is server-authoritative and validated per collision source.
@@ -43,7 +54,7 @@ script HPSystemComponent extends Component
         self:ApplyDamage(incomingDamage)
     end
 
-    -- Reads attack power through known combat components with safe fallback damage.
+    -- Reads damage only from explicit combat sources; non-combat triggers (shop/utility zones) are ignored.
     @ExecSpace("ServerOnly")
     method integer ResolveIncomingDamage(Entity sourceEntity)
         if sourceEntity == nil or isvalid(sourceEntity) == false then
@@ -58,6 +69,7 @@ script HPSystemComponent extends Component
             if valueOk == true and value ~= nil then
                 return math.max(math.floor(value), 0)
             end
+            return math.max(self.FallbackDamage, 0)
         end
 
         local monsterAttack = self:ResolveComponentSafe(sourceEntity, "MonsterAttackComponent", "AttackPower")
@@ -68,9 +80,10 @@ script HPSystemComponent extends Component
             if valueOk == true and value ~= nil then
                 return math.max(math.floor(value), 0)
             end
+            return math.max(self.FallbackDamage, 0)
         end
 
-        return math.max(self.FallbackDamage, 0)
+        return 0
     end
 
     -- Damage application uses tag-driven IsInvincible gate, then applies direct raw damage.
@@ -90,6 +103,9 @@ script HPSystemComponent extends Component
         self.CurrentHP = math.max(self.CurrentHP - actualDamage, 0)
 
         self:EvaluateDeath()
+        if self.IsDead ~= true then
+            self:SetInvincibleWindowServer(self.HitInvincibleDuration)
+        end
         self:BroadcastHPState()
     end
 
@@ -106,6 +122,79 @@ script HPSystemComponent extends Component
         self.CurrentHP = math.max(self.CurrentHP - rawDamage, 0)
         self:EvaluateDeath()
         self:BroadcastHPState()
+    end
+
+    -- Shared invincibility window API allows hit i-frame and tag i-frame to stack without premature clear.
+    @ExecSpace("ServerOnly")
+    method void SetInvincibleWindowServer(number duration)
+        if duration == nil then
+            return
+        end
+
+        local clampedDuration = math.max(duration, 0)
+        if clampedDuration <= 0 then
+            return
+        end
+
+        local nowSeconds = self:GetServerTimeSeconds()
+        local requestedUntil = nowSeconds + clampedDuration
+        if self._T.InvincibleUntilSeconds == nil then
+            self._T.InvincibleUntilSeconds = 0
+        end
+        if requestedUntil > self._T.InvincibleUntilSeconds then
+            self._T.InvincibleUntilSeconds = requestedUntil
+        end
+
+        self.IsInvincible = true
+        self:ScheduleInvincibleClearTimerServer()
+    end
+
+    -- Timer is always rescheduled by remaining time, so later requests extend the active invincibility window.
+    @ExecSpace("ServerOnly")
+    method void ScheduleInvincibleClearTimerServer()
+        if self._T.InvincibleClearTimerId ~= nil and self._T.InvincibleClearTimerId > 0 then
+            _TimerService:ClearTimer(self._T.InvincibleClearTimerId)
+            self._T.InvincibleClearTimerId = 0
+        end
+
+        local nowSeconds = self:GetServerTimeSeconds()
+        local invincibleUntil = self._T.InvincibleUntilSeconds
+        if invincibleUntil == nil then
+            invincibleUntil = 0
+        end
+
+        local remaining = invincibleUntil - nowSeconds
+        if remaining <= 0 then
+            self.IsInvincible = false
+            self._T.InvincibleUntilSeconds = 0
+            return
+        end
+
+        local clearInvincible = function()
+            self._T.InvincibleClearTimerId = 0
+            local currentSeconds = self:GetServerTimeSeconds()
+            local untilSeconds = self._T.InvincibleUntilSeconds
+            if untilSeconds ~= nil and currentSeconds < untilSeconds then
+                self:ScheduleInvincibleClearTimerServer()
+                return
+            end
+
+            self.IsInvincible = false
+            self._T.InvincibleUntilSeconds = 0
+        end
+
+        self._T.InvincibleClearTimerId = _TimerService:SetTimerOnce(clearInvincible, remaining)
+    end
+
+    -- Central clear path prevents stale invincibility state on revive/death/endplay cleanup.
+    @ExecSpace("ServerOnly")
+    method void ClearInvincibleWindowServer()
+        if self._T.InvincibleClearTimerId ~= nil and self._T.InvincibleClearTimerId > 0 then
+            _TimerService:ClearTimer(self._T.InvincibleClearTimerId)
+            self._T.InvincibleClearTimerId = 0
+        end
+        self._T.InvincibleUntilSeconds = 0
+        self.IsInvincible = false
     end
 
     -- Healing is clamped on server to enforce max HP boundary.
@@ -126,7 +215,7 @@ script HPSystemComponent extends Component
     @ExecSpace("ServerOnly")
     method void ReviveToFullHP()
         self.CurrentHP = math.max(self.MaxHP, 1)
-        self.IsInvincible = false
+        self:ClearInvincibleWindowServer()
         self.IsDead = false
         self._T.IsDeadUIOpened = false
         self:BroadcastHPState()
@@ -143,7 +232,7 @@ script HPSystemComponent extends Component
         end
 
         self.IsDead = true
-        self.IsInvincible = false
+        self:ClearInvincibleWindowServer()
 
         self:SetCanMoveSafely(false)
         self:NotifyGameOver()
@@ -248,9 +337,103 @@ script HPSystemComponent extends Component
         log("[HPSystemComponent] Game Over UI trigger requested.")
     end
 
-    -- End play currently has no HP-side timer to clear.
+    -- Invincibility blink is visual-only; server authority remains unchanged.
+    @ExecSpace("ClientOnly")
+    method void UpdateInvincibleBlinkClient(number delta)
+        if self.EnableInvincibleBlink ~= true then
+            self:ResetInvincibleBlinkClient()
+            return
+        end
+        if self.IsDead == true then
+            self:ResetInvincibleBlinkClient()
+            return
+        end
+        if self.IsInvincible ~= true then
+            self:ResetInvincibleBlinkClient()
+            return
+        end
+
+        if self._T.BlinkElapsed == nil then
+            self._T.BlinkElapsed = 0
+        end
+        if self._T.BlinkVisible == nil then
+            self._T.BlinkVisible = true
+        end
+
+        local interval = self.InvincibleBlinkInterval
+        if interval <= 0 then
+            interval = 0.08
+        end
+
+        self._T.BlinkElapsed = self._T.BlinkElapsed + delta
+        if self._T.BlinkElapsed < interval then
+            return
+        end
+        self._T.BlinkElapsed = 0
+        self._T.BlinkVisible = not self._T.BlinkVisible
+        self:ApplyBlinkVisibilityClient(self._T.BlinkVisible)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ResetInvincibleBlinkClient()
+        self._T.BlinkElapsed = 0
+        self._T.BlinkVisible = true
+        self:ApplyBlinkVisibilityClient(true)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ApplyBlinkVisibilityClient(boolean visible)
+        if self._T.BlinkAppliedVisible ~= nil and self._T.BlinkAppliedVisible == visible then
+            return
+        end
+
+        local spriteRenderer = self:ResolveComponentSafe(self.Entity, "SpriteRendererComponent", "SpriteRUID")
+        if spriteRenderer ~= nil then
+            pcall(function()
+                spriteRenderer.Enable = visible
+            end)
+        end
+
+        local avatarRenderer = nil
+        local avatarOk, avatarValue = pcall(function()
+            return self.Entity.AvatarRendererComponent
+        end)
+        if avatarOk == true then
+            avatarRenderer = avatarValue
+        end
+        if avatarRenderer ~= nil and isvalid(avatarRenderer) == true then
+            pcall(function()
+                avatarRenderer.Enable = visible
+            end)
+        end
+
+        self._T.BlinkAppliedVisible = visible
+    end
+
+    -- End play clears active invincibility timer to prevent stale callbacks.
     @ExecSpace("ServerOnly")
     method void OnEndPlay()
+        self:ClearInvincibleWindowServer()
+    end
+
+    -- Client cleanup restores renderer visibility in case entity is destroyed during blink-off frame.
+    @ExecSpace("ClientOnly")
+    method void OnDestroy()
+        self:ApplyBlinkVisibilityClient(true)
+    end
+
+    method number GetServerTimeSeconds()
+        local nowSeconds = 0
+        local nowOk, nowValue = pcall(function()
+            return _UtilLogic.ServerElapsedSeconds
+        end)
+        if nowOk == true and nowValue ~= nil then
+            local parsed = tonumber(nowValue)
+            if parsed ~= nil then
+                nowSeconds = parsed
+            end
+        end
+        return nowSeconds
     end
 
     -- Utility bootstrap first; fallback flag enables local direct path when global util is unavailable.

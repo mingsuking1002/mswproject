@@ -11,23 +11,63 @@ script MovementComponent extends Component
     property number MoveSpeed = 0
     property string IdleStateName = "IDLE"
     property string MoveStateName = "MOVE"
-    property boolean AutoRegisterStates = true
+    property string DeadStateName = "DEAD"
+    property boolean AutoRegisterStates = false
     property boolean DisableNativeJumpAction = true
     property boolean UsePhysicsMovement = true
+    property boolean EnableClientAnimationRefresh = true
+    property number ClientAnimationRefreshInterval = 0.05
 
     -- Server initializes authoritative input cache so movement always has a deterministic source.
     @ExecSpace("ServerOnly")
     method void OnInitialize()
+        -- Force-disable legacy AddState auto-registration to prevent LWA-3008 spam on built-in states.
+        self.AutoRegisterStates = false
         self._T.ServerInputDirection = Vector2.zero
+        self._T.AutoRegisterAttemptedByState = {}
+        self._T.LastAnimationSamplePos = nil
         self:EnsureGRUtil()
-        self:EnsureAnimationStatesRegistered()
+        -- Skip eager AddState on initialize to avoid AlreadyExist warnings on models that already define states.
     end
 
     -- Client bootstraps GR utility first to keep ownership checks and component lookup behavior consistent.
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
+        -- Client also force-disables auto registration in case inspector still has old true value.
+        self.AutoRegisterStates = false
+        self._T.DeadLastLocked = false
         self:EnsureGRUtil()
         self:DisableNativeJumpActionClient()
+        self:StartClientAnimationRefreshTimer()
+    end
+
+    -- Client refresh timer repeatedly applies local IDLE/MOVE/DEAD so native state writer cannot keep overriding.
+    @ExecSpace("ClientOnly")
+    method void StartClientAnimationRefreshTimer()
+        if self.EnableClientAnimationRefresh ~= true then
+            return
+        end
+        if self._T.ClientAnimationRefreshTimerId ~= nil and self._T.ClientAnimationRefreshTimerId > 0 then
+            return
+        end
+
+        local interval = self.ClientAnimationRefreshInterval
+        if interval <= 0 then
+            interval = 0.05
+        end
+
+        local tick = function()
+            self:RefreshStateAnimationClientFromInput()
+        end
+        self._T.ClientAnimationRefreshTimerId = _TimerService:SetTimerRepeat(tick, interval, 0)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void StopClientAnimationRefreshTimer()
+        if self._T.ClientAnimationRefreshTimerId ~= nil and self._T.ClientAnimationRefreshTimerId > 0 then
+            _TimerService:ClearTimer(self._T.ClientAnimationRefreshTimerId)
+            self._T.ClientAnimationRefreshTimerId = 0
+        end
     end
 
     -- Custom top-down movement does not use native jump, so Space key mapping is removed to prevent jump sfx spam.
@@ -66,6 +106,7 @@ script MovementComponent extends Component
         end
 
         self:SubmitMoveInput(self:GetMoveInputClient())
+        self:RefreshStateAnimationClientFromInput()
     end
 
     -- Key release is processed through the same path to keep stuck-key state from persisting.
@@ -81,6 +122,97 @@ script MovementComponent extends Component
         end
 
         self:SubmitMoveInput(self:GetMoveInputClient())
+        self:RefreshStateAnimationClientFromInput()
+    end
+
+    -- Dead animation end event swaps to dead_last_ruid (or freezes last frame) so death pose stays fixed.
+    @EventSender("Self")
+    handler HandleSpriteAnimPlayerEndFrameEvent(SpriteAnimPlayerEndFrameEvent event)
+        local hpComponent = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "IsDead")
+        if hpComponent == nil then
+            return
+        end
+
+        local deadOk, isDead = pcall(function()
+            return hpComponent.IsDead
+        end)
+        if deadOk ~= true or isDead ~= true then
+            return
+        end
+        if self._T.DeadLastLocked == true then
+            return
+        end
+
+        local spriteRenderer = self:ResolveComponentSafe(self.Entity, "SpriteRendererComponent", "SpriteRUID")
+        if spriteRenderer == nil then
+            return
+        end
+
+        local characterData = self:ResolveComponentSafe(self.Entity, "CharacterDataInitComponent", "CurrentCharacterId")
+        if characterData == nil then
+            self:FreezeDeadSpriteAtLastFrameClient(event)
+            return
+        end
+
+        local deadLastRuid = ""
+        local readOk, readValue = pcall(function()
+            return characterData.CurrentDeadLastRuid
+        end)
+        if readOk == true and readValue ~= nil then
+            deadLastRuid = tostring(readValue)
+        end
+        if deadLastRuid == nil or deadLastRuid == "" then
+            self:FreezeDeadSpriteAtLastFrameClient(event)
+            return
+        end
+
+        pcall(function()
+            spriteRenderer.SpriteRUID = deadLastRuid
+            spriteRenderer.PlayRate = 1
+            spriteRenderer.StartFrameIndex = 0
+            spriteRenderer.EndFrameIndex = 2147483647
+        end)
+        self._T.DeadLastLocked = true
+    end
+
+    @ExecSpace("ClientOnly")
+    method void FreezeDeadSpriteAtLastFrameClient(SpriteAnimPlayerEndFrameEvent event)
+        local spriteRenderer = self:ResolveComponentSafe(self.Entity, "SpriteRendererComponent", "SpriteRUID")
+        if spriteRenderer == nil then
+            return
+        end
+
+        local frameIndex = -1
+        if event ~= nil then
+            local frameOk, frameValue = pcall(function()
+                return event.FrameIndex
+            end)
+            if frameOk == true and frameValue ~= nil then
+                frameIndex = math.max(0, math.floor(frameValue))
+            end
+        end
+
+        pcall(function()
+            spriteRenderer.PlayRate = 0
+        end)
+        if frameIndex >= 0 then
+            pcall(function()
+                spriteRenderer.StartFrameIndex = frameIndex
+                spriteRenderer.EndFrameIndex = frameIndex
+            end)
+        end
+        self._T.DeadLastLocked = true
+    end
+
+    -- Client drives immediate local animation state for responsiveness when server state sync is delayed.
+    @ExecSpace("ClientOnly")
+    method void RefreshStateAnimationClientFromInput()
+        local direction = self:GetMoveInputClient()
+        local sampledDirection = self:CaptureMoveDirectionFromTransformDelta()
+        if sampledDirection ~= nil and sampledDirection:SqrMagnitude() > 0 then
+            direction = sampledDirection
+        end
+        self:UpdateStateAnimationLocalClient(direction)
     end
 
     -- Server is the only place that applies final movement so modified clients cannot move directly.
@@ -97,6 +229,12 @@ script MovementComponent extends Component
         end
 
         self:ApplyMovementServer(moveDirection, finalSpeed, delta)
+        local sampledDirection = self:CaptureMoveDirectionFromTransformDelta()
+        if sampledDirection ~= nil and sampledDirection:SqrMagnitude() > 0 then
+            self:UpdateStateAnimation(sampledDirection)
+            return
+        end
+
         self:UpdateStateAnimation(moveDirection)
     end
 
@@ -111,6 +249,18 @@ script MovementComponent extends Component
             return true
         end
         if key == KeyboardKey.D then
+            return true
+        end
+        if key == KeyboardKey.UpArrow then
+            return true
+        end
+        if key == KeyboardKey.LeftArrow then
+            return true
+        end
+        if key == KeyboardKey.DownArrow then
+            return true
+        end
+        if key == KeyboardKey.RightArrow then
             return true
         end
 
@@ -168,6 +318,19 @@ script MovementComponent extends Component
         local downPressed = _InputService:IsKeyPressed(KeyboardKey.S)
         local leftPressed = _InputService:IsKeyPressed(KeyboardKey.A)
         local rightPressed = _InputService:IsKeyPressed(KeyboardKey.D)
+
+        if upPressed ~= true then
+            upPressed = _InputService:IsKeyPressed(KeyboardKey.UpArrow)
+        end
+        if downPressed ~= true then
+            downPressed = _InputService:IsKeyPressed(KeyboardKey.DownArrow)
+        end
+        if leftPressed ~= true then
+            leftPressed = _InputService:IsKeyPressed(KeyboardKey.LeftArrow)
+        end
+        if rightPressed ~= true then
+            rightPressed = _InputService:IsKeyPressed(KeyboardKey.RightArrow)
+        end
 
         if upPressed == true and downPressed == false then
             y = 1
@@ -228,6 +391,27 @@ script MovementComponent extends Component
             return
         end
 
+        -- Death state is always prioritized so dead animation is not overridden by movement input.
+        local hpComponent = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "IsDead")
+        if hpComponent ~= nil then
+            local isDead = false
+            local deadOk, deadValue = pcall(function()
+                return hpComponent.IsDead
+            end)
+            if deadOk == true and deadValue == true then
+                isDead = true
+            end
+
+            if isDead == true then
+                local deadState = self.DeadStateName
+                if deadState == nil or deadState == "" then
+                    deadState = "DEAD"
+                end
+                self:TryChangeStateSafely(stateComponent, deadState)
+                return
+            end
+        end
+
         local targetState = self.IdleStateName
         if moveDirection ~= nil and moveDirection:SqrMagnitude() > 0 then
             targetState = self.MoveStateName
@@ -236,25 +420,51 @@ script MovementComponent extends Component
         self:TryChangeStateSafely(stateComponent, targetState)
     end
 
-    -- State registration is best-effort because 일부 player model은 상태 키가 비어 있어 ChangeState 호출 시 엔진 오류가 발생한다.
-    @ExecSpace("ServerOnly")
-    method void EnsureAnimationStatesRegistered()
+    -- Client-side state refresh keeps Avatar animation visible even if server-driven state replication lags.
+    @ExecSpace("ClientOnly")
+    method void UpdateStateAnimationLocalClient(Vector2 moveDirection)
         local stateComponent = self:ResolveComponentSafe(self.Entity, "StateComponent", "CurrentStateName")
         if stateComponent == nil then
             return
         end
 
-        self:TryAddStateSafely(stateComponent, self.IdleStateName)
-        self:TryAddStateSafely(stateComponent, self.MoveStateName)
+        local hpComponent = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "IsDead")
+        if hpComponent ~= nil then
+            local deadOk, deadValue = pcall(function()
+                return hpComponent.IsDead
+            end)
+            if deadOk == true and deadValue == true then
+                local deadState = self.DeadStateName
+                if deadState == nil or deadState == "" then
+                    deadState = "DEAD"
+                end
+                self:TryChangeStateSafely(stateComponent, deadState, false)
+                self:ApplyStateSpriteRuidClient(deadState)
+                return
+            end
+        end
+
+        local targetState = self.IdleStateName
+        if targetState == nil or targetState == "" then
+            targetState = "IDLE"
+        end
+        if moveDirection ~= nil and moveDirection:SqrMagnitude() > 0 then
+            targetState = self.MoveStateName
+            if targetState == nil or targetState == "" then
+                targetState = "MOVE"
+            end
+        end
+
+        self:TryChangeStateSafely(stateComponent, targetState, false)
+        self:ApplyStateSpriteRuidClient(targetState)
     end
 
-    -- ChangeState는 등록되지 않은 상태명에서 예외를 던질 수 있으므로 pcall + 등록 재시도로 보호한다.
-    method boolean TryChangeStateSafely(Component stateComponent, string stateName)
+    -- Re-applies current state once so updated ActionSheet mapping (e.g. tag swap) is reflected immediately.
+    @ExecSpace("ServerOnly")
+    method void ForceReapplyCurrentStateServer()
+        local stateComponent = self:ResolveComponentSafe(self.Entity, "StateComponent", "CurrentStateName")
         if stateComponent == nil then
-            return false
-        end
-        if stateName == nil or stateName == "" then
-            return false
+            return
         end
 
         local currentState = ""
@@ -264,7 +474,223 @@ script MovementComponent extends Component
         if readOk == true and readValue ~= nil then
             currentState = tostring(readValue)
         end
-        if currentState == stateName then
+
+        if currentState == nil or currentState == "" then
+            currentState = self.IdleStateName
+            if currentState == nil or currentState == "" then
+                currentState = "IDLE"
+            end
+        end
+
+        local toggleState = self:GetToggleStateForReapply(currentState)
+        if toggleState ~= "" then
+            local changed = self:TryChangeStateSafely(stateComponent, toggleState, false)
+            if changed == true then
+                self:TryChangeStateSafely(stateComponent, currentState, false)
+                return
+            end
+        end
+
+        -- Fallback without AddState: direct state set only.
+        self:TryChangeStateSafely(stateComponent, currentState, false)
+    end
+
+    -- Client-side force reapply mirrors server refresh so ActionSheet swaps are visible immediately.
+    @ExecSpace("ClientOnly")
+    method void ForceReapplyCurrentStateClient()
+        local stateComponent = self:ResolveComponentSafe(self.Entity, "StateComponent", "CurrentStateName")
+        if stateComponent == nil then
+            return
+        end
+
+        local currentState = ""
+        local readOk, readValue = pcall(function()
+            return stateComponent.CurrentStateName
+        end)
+        if readOk == true and readValue ~= nil then
+            currentState = tostring(readValue)
+        end
+        if currentState == nil or currentState == "" then
+            currentState = self.IdleStateName
+            if currentState == nil or currentState == "" then
+                currentState = "IDLE"
+            end
+        end
+
+        local toggleState = self:GetToggleStateForReapply(currentState)
+        if toggleState ~= "" then
+            self:TryChangeStateSafely(stateComponent, toggleState, false)
+        end
+        self:TryChangeStateSafely(stateComponent, currentState, false)
+        self:ApplyStateSpriteRuidClient(currentState)
+    end
+
+    -- Fallback path for custom player models that use SpriteRenderer without AvatarRenderer.
+    @ExecSpace("ClientOnly")
+    method void ApplyStateSpriteRuidClient(string stateName)
+        if stateName == nil or stateName == "" then
+            return
+        end
+
+        local characterData = self:ResolveComponentSafe(self.Entity, "CharacterDataInitComponent", "CurrentCharacterId")
+        if characterData == nil then
+            return
+        end
+
+        local idleState = self.IdleStateName
+        if idleState == nil or idleState == "" then
+            idleState = "IDLE"
+        end
+        local moveState = self.MoveStateName
+        if moveState == nil or moveState == "" then
+            moveState = "MOVE"
+        end
+        local deadState = self.DeadStateName
+        if deadState == nil or deadState == "" then
+            deadState = "DEAD"
+        end
+
+        if stateName ~= deadState and self._T.DeadLastLocked == true then
+            self._T.DeadLastLocked = false
+            local resetSprite = self:ResolveComponentSafe(self.Entity, "SpriteRendererComponent", "SpriteRUID")
+            if resetSprite ~= nil then
+                pcall(function()
+                    resetSprite.PlayRate = 1
+                    resetSprite.StartFrameIndex = 0
+                    resetSprite.EndFrameIndex = 2147483647
+                end)
+            end
+        end
+
+        local targetRuid = ""
+        if stateName == moveState then
+            local moveOk, moveRuid = pcall(function()
+                return characterData.CurrentWalkRuid
+            end)
+            if moveOk == true and moveRuid ~= nil then
+                targetRuid = tostring(moveRuid)
+            end
+        elseif stateName == deadState then
+            if self._T.DeadLastLocked == true then
+                local deadLastOk, deadLastRuid = pcall(function()
+                    return characterData.CurrentDeadLastRuid
+                end)
+                if deadLastOk == true and deadLastRuid ~= nil then
+                    targetRuid = tostring(deadLastRuid)
+                end
+            end
+
+            if targetRuid == nil or targetRuid == "" then
+                local deadOk, deadRuid = pcall(function()
+                    return characterData.CurrentDeadRuid
+                end)
+                if deadOk == true and deadRuid ~= nil then
+                    targetRuid = tostring(deadRuid)
+                end
+            end
+        else
+            local idleOk, idleRuid = pcall(function()
+                return characterData.CurrentIdleRuid
+            end)
+            if idleOk == true and idleRuid ~= nil then
+                targetRuid = tostring(idleRuid)
+            end
+        end
+
+        if targetRuid == nil or targetRuid == "" then
+            return
+        end
+
+        local spriteRenderer = self:ResolveComponentSafe(self.Entity, "SpriteRendererComponent", "SpriteRUID")
+        if spriteRenderer == nil then
+            return
+        end
+
+        local currentRuid = ""
+        local readOk, readValue = pcall(function()
+            return spriteRenderer.SpriteRUID
+        end)
+        if readOk == true and readValue ~= nil then
+            currentRuid = tostring(readValue)
+        end
+        if currentRuid == targetRuid then
+            return
+        end
+
+        pcall(function()
+            spriteRenderer.SpriteRUID = targetRuid
+        end)
+    end
+
+    -- For immediate visual refresh we temporarily switch between known built-in states only.
+    method string GetToggleStateForReapply(string currentState)
+        if currentState == nil or currentState == "" then
+            return ""
+        end
+
+        local idleState = self.IdleStateName
+        if idleState == nil or idleState == "" then
+            idleState = "IDLE"
+        end
+        local moveState = self.MoveStateName
+        if moveState == nil or moveState == "" then
+            moveState = "MOVE"
+        end
+
+        if currentState == idleState then
+            return moveState
+        end
+        if currentState == moveState then
+            return idleState
+        end
+
+        return ""
+    end
+
+    -- State registration is best-effort because 일부 player model은 상태 키가 비어 있어 ChangeState 호출 시 엔진 오류가 발생한다.
+    @ExecSpace("ServerOnly")
+    method void EnsureAnimationStatesRegistered()
+        if self.AutoRegisterStates ~= true then
+            return
+        end
+
+        local stateComponent = self:ResolveComponentSafe(self.Entity, "StateComponent", "CurrentStateName")
+        if stateComponent == nil then
+            return
+        end
+
+        if self:IsBuiltinAnimationState(self.IdleStateName) ~= true then
+            self:TryAddStateSafely(stateComponent, self.IdleStateName)
+        end
+        if self:IsBuiltinAnimationState(self.MoveStateName) ~= true then
+            self:TryAddStateSafely(stateComponent, self.MoveStateName)
+        end
+        if self:IsBuiltinAnimationState(self.DeadStateName) ~= true then
+            self:TryAddStateSafely(stateComponent, self.DeadStateName)
+        end
+    end
+
+    -- ChangeState는 등록되지 않은 상태명에서 예외를 던질 수 있으므로 pcall + 등록 재시도로 보호한다.
+    method boolean TryChangeStateSafely(Component stateComponent, string stateName, boolean forceChange)
+        if stateComponent == nil then
+            return false
+        end
+        if stateName == nil or stateName == "" then
+            return false
+        end
+
+        if forceChange ~= true then
+            forceChange = false
+        end
+
+        local currentState = ""
+        local readOk, readValue = pcall(function()
+            return stateComponent.CurrentStateName
+        end)
+        if readOk == true and readValue ~= nil then
+            currentState = tostring(readValue)
+        end
+        if forceChange ~= true and currentState == stateName then
             return true
         end
 
@@ -280,6 +706,17 @@ script MovementComponent extends Component
         end
 
         if self.AutoRegisterStates == true then
+            if self:IsBuiltinAnimationState(stateName) == true then
+                return false
+            end
+            if self._T.AutoRegisterAttemptedByState == nil then
+                self._T.AutoRegisterAttemptedByState = {}
+            end
+            if self._T.AutoRegisterAttemptedByState[stateName] == true then
+                return false
+            end
+
+            self._T.AutoRegisterAttemptedByState[stateName] = true
             self:TryAddStateSafely(stateComponent, stateName)
             local retryOk, retryResult = pcall(function()
                 return stateComponent:ChangeState(stateName)
@@ -292,12 +729,92 @@ script MovementComponent extends Component
         return false
     end
 
+    -- Built-in states are already present on player StateComponent, so AddState should never run for them.
+    method boolean IsBuiltinAnimationState(string stateName)
+        if stateName == nil or stateName == "" then
+            return false
+        end
+
+        local idleState = self.IdleStateName
+        if idleState == nil or idleState == "" then
+            idleState = "IDLE"
+        end
+        local moveState = self.MoveStateName
+        if moveState == nil or moveState == "" then
+            moveState = "MOVE"
+        end
+        local deadState = self.DeadStateName
+        if deadState == nil or deadState == "" then
+            deadState = "DEAD"
+        end
+
+        if stateName == idleState then
+            return true
+        end
+        if stateName == moveState then
+            return true
+        end
+        if stateName == deadState then
+            return true
+        end
+
+        return false
+    end
+
+    -- Uses actual position delta as animation fallback so native/other movement paths still drive IDLE/MOVE changes.
+    method Vector2 CaptureMoveDirectionFromTransformDelta()
+        if self.Entity == nil or isvalid(self.Entity) == false then
+            return Vector2.zero
+        end
+
+        local transform = self.Entity.TransformComponent
+        if transform == nil or isvalid(transform) == false then
+            return Vector2.zero
+        end
+
+        local currentPos = nil
+        local readOk, readValue = pcall(function()
+            return transform.WorldPosition
+        end)
+        if readOk ~= true or readValue == nil then
+            local readLocalOk, readLocalValue = pcall(function()
+                return transform.Position
+            end)
+            if readLocalOk == true then
+                currentPos = readLocalValue
+            end
+        else
+            currentPos = readValue
+        end
+        if currentPos == nil then
+            return Vector2.zero
+        end
+
+        local lastPos = self._T.LastAnimationSamplePos
+        self._T.LastAnimationSamplePos = Vector2(currentPos.x, currentPos.y)
+        if lastPos == nil then
+            return Vector2.zero
+        end
+
+        local deltaX = currentPos.x - lastPos.x
+        local deltaY = currentPos.y - lastPos.y
+        local direction = Vector2(deltaX, deltaY)
+        if direction:SqrMagnitude() <= 0.000001 then
+            return Vector2.zero
+        end
+
+        return self:ClampInputDirection(direction)
+    end
+
     -- AddState overload 차이로 인한 예외를 막기 위해 호출 자체를 안전 래핑한다.
     method boolean TryAddStateSafely(Component stateComponent, string stateName)
         if stateComponent == nil then
             return false
         end
         if stateName == nil or stateName == "" then
+            return false
+        end
+        if self:IsBuiltinAnimationState(stateName) == true then
             return false
         end
 
@@ -319,6 +836,12 @@ script MovementComponent extends Component
                 rigidbody.MoveVelocity = Vector2.zero
             end
         end
+    end
+
+    -- Client cleanup clears local animation timer.
+    @ExecSpace("ClientOnly")
+    method void OnDestroy()
+        self:StopClientAnimationRefreshTimer()
     end
 
     -- Tries to boot GR utility component first; if unavailable, downstream methods use direct safe fallback.

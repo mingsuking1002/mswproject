@@ -8,6 +8,14 @@ script CharacterDataInitComponent extends Component
     property string CharacterAId = "player_a"
     property string CharacterBId = "player_b"
     property boolean EnableDebugLogs = true
+    @Sync
+    property string CurrentIdleRuid = ""
+    @Sync
+    property string CurrentWalkRuid = ""
+    @Sync
+    property string CurrentDeadRuid = ""
+    @Sync
+    property string CurrentDeadLastRuid = ""
 
     -- Server initializes table cache and utility bootstrap before character data injection.
     @ExecSpace("ServerOnly")
@@ -15,6 +23,7 @@ script CharacterDataInitComponent extends Component
         self:EnsureGRUtil()
         self._T.CharDataById = {}
         self._T.CharacterRowsLoaded = false
+        self._T.InitialCharacterApplyDone = false
     end
 
     -- BeginPlay loads A/B rows and applies default character baseline once.
@@ -112,9 +121,21 @@ script CharacterDataInitComponent extends Component
             moveSpeed = 0
         end
 
+        local applyAsInitial = (isInitialApply == true and self._T.InitialCharacterApplyDone ~= true)
         local hpSystem = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "CurrentHP")
         if hpSystem ~= nil then
             local currentHp = hpValue
+            if applyAsInitial ~= true then
+                local hpOk, hpValueRuntime = pcall(function()
+                    return hpSystem.CurrentHP
+                end)
+                if hpOk == true and hpValueRuntime ~= nil then
+                    local parsedHp = tonumber(hpValueRuntime)
+                    if parsedHp ~= nil then
+                        currentHp = math.max(0, math.floor(parsedHp))
+                    end
+                end
+            end
 
             pcall(function()
                 hpSystem.MaxHP = hpValue
@@ -138,6 +159,8 @@ script CharacterDataInitComponent extends Component
                 movement.MoveSpeed = moveSpeed
             end)
         end
+
+        self:ApplyAvatarActionSheetsFromRowServer(row)
 
         local fire = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "BaseWeaponAttack")
         if fire ~= nil then
@@ -179,7 +202,142 @@ script CharacterDataInitComponent extends Component
         end
 
         self.CurrentCharacterId = charId
+        self._T.InitialCharacterApplyDone = true
         return true
+    end
+
+    -- PlayerbleData idle/walk/dead RUIDs are mapped to animation state keys at character apply time.
+    @ExecSpace("ServerOnly")
+    method void ApplyAvatarActionSheetsFromRowServer(table row)
+        if row == nil then
+            return
+        end
+
+        local avatarAnimation = self:ResolveComponentSafe(self.Entity, "AvatarStateAnimationComponent", "SetActionSheet")
+        if avatarAnimation == nil or avatarAnimation.SetActionSheet == nil then
+            if self.EnableDebugLogs == true then
+                log_warning("[CharacterDataInit] AvatarStateAnimationComponent missing. skip action sheet apply.")
+            end
+            return
+        end
+
+        local stateKeys = self:ResolveAnimationStateKeysServer()
+        local idleRuid = self:GetRowString(row, "idle_ruid", "")
+        local walkRuid = self:GetRowString(row, "walk_ruid", "")
+        local deadRuid = self:GetRowString(row, "dead_ruid", "")
+        local deadLastRuid = self:GetRowString(row, "dead_last_ruid", "")
+        if deadLastRuid == nil or deadLastRuid == "" then
+            deadLastRuid = deadRuid
+        end
+
+        self.CurrentIdleRuid = idleRuid
+        self.CurrentWalkRuid = walkRuid
+        self.CurrentDeadRuid = deadRuid
+        self.CurrentDeadLastRuid = deadLastRuid
+
+        self:ApplyActionSheetByStateServer(avatarAnimation, stateKeys.Idle, idleRuid, "idle_ruid")
+        self:ApplyActionSheetByStateServer(avatarAnimation, stateKeys.Move, walkRuid, "walk_ruid")
+        self:ApplyActionSheetByStateServer(avatarAnimation, stateKeys.Dead, deadRuid, "dead_ruid")
+
+        -- If state key stays the same across tag swap (e.g. IDLE->IDLE), force one reapply so new RUID is shown immediately.
+        self:ForceRefreshCurrentAnimationStateServer()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ForceRefreshCurrentAnimationStateServer()
+        local movement = self:ResolveComponentSafe(self.Entity, "MovementComponent", "MoveSpeed")
+        if movement == nil then
+            return
+        end
+        if movement.ForceReapplyCurrentStateServer == nil then
+            return
+        end
+
+        pcall(function()
+            movement:ForceReapplyCurrentStateServer()
+        end)
+
+        if movement.ForceReapplyCurrentStateClient ~= nil then
+            pcall(function()
+                movement:ForceReapplyCurrentStateClient()
+            end)
+        end
+    end
+
+    -- State keys are resolved from MovementComponent so animation mapping follows runtime state naming.
+    @ExecSpace("ServerOnly")
+    method table ResolveAnimationStateKeysServer()
+        local keys = {}
+        keys.Idle = "IDLE"
+        keys.Move = "MOVE"
+        keys.Dead = "DEAD"
+
+        local movement = self:ResolveComponentSafe(self.Entity, "MovementComponent", "MoveSpeed")
+        if movement == nil then
+            return keys
+        end
+
+        local idleKey = nil
+        local idleOk, idleValue = pcall(function()
+            return movement.IdleStateName
+        end)
+        if idleOk == true and idleValue ~= nil and tostring(idleValue) ~= "" then
+            idleKey = tostring(idleValue)
+        end
+        if idleKey ~= nil then
+            keys.Idle = idleKey
+        end
+
+        local moveKey = nil
+        local moveOk, moveValue = pcall(function()
+            return movement.MoveStateName
+        end)
+        if moveOk == true and moveValue ~= nil and tostring(moveValue) ~= "" then
+            moveKey = tostring(moveValue)
+        end
+        if moveKey ~= nil then
+            keys.Move = moveKey
+        end
+
+        local deadKey = nil
+        local deadOk, deadValue = pcall(function()
+            return movement.DeadStateName
+        end)
+        if deadOk == true and deadValue ~= nil and tostring(deadValue) ~= "" then
+            deadKey = tostring(deadValue)
+        end
+        if deadKey ~= nil then
+            keys.Dead = deadKey
+        end
+
+        return keys
+    end
+
+    -- Missing RUID values are skipped per-state so one bad column does not block the rest of animation mapping.
+    @ExecSpace("ServerOnly")
+    method void ApplyActionSheetByStateServer(Component avatarAnimation, string stateKey, string ruid, string columnName)
+        if avatarAnimation == nil then
+            return
+        end
+        if stateKey == nil or stateKey == "" then
+            return
+        end
+        if ruid == nil or ruid == "" then
+            if self.EnableDebugLogs == true then
+                log_warning("[CharacterDataInit] " .. tostring(columnName) .. " empty. skip state key=" .. tostring(stateKey))
+            end
+            return
+        end
+
+        local applyOk, _ = pcall(function()
+            avatarAnimation:SetActionSheet(stateKey, ruid)
+        end)
+        if applyOk == true and self.EnableDebugLogs == true then
+            log("[CharacterDataInit] ActionSheet mapped. state=", tostring(stateKey), ", ruid=", tostring(ruid))
+        end
+        if applyOk ~= true and self.EnableDebugLogs == true then
+            log_warning("[CharacterDataInit] SetActionSheet failed. stateKey=" .. tostring(stateKey) .. ", ruid=" .. tostring(ruid))
+        end
     end
 
     method table LoadTableServer(string tableName)

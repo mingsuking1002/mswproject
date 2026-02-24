@@ -44,7 +44,7 @@
 | `SubmitMoveInput` | `moveDirection: Vector2` | void | 서버 권위 입력 반영(소유자 검증 포함) |
 | `OnUpdate` | `delta: number` | void | 서버 이동/방향/상태 업데이트 |
 | `ApplyMovementServer` | `moveDirection: Vector2, speed: number, delta: number` | void | Rigidbody 우선 이동 적용 |
-| `UpdateStateAnimation` | `moveDirection: Vector2` | void | MOVE/IDLE 상태 동기화 |
+| `UpdateStateAnimation` | `moveDirection: Vector2` | void | `IsDead` 우선으로 `DEAD` 유지, 생존 시 MOVE/IDLE 상태 동기화 |
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## CameraFollowComponent
@@ -103,6 +103,9 @@
 | `IsDead` | boolean | 사망 상태 (Sync) |
 | `CriticalHPRatio` | number | 위험 체력 비율 임계값 |
 | `FallbackDamage` | integer | 외부 공격 정보 미탐지 시 기본 피해 |
+| `HitInvincibleDuration` | number | 피격 후 무적 시간(초, 기본 1.0) |
+| `EnableInvincibleBlink` | boolean | 무적 상태 시 깜빡임 효과 사용 여부 |
+| `InvincibleBlinkInterval` | number | 깜빡임 토글 간격(초) |
 
 ### Functions
 | 함수명 | 파라미터 | 리턴값 | 설명 |
@@ -111,8 +114,12 @@
 | `OnBeginPlay` | void | void | 초기 HP 상태 브로드캐스트 |
 | `HandleTriggerEnterEvent` | `event: TriggerEnterEvent` | void | 충돌 기반 피해 진입점 |
 | `ResolveIncomingDamage` | `sourceEntity: Entity` | integer | 투사체/몬스터 공격력 해석 |
-| `ApplyDamage` | `rawDamage: integer` | void | `IsInvincible`일 때 무시, 그 외 직접 피해 적용 및 사망 판정 |
+| `ApplyDamage` | `rawDamage: integer` | void | `IsInvincible`일 때 무시, 피해 적용 후 생존 시 피격 무적 윈도우 시작 |
 | `ApplyPenaltyDamage` | `rawDamage: integer` | void | 패널티 피해 적용 (동일 직접 차감 경로) |
+| `SetInvincibleWindowServer` | `duration: number` | void | 무적 종료 시각 기반으로 무적 윈도우를 설정/연장 |
+| `ClearInvincibleWindowServer` | void | void | 무적 타이머/상태를 즉시 초기화 |
+| `OnUpdate` | `delta: number` | void | 클라이언트에서 무적 깜빡임 상태 업데이트 |
+| `ApplyBlinkVisibilityClient` | `visible: boolean` | void | Sprite/Avatar 렌더러 가시성 토글 |
 | `Heal` | `amount: integer` | void | 회복 처리 |
 | `ReviveToFullHP` | void | void | 부활 초기화 |
 | `NotifyGameOver` | void | void | LobbyFlow/GameManager/타이머 순으로 종료 라우팅 |
@@ -284,7 +291,7 @@
 
 ## TagManagerComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/TagManagerComponent.mlua`
-- **수정일:** `2026-02-18`
+- **수정일:** `2026-02-24`
 
 ### Properties
 | 이름 | 타입 | 설명 |
@@ -306,7 +313,7 @@
 | `CaptureCurrentCharacterState` | void | table | HP/무기/탄약 상태 스냅샷 생성 |
 | `ApplyCharacterState` | `charIndex: integer` | void | 저장된 캐릭터 상태 복원 |
 | `StartTagCooldownServer` | void | void | 태그 쿨다운 타이머 시작 |
-| `ApplyInvincibleWindowServer` | void | void | 태그 무적 타이머 적용 |
+| `ApplyInvincibleWindowServer` | void | void | `HPSystem.SetInvincibleWindowServer` 우선 호출(미지원 시 기존 타이머 fallback) |
 | `TriggerEntrySkillServer` | `charIndex: integer` | void | 태그 엔트리 스킬 훅 호출 |
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
@@ -936,7 +943,11 @@
 |---|---|---|---|
 | `InitializeCharacterDataServer` | void | void | `PlayerbleData` 전 행 캐시 |
 | `GetCharacterDataRowServer` | `charId: string` | table | 캐시된 캐릭터 행 조회 |
-| `ApplyCharacterDataServer` | `charId: string, isInitialApply: boolean` | boolean | HP/이속/기본공격/무기슬롯/무기모델 적용 |
+| `ApplyCharacterDataServer` | `charId: string, isInitialApply: boolean` | boolean | HP/이속/기본공격/무기슬롯/무기모델 + 애니메이션 액션시트 적용 |
+| `ApplyAvatarActionSheetsFromRowServer` | `row: table` | void | `idle_ruid/walk_ruid/dead_ruid`를 상태 키(`IDLE/MOVE/DEAD`)에 매핑 |
+| `ResolveAnimationStateKeysServer` | void | table | `MovementComponent`의 `Idle/Move/DeadStateName`을 기준으로 상태 키 결정 |
+| `ApplyActionSheetByStateServer` | `avatarAnimation: Component, stateKey: string, ruid: string, columnName: string` | void | 상태별 RUID를 `SetActionSheet`로 안전 적용 (빈 값은 skip) |
+| `ApplyCharacterDataServer` HP 규칙 | - | - | `isInitialApply`는 최초 1회만 풀HP 적용, 이후 재호출은 현재 HP 보존(최대 HP로 clamp) |
 
 ### WeaponModelComponent (New)
 - **File:** `RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.mlua`
@@ -1007,12 +1018,14 @@
 | `UsePlayerInput` | boolean (Sync) | 플레이어 입력 경로 사용 여부 |
 | `IdleStateName` | string | 정지 상태 전환 키 (기본값: `IDLE`) |
 | `MoveStateName` | string | 이동 상태 전환 키 (기본값: `MOVE`) |
+| `DeadStateName` | string | 사망 상태 전환 키 (기본값: `DEAD`) |
 | `AutoRegisterStates` | boolean | 상태 키 미등록 시 `AddState` 자동 시도 |
 | `DisableNativeJumpAction` | boolean | 클라이언트에서 Space 기본 점프 액션 제거 여부 |
 | `UsePhysicsMovement` | boolean | true면 `Rigidbody.MoveVelocity` 우선, false면 `Transform.Translate`만 사용 |
 | `SetMoveDirectionServer` | method | 서버 주도 이동 벡터 주입 API (AI/몬스터 추격용) |
 | `EnsureAnimationStatesRegistered` | method | 시작 시 상태 키 등록 시도 |
 | `TryChangeStateSafely` | method | `ChangeState` 예외를 안전 처리하고 재시도 |
+| `UpdateStateAnimation` | method | `HPSystemComponent.IsDead`가 true면 `DEAD` 상태를 우선 강제하고, 아니면 `IDLE/MOVE` 유지 |
 | `DisableNativeJumpActionClient` | method | `PlayerControllerComponent`의 Space 입력 바인딩 제거 |
 | Removed | property/function | `FacingDirection` 동기화/계산 경로 제거 |
 
@@ -1025,7 +1038,8 @@
 | Item | Detail |
 |---|---|
 | Baseline | 기본 HP 값을 `1/1`로 축소해 외부 주입(`CharacterDataInit`) 우선 구조로 정리 |
-| Runtime | 기존 무적/피격/사망/브로드캐스트 경로는 유지 |
+| Runtime | 피격 무적 `HitInvincibleDuration(기본 1.0초)` 추가, 태그 무적과 종료시각 기준으로 병합 |
+| Visual | `IsInvincible` 동안 플레이어 렌더러 깜빡임(클라이언트 전용) 추가 |
 
 ### FireSystemComponent (Updated)
 - **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.mlua`
@@ -1096,3 +1110,28 @@
 | `Map01BootstrapComponent` | `PlayerInvincibleDuration` 프로퍼티 및 HP 무적시간 주입 제거 |
 | `MonsterChaseComponent` | 접촉 피해 전 HP 무적시간 override 제거 |
 | `MonsterSpawnComponent` | `ContactInvincibleDurationDefault` 주입 제거 |
+
+## 2026-02-24 HP I-Frame + Blink Hotfix
+
+### HPSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.codeblock`
+- **Updated:** `2026-02-24`
+
+#### Added
+| Item | Detail |
+|---|---|
+| `HitInvincibleDuration` | 피격 후 무적시간(기본 1.0초) |
+| `SetInvincibleWindowServer(duration)` | 종료 시각 기반 무적 윈도우 설정/연장 |
+| `EnableInvincibleBlink`, `InvincibleBlinkInterval` | 무적 중 깜빡임 렌더 효과 제어 |
+| `UpdateInvincibleBlinkClient` | `IsInvincible` Sync 기반 클라이언트 깜빡임 루프 |
+
+### CharacterDataInitComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/CharacterDataInitComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/CharacterDataInitComponent.codeblock`
+- **Updated:** `2026-02-24`
+
+#### Fixed
+| Item | Detail |
+|---|---|
+| 주기 Configure 시 HP 풀회복 이슈 | `ApplyCharacterDataServer(isInitialApply)`를 최초 1회만 초기 HP 적용하도록 변경, 이후 재호출은 현재 HP 보존 + MaxHP clamp |

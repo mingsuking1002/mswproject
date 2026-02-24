@@ -17,7 +17,7 @@ script ShopManagerComponent extends Component
     property integer HealPrice = 100
     property integer AmmoPrice = 50
     property integer PassivePrice = 200
-    property boolean UseGameplayLockDuringShop = false
+    property boolean UseGameplayLockDuringShop = true
     property boolean EnableDebugLogs = true
 
     @Sync
@@ -60,6 +60,8 @@ script ShopManagerComponent extends Component
         self._T.CurrentSlots = {}
         self._T.ShopDataTable = nil
         self._T.ShopRows = {}
+        -- Shop policy is fixed: opening panel pauses gameplay only.
+        self.UseGameplayLockDuringShop = true
     end
 
     -- Initial begin-play prepares data, resolves map entities, and activates one random shop.
@@ -890,30 +892,9 @@ script ShopManagerComponent extends Component
         end)
     end
 
-    -- Gameplay lock is now optional; default is no lock so shop no longer creates safe-zone behavior.
+    -- Shop lock policy is fixed to timer pause/resume only (no shop-near invincibility semantics).
     @ExecSpace("ServerOnly")
     method void SetGameplayLockServer(boolean locked)
-        if self.UseGameplayLockDuringShop ~= true then
-            local timerComponent = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "IsRunning")
-            if timerComponent ~= nil and timerComponent.ResumeGame ~= nil then
-                pcall(function()
-                    timerComponent:ResumeGame()
-                end)
-            end
-
-            if locked == true then
-                self:TryCloseWeaponSwapMenuServer()
-            end
-
-            if self.EnableDebugLogs == true then
-                log("[ShopManagerComponent][DEBUG] Gameplay lock skipped. locked=", locked, ", UseGameplayLockDuringShop=false")
-            end
-            return
-        end
-
-        self:SetCanMoveSafely(not locked)
-        self:SetCanAttackSafely(not locked)
-
         local timerComponent = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "IsRunning")
         if timerComponent ~= nil then
             pcall(function()

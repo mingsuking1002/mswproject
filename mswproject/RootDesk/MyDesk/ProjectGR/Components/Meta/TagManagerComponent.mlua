@@ -13,6 +13,7 @@ script TagManagerComponent extends Component
     property boolean DisableMoveDuringTag = true
     property boolean CancelReloadOnTag = true
     property number SwapLockDuration = 0.1
+    property boolean EnsureCharacterDataOnInit = true
 
     property string CharacterAAvatarRuid = ""
     property string CharacterBAvatarRuid = ""
@@ -36,6 +37,10 @@ script TagManagerComponent extends Component
         self._T.CharacterStates = {}
         self._T.CharacterStates[1] = self:CaptureCurrentCharacterState()
         self._T.CharacterStates[2] = self:CloneCharacterState(self._T.CharacterStates[1])
+
+        if self.EnsureCharacterDataOnInit == true then
+            self:EnsureCharacterDataComponentServer()
+        end
     end
 
     -- Client bootstraps utility so owner validation and component lookup conventions match other scripts.
@@ -183,6 +188,14 @@ script TagManagerComponent extends Component
             return
         end
 
+        local duration = math.max(self.InvincibleTime, 0)
+        if hpComponent.SetInvincibleWindowServer ~= nil then
+            pcall(function()
+                hpComponent:SetInvincibleWindowServer(duration)
+            end)
+            return
+        end
+
         if self._T.TagInvincibleTimerId ~= nil and self._T.TagInvincibleTimerId > 0 then
             _TimerService:ClearTimer(self._T.TagInvincibleTimerId)
             self._T.TagInvincibleTimerId = 0
@@ -192,7 +205,6 @@ script TagManagerComponent extends Component
             hpComponent.IsInvincible = true
         end)
 
-        local duration = math.max(self.InvincibleTime, 0)
         local clearInvincible = function()
             pcall(function()
                 hpComponent.IsInvincible = false
@@ -433,13 +445,61 @@ script TagManagerComponent extends Component
         end
 
         local characterData = self:ResolveComponentSafe(self.Entity, "CharacterDataInitComponent", "CurrentCharacterId")
+        if characterData == nil then
+            self:EnsureCharacterDataComponentServer()
+            characterData = self:ResolveComponentSafe(self.Entity, "CharacterDataInitComponent", "CurrentCharacterId")
+        end
         if characterData == nil or characterData.ApplyCharacterDataServer == nil then
+            log_warning("[TagManager] CharacterDataInitComponent missing. charId=", tostring(characterId))
             return
         end
 
         pcall(function()
             characterData:ApplyCharacterDataServer(characterId, false)
         end)
+    end
+
+    -- Ensures CharacterDataInit exists even on manual player setups that skipped bootstrap auto-attach.
+    @ExecSpace("ServerOnly")
+    method void EnsureCharacterDataComponentServer()
+        if self.Entity == nil or isvalid(self.Entity) == false then
+            return
+        end
+
+        local characterData = self:ResolveComponentSafe(self.Entity, "CharacterDataInitComponent", "CurrentCharacterId")
+        if characterData == nil then
+            local addOk1, addResult1 = pcall(function()
+                return self.Entity:AddComponent("script.CharacterDataInitComponent")
+            end)
+            if addOk1 == true then
+                characterData = addResult1
+            end
+        end
+        if characterData == nil then
+            local addOk2, addResult2 = pcall(function()
+                return self.Entity:AddComponent("CharacterDataInitComponent")
+            end)
+            if addOk2 == true then
+                characterData = addResult2
+            end
+        end
+        if characterData == nil then
+            log_warning("[TagManager] Failed to add CharacterDataInitComponent.")
+            return
+        end
+
+        if characterData.InitializeCharacterDataServer ~= nil then
+            pcall(function()
+                characterData:InitializeCharacterDataServer()
+            end)
+        end
+
+        local charId = self:GetCharacterIdByIndex(self.CurrentCharIndex)
+        if characterData.ApplyCharacterDataServer ~= nil then
+            pcall(function()
+                characterData:ApplyCharacterDataServer(charId, true)
+            end)
+        end
     end
 
     @ExecSpace("ServerOnly")
