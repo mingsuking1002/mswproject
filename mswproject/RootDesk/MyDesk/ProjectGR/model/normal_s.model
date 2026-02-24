@@ -19,7 +19,6 @@
       "Id": "d604964e-dbc5-4c7d-8df2-5a5af659e911",
       "Components": [
         "MOD.Core.SpriteRendererComponent",
-        "script.MonsterSpawnComponent",
         "script.MovementComponent",
         "MOD.Core.PhysicsColliderComponent",
         "MOD.Core.TransformComponent"
@@ -84,15 +83,6 @@
         },
         {
           "TargetType": "MOD.Core.SpriteRendererComponent",
-          "Name": "Enable",
-          "ValueType": {
-            "$type": "MODNativeType",
-            "type": "System.Boolean, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
-          },
-          "Value": true
-        },
-        {
-          "TargetType": "script.MonsterSpawnComponent",
           "Name": "Enable",
           "ValueType": {
             "$type": "MODNativeType",
