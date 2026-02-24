@@ -1,4 +1,4 @@
-# 🟡 대기중
+﻿# 🟡 대기중
 # SPEC_WeaponLevelUp — 무기 경험치 & 레벨업 시스템
 
 ## 1. 개요
@@ -9,7 +9,7 @@
 | **Execution Space** | `[Server Only]` 경험치 집계/레벨업 판정, `[Client Only]` 레벨업 UI/이펙트 |
 | **기획서** | `[콘텐츠] v1.1 무기 콘텐츠 기획-1`, `[시스템] 무기 레벨업 시스템 V 1.0`, `[콘텐츠] v.2.0 무기 콘텐츠 기획-2` |
 | **레이어** | `Meta` |
-| **데이터 연동** | `PlayerData` → `WeaponData` → `WeaponLevelData` |
+| **데이터 연동** | `PlayerbleData` → `WeaponData` → `WeaponLevelData` |
 
 > [!IMPORTANT]
 > - 1발사 = 1경험치 (타격 성공 무관, 발사/설치 기준)
@@ -47,14 +47,14 @@ Lv.10 도달 → "MAX" 표시, 경험치 누적 중단
 
 | 서비스 | 용도 |
 |---|---|
-| `_DataService` | `PlayerData`, `WeaponData`, `WeaponLevelData` 로드 |
+| `_DataService` | `PlayerbleData`, `WeaponData`, `WeaponLevelData` 로드 |
 
 ---
 
 ## 5. 로직 흐름
 
 ### 5-1. 초기화 (OnBeginPlay)
-`PlayerData` 로드 → `player_atk` 캐싱 (데미지 배율의 기준값).
+`PlayerbleData` 로드 → `player_atk` 캐싱 (데미지 배율의 기준값).
 `WeaponData` 로드 → 무기별 `required_exp`, `start_level`, `max_level`, `dmg_raito` 캐싱.
 `WeaponLevelData` 로드 → 무기별 레벨 배율 테이블 캐싱.
 각 무기 `_T.WeaponLevel[id] = start_level`, `_T.WeaponExp[id] = 0`.
@@ -78,7 +78,7 @@ AddWeaponExpServer(weaponId, amount):
 ### 5-3. 레벨업 적용
 `WeaponLevelData`에서 해당 무기의 `level_N` 배율 조회 → `FireSystemComponent.BaseWeaponAttack` 갱신.
 
-**데미지 공식**: `최종 공격력 = PlayerData.player_atk × WeaponLevelData[weaponId].level_N`
+**데미지 공식**: `최종 공격력 = PlayerbleData.player_atk × WeaponLevelData[weaponId].level_N`
 - 예: 활 Lv.5 = `100 × 1.4 = 140`
 - 예: 저격탑 Lv.3 = `100 × 4.2 = 420`
 
@@ -119,7 +119,7 @@ ApplyLevelUpServer(weaponId, newLevel):
 | `max_level` | INT | 최대 레벨 (10) |
 | `dmg_raito` | FLOAT | 기본 데미지 배율 |
 
-### PlayerData (연동 컬럼)
+### PlayerbleData (연동 컬럼)
 
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
