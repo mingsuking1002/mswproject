@@ -3,7 +3,6 @@ script MonsterChaseComponent extends Component
 
     property number ThinkInterval = 0.1
     property integer ContactDamage = 1
-    property number ContactInvincibleDuration = 2.0
 
     -- Server initializes timer handle and utility cache once for deterministic chase lifecycle.
     @ExecSpace("ServerOnly")
@@ -338,14 +337,6 @@ script MonsterChaseComponent extends Component
             return
         end
 
-        local invincibleDuration = self.ContactInvincibleDuration
-        if invincibleDuration < 0 then
-            invincibleDuration = 0
-        end
-
-        pcall(function()
-            hpSystem.InvincibleDuration = invincibleDuration
-        end)
         pcall(function()
             hpSystem:ApplyDamage(rawDamage)
         end)

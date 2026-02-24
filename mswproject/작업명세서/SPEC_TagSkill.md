@@ -16,8 +16,8 @@
 
 | ID | 캐릭터 | 효과 | 지속 | 쿨타임 |
 |---|---|---|---|---|
-| `tag_skill_char_a_01` | A (베루아) | 이동속도 +60% | 3초 | 태그 쿨타임과 공유 |
-| `tag_skill_char_b_01` | B (카르테) | 공격력 +60% | 6초 | 16초 |
+| `tag_skill_a` | A (베루아) | 이동속도 +60% | 3초 | 태그 쿨타임과 공유 |
+| `tag_skill_b` | B (카르테) | 공격력 +60% | 6초 | 16초 |
 
 ---
 
@@ -40,8 +40,16 @@
 ActivateTagSkill(charId):
   skillId = PlayerbleData[charId].tag_skill
   skillRow = SkillData[skillId]
-  SkillBuffType = skillRow.buff_type  -- "movespeed" or "attack"
-  SkillBuffMultiplier = 1.0 + skillRow.buff_value  -- 1.6
+  -- strict: 누락/오타면 로그 후 발동 중단
+  if skillRow.plus_speed > 0 and skillRow.plus_dmg <= 0 then
+    SkillBuffType = "movespeed"
+    SkillBuffMultiplier = 1.0 + skillRow.plus_speed
+  elseif skillRow.plus_dmg > 0 and skillRow.plus_speed <= 0 then
+    SkillBuffType = "attack"
+    SkillBuffMultiplier = 1.0 + skillRow.plus_dmg
+  else
+    return  -- invalid data
+  end
   IsSkillActive = true
   ApplyBuff()
   _TimerService:SetTimer(duration, RemoveBuff)
@@ -104,6 +112,8 @@ PlaySkillCutscene(charId):
 - B 스킬 쿨타임(16초)은 태그 쿨타임(3초)과 **별도** → 스킬 자체 쿨타임 관리
 - 태그 교체로 캐릭터가 바뀌어도 이전 캐릭터의 버프 타이머 정리 필요
 - 컷씬 UI는 이미지 없이 **틀만** (PD가 이미지 추가)
+- `PlayerbleData.tag_skill`는 `SkillData.id`와 정확히 일치해야 함 (`tag_skill_a`, `tag_skill_b`)
+- `tag_skill` 누락/오타 또는 SkillData 행 누락 시 스킬은 미발동(경고 로그 출력)
 
 ---
 

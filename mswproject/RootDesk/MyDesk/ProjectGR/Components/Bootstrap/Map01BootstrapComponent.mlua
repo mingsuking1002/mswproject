@@ -13,7 +13,6 @@ script Map01BootstrapComponent extends Component
     property boolean AutoOpenRankingOnLobby = false
     property integer LobbyRankingTab = 1
     property string LobbyUIRootPath = "/ui/DefaultGroup"
-    property number PlayerInvincibleDuration = 2.0
     property boolean ForcePlayerTransformMovement = true
 
     -- Server initializes utility and sets up per-user configuration flow.
@@ -131,17 +130,6 @@ script Map01BootstrapComponent extends Component
 
         -- Weapon branch is render/aim only; player root collider remains authoritative for hit collisions.
         self:EnforceWeaponHolderNoCollisionServer(playerEntity)
-
-        local hpSystem = self:ResolveComponentSafe(playerEntity, "HPSystemComponent", "InvincibleDuration")
-        if hpSystem ~= nil then
-            local invincibleDuration = self.PlayerInvincibleDuration
-            if invincibleDuration < 0 then
-                invincibleDuration = 0
-            end
-            pcall(function()
-                hpSystem.InvincibleDuration = invincibleDuration
-            end)
-        end
 
         local movement = self:ResolveComponentSafe(playerEntity, "MovementComponent", "CanMove")
         if movement ~= nil then

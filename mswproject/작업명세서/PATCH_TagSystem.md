@@ -37,6 +37,11 @@
    - 사망 시 자동 태그 없음 → 그대로
    - 위치/각도 계승 → 그대로
 
+4. **데이터 계약 고정**
+   - `PlayerbleData.tag_skill`는 `SkillData.id`와 1:1 일치해야 함
+   - 표준 ID: `player_a -> tag_skill_a`, `player_b -> tag_skill_b`
+   - 누락/오타/미존재 SkillData 행은 스킬 미발동 + 경고 로그(엄격 차단)
+
 ## Codex 체크리스트
 
 - [x] `CharacterDataInitComponent.ApplyCharacterData` 연동

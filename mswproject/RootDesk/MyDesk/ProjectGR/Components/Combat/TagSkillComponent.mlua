@@ -57,6 +57,13 @@ script TagSkillComponent extends Component
 
         local skillId = self:ResolveSkillIdByCharacterServer(charId)
         if skillId == nil or skillId == "" then
+            log_warning("[TagSkill] invalid PlayerbleData.tag_skill. charId=", tostring(charId))
+            return
+        end
+
+        local skillRow = self:GetSkillRowByIdServer(skillId)
+        if skillRow == nil then
+            log_warning("[TagSkill] SkillData row missing. skillId=", tostring(skillId), ", charId=", tostring(charId))
             return
         end
 
@@ -70,14 +77,15 @@ script TagSkillComponent extends Component
 
         self:RemoveBuffServer()
 
-        local skillRow = self:GetSkillRowByIdServer(skillId)
-        local buffType, buffValue = self:ResolveBuffTypeAndValueServer(charId, skillId, skillRow)
+        local buffType, buffValue = self:ResolveBuffTypeAndValueServer(skillId, skillRow)
         if buffType == "" or buffValue <= 0 then
+            log_warning("[TagSkill] invalid SkillData buff columns. skillId=", tostring(skillId))
             return
         end
 
-        local duration = self:ResolveSkillDurationServer(charId, skillId)
+        local duration = self:ResolveSkillDurationServer(skillId)
         if duration <= 0 then
+            log_warning("[TagSkill] invalid duration config. skillId=", tostring(skillId))
             return
         end
 
@@ -202,14 +210,6 @@ script TagSkillComponent extends Component
 
     @ExecSpace("ServerOnly")
     method string ResolveSkillIdByCharacterServer(string charId)
-        -- Runtime decision is fixed to A/B immediate mapping, while table value remains fallback.
-        if charId == "player_a" then
-            return "tag_skill_a"
-        end
-        if charId == "player_b" then
-            return "tag_skill_b"
-        end
-
         local row = self:GetCharacterRowByIdServer(charId)
         if row == nil then
             return ""
@@ -219,40 +219,23 @@ script TagSkillComponent extends Component
     end
 
     @ExecSpace("ServerOnly")
-    method table ResolveBuffTypeAndValueServer(string charId, string skillId, table skillRow)
-        local result = {}
-        result.Type = ""
-        result.Value = 0
+    method table ResolveBuffTypeAndValueServer(string skillId, table skillRow)
+        if skillRow == nil then
+            return "", 0
+        end
 
         local plusSpeed = 0
         local plusDmg = 0
-        if skillRow ~= nil then
-            plusSpeed = self:GetRowNumber(skillRow, "plus_speed", 0)
-            plusDmg = self:GetRowNumber(skillRow, "plus_dmg", 0)
-        end
+        plusSpeed = math.max(self:GetRowNumber(skillRow, "plus_speed", 0), 0)
+        plusDmg = math.max(self:GetRowNumber(skillRow, "plus_dmg", 0), 0)
 
-        if skillId == "tag_skill_a" or charId == "player_a" then
-            if plusSpeed <= 0 then
-                plusSpeed = 0.6
-            end
-            result.Type = "movespeed"
-            result.Value = plusSpeed
-            return result.Type, result.Value
-        end
+        local hasSpeed = (plusSpeed > 0)
+        local hasDmg = (plusDmg > 0)
 
-        if skillId == "tag_skill_b" or charId == "player_b" then
-            if plusDmg <= 0 then
-                plusDmg = 0.6
-            end
-            result.Type = "attack"
-            result.Value = plusDmg
-            return result.Type, result.Value
-        end
-
-        if plusSpeed > 0 then
+        if hasSpeed == true and hasDmg == false then
             return "movespeed", plusSpeed
         end
-        if plusDmg > 0 then
+        if hasDmg == true and hasSpeed == false then
             return "attack", plusDmg
         end
 
@@ -260,11 +243,14 @@ script TagSkillComponent extends Component
     end
 
     @ExecSpace("ServerOnly")
-    method number ResolveSkillDurationServer(string charId, string skillId)
-        if skillId == "tag_skill_b" or charId == "player_b" then
+    method number ResolveSkillDurationServer(string skillId)
+        if skillId == "tag_skill_b" then
             return math.max(self.CharacterBSkillDuration, 0)
         end
-        return math.max(self.CharacterASkillDuration, 0)
+        if skillId == "tag_skill_a" then
+            return math.max(self.CharacterASkillDuration, 0)
+        end
+        return 0
     end
 
     -- Client cutscene uses optional UI path and auto-hides after a short duration.

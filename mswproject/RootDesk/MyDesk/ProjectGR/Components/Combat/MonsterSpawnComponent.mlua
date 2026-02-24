@@ -1312,9 +1312,6 @@ script MonsterSpawnComponent extends Component
                     chase.ContactDamage = math.max(monAtk, 0)
                 end)
             end
-            pcall(function()
-                chase.ContactInvincibleDuration = 2.0
-            end)
         end
 
         local movement = self:ResolveComponentSafe(targetEntity, "MovementComponent", "MoveSpeed")

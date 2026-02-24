@@ -99,10 +99,8 @@
 |---|---|---|
 | `MaxHP` | integer | 최대 체력 (Sync) |
 | `CurrentHP` | integer | 현재 체력 (Sync) |
-| `IsInvincible` | boolean | 무적 상태 (Sync) |
+| `IsInvincible` | boolean | 태그 무적 게이트용 상태 플래그 (Sync) |
 | `IsDead` | boolean | 사망 상태 (Sync) |
-| `DamageReduction` | integer | 고정 피해 감소량 |
-| `InvincibleDuration` | number | 피격 후 무적 지속시간 |
 | `CriticalHPRatio` | number | 위험 체력 비율 임계값 |
 | `FallbackDamage` | integer | 외부 공격 정보 미탐지 시 기본 피해 |
 
@@ -113,13 +111,12 @@
 | `OnBeginPlay` | void | void | 초기 HP 상태 브로드캐스트 |
 | `HandleTriggerEnterEvent` | `event: TriggerEnterEvent` | void | 충돌 기반 피해 진입점 |
 | `ResolveIncomingDamage` | `sourceEntity: Entity` | integer | 투사체/몬스터 공격력 해석 |
-| `ApplyDamage` | `rawDamage: integer` | void | 피해 적용 및 사망 판정 |
-| `ApplyPenaltyDamage` | `rawDamage: integer` | void | 무적/피해감소를 무시하는 패널티 고정 피해 적용 |
-| `StartInvincibleWindow` | void | void | 무적 타이머 시작/갱신 |
+| `ApplyDamage` | `rawDamage: integer` | void | `IsInvincible`일 때 무시, 그 외 직접 피해 적용 및 사망 판정 |
+| `ApplyPenaltyDamage` | `rawDamage: integer` | void | 패널티 피해 적용 (동일 직접 차감 경로) |
 | `Heal` | `amount: integer` | void | 회복 처리 |
 | `ReviveToFullHP` | void | void | 부활 초기화 |
 | `NotifyGameOver` | void | void | LobbyFlow/GameManager/타이머 순으로 종료 라우팅 |
-| `UpdateHPFeedbackClient` | `currentHp, maxHp, isInvincible, isDead` | void | 클라이언트 전용 피드백 반영 |
+| `UpdateHPFeedbackClient` | `currentHp, maxHp, isDead` | void | 클라이언트 전용 피드백 반영 |
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## ReloadComponent
@@ -695,7 +692,6 @@
 | Name | Type | Description |
 |---|---|---|
 | `ContactDamage` | integer | Overlap contact damage base value (default `1`) |
-| `ContactInvincibleDuration` | number | Invincibility override applied to overlap target before damage (default `2.0`) |
 
 #### Added/Changed Functions
 | Function | Parameters | Returns | Description |
@@ -716,21 +712,16 @@
 |---|---|
 | `SpawnMonsterByRow` | Calls `EnsureMonsterTriggerComponent(spawnedEntity)` after spawn success |
 | `EnsureMonsterTriggerComponent` | Adds `TriggerComponent` if missing, sets `IsPassive=false`, copies collider size/offset when available |
-| `ApplyMonsterStatsIfAvailable` | Injects `MonsterChaseComponent.ContactDamage = mon_atk` and `ContactInvincibleDuration = 2.0` |
+| `ApplyMonsterStatsIfAvailable` | Injects `MonsterChaseComponent.ContactDamage = mon_atk` |
 
 ### Map01BootstrapComponent (Updated)
 - **File** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
 - **Sync File** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.codeblock`
 - **Updated At** `2026-02-24`
 
-#### Added Property / Behavior
-| Name | Type | Description |
-|---|---|---|
-| `PlayerInvincibleDuration` | number | Player HP invincibility duration default (`2.0`) |
-
 | Function | Change |
 |---|---|
-| `ConfigurePlayer` | Sets player `HPSystemComponent.InvincibleDuration` to `PlayerInvincibleDuration` |
+| `ConfigurePlayer` | 플레이어 이동/로비/상점/캐릭터 초기화 경로를 일괄 구성 |
 
 ## 2026-02-24 Timer/Infinite Release Update
 - **수정일:** `2026-02-24`
@@ -985,9 +976,10 @@
 #### Functions
 | Function | Parameters | Returns | Description |
 |---|---|---|---|
-| `ActivateTagSkillServer` | `charId: string` | void | A/B 매핑 기준 태그 스킬 발동 |
+| `ActivateTagSkillServer` | `charId: string` | void | `PlayerbleData.tag_skill` 기반 스킬 발동(누락/오타는 엄격 차단) |
 | `RemoveBuffServer` | void | void | 적용된 이동/공격 버프 복원 |
-| `ResolveSkillIdByCharacterServer` | `charId: string` | string | `player_a->tag_skill_a`, `player_b->tag_skill_b` 매핑 |
+| `ResolveSkillIdByCharacterServer` | `charId: string` | string | `PlayerbleData[charId].tag_skill` 조회 |
+| `ResolveBuffTypeAndValueServer` | `skillId: string, skillRow: table` | `string, number` | `SkillData.plus_speed/plus_dmg` 단일 유효값으로 버프 타입/값 결정 |
 | `PlaySkillCutsceneClient` | `charId: string, skillId: string` | void | 컷씬 패널 노출/자동 숨김 |
 
 ### Map01BootstrapComponent (Updated)
@@ -1081,3 +1073,26 @@
 | `ExecuteTagSwapServer` | 태그 시 `CharacterDataInitComponent.ApplyCharacterDataServer()` 호출 후 스냅샷 복원 |
 | `ExecuteTagSwapServer` | 태그 완료 후 `TagSkillComponent.ActivateTagSkillServer()` 호출 |
 | `ApplyCharacterState` | 복원 HP를 `MaxHP` 기준으로 클램프하고 HP 브로드캐스트 갱신 |
+
+## 2026-02-24 HP Direct Damage Update
+
+### HPSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.codeblock`
+- **Updated:** `2026-02-24`
+
+#### Removed/Changed
+| Item | Change |
+|---|---|
+| `DamageReduction` | 제거 |
+| `InvincibleDuration` | 제거 |
+| `StartInvincibleWindow` | 제거 |
+| `ApplyDamage` | 태그 무적(`IsInvincible`)은 유지, 피해감산/무적시간은 제거한 직접 피해 차감으로 단순화 |
+| `UpdateHPFeedbackClient` | 시그니처를 `(currentHp, maxHp, isDead)`로 단순화 |
+
+### Integration Adjustments
+| Component | Change |
+|---|---|
+| `Map01BootstrapComponent` | `PlayerInvincibleDuration` 프로퍼티 및 HP 무적시간 주입 제거 |
+| `MonsterChaseComponent` | 접촉 피해 전 HP 무적시간 override 제거 |
+| `MonsterSpawnComponent` | `ContactInvincibleDurationDefault` 주입 제거 |

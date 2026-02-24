@@ -10,8 +10,6 @@ script HPSystemComponent extends Component
     @Sync
     property boolean IsDead = false
 
-    property integer DamageReduction = 0
-    property number InvincibleDuration = 1.0
     property number CriticalHPRatio = 0.3
     property integer FallbackDamage = 1
 
@@ -21,7 +19,6 @@ script HPSystemComponent extends Component
         self.CurrentHP = math.max(0, math.min(self.CurrentHP, self.MaxHP))
         self.IsInvincible = false
         self.IsDead = (self.CurrentHP <= 0)
-        self._T.InvincibleTimerId = 0
         self._T.IsDeadUIOpened = false
         self:EnsureGRUtil()
     end
@@ -76,7 +73,7 @@ script HPSystemComponent extends Component
         return math.max(self.FallbackDamage, 0)
     end
 
-    -- Damage application centralizes invincibility, reduction, and death checks in one server path.
+    -- Damage application uses tag-driven IsInvincible gate, then applies direct raw damage.
     @ExecSpace("ServerOnly")
     method void ApplyDamage(integer rawDamage)
         if self.IsDead == true then
@@ -89,21 +86,14 @@ script HPSystemComponent extends Component
             return
         end
 
-        local actualDamage = rawDamage - self.DamageReduction
-        if actualDamage < 0 then
-            actualDamage = 0
-        end
-
+        local actualDamage = math.max(rawDamage, 0)
         self.CurrentHP = math.max(self.CurrentHP - actualDamage, 0)
-        if actualDamage > 0 then
-            self:StartInvincibleWindow()
-        end
 
         self:EvaluateDeath()
         self:BroadcastHPState()
     end
 
-    -- Penalty damage bypasses invincibility/reduction so anti-stall punishment is always enforced.
+    -- Penalty damage uses the same direct raw-damage path.
     @ExecSpace("ServerOnly")
     method void ApplyPenaltyDamage(integer rawDamage)
         if self.IsDead == true then
@@ -116,30 +106,6 @@ script HPSystemComponent extends Component
         self.CurrentHP = math.max(self.CurrentHP - rawDamage, 0)
         self:EvaluateDeath()
         self:BroadcastHPState()
-    end
-
-    -- Invincibility uses timer scheduling to avoid per-frame state polling.
-    @ExecSpace("ServerOnly")
-    method void StartInvincibleWindow()
-        if self.InvincibleDuration <= 0 then
-            self.IsInvincible = false
-            return
-        end
-
-        if self._T.InvincibleTimerId ~= nil and self._T.InvincibleTimerId > 0 then
-            _TimerService:ClearTimer(self._T.InvincibleTimerId)
-            self._T.InvincibleTimerId = 0
-        end
-
-        self.IsInvincible = true
-
-        local releaseInvincible = function()
-            self.IsInvincible = false
-            self._T.InvincibleTimerId = 0
-            self:BroadcastHPState()
-        end
-
-        self._T.InvincibleTimerId = _TimerService:SetTimerOnce(releaseInvincible, self.InvincibleDuration)
     end
 
     -- Healing is clamped on server to enforce max HP boundary.
@@ -159,11 +125,6 @@ script HPSystemComponent extends Component
     -- Revive path resets all lethal-state flags for retry flow.
     @ExecSpace("ServerOnly")
     method void ReviveToFullHP()
-        if self._T.InvincibleTimerId ~= nil and self._T.InvincibleTimerId > 0 then
-            _TimerService:ClearTimer(self._T.InvincibleTimerId)
-            self._T.InvincibleTimerId = 0
-        end
-
         self.CurrentHP = math.max(self.MaxHP, 1)
         self.IsInvincible = false
         self.IsDead = false
@@ -251,73 +212,16 @@ script HPSystemComponent extends Component
     -- Server sends current HP state to client-only feedback routine.
     @ExecSpace("ServerOnly")
     method void BroadcastHPState()
-        self:UpdateHPFeedbackClient(self.CurrentHP, self.MaxHP, self.IsInvincible, self.IsDead)
+        self:UpdateHPFeedbackClient(self.CurrentHP, self.MaxHP, self.IsDead)
     end
 
     -- Client routine keeps visual-only response while authority remains server-side.
     @ExecSpace("Client")
-    method void UpdateHPFeedbackClient(integer currentHp, integer maxHp, boolean isInvincible, boolean isDead)
-        self:UpdateInvincibleBlink(isInvincible)
+    method void UpdateHPFeedbackClient(integer currentHp, integer maxHp, boolean isDead)
         self:UpdateCriticalWarning(currentHp, maxHp)
 
         if isDead == true then
             self:HandleDeadUI()
-        end
-    end
-
-    -- Blink toggling is separated for deterministic enter/exit behavior.
-    @ExecSpace("ClientOnly")
-    method void UpdateInvincibleBlink(boolean isInvincible)
-        if isInvincible == true then
-            self:StartInvincibleBlink()
-            return
-        end
-
-        self:StopInvincibleBlink()
-    end
-
-    -- Blink uses timer tick to avoid heavy per-frame material changes.
-    @ExecSpace("ClientOnly")
-    method void StartInvincibleBlink()
-        if self._T.BlinkTimerId ~= nil and self._T.BlinkTimerId > 0 then
-            return
-        end
-
-        local spriteRenderer = self.Entity.SpriteRendererComponent
-        if spriteRenderer == nil or isvalid(spriteRenderer) == false then
-            return
-        end
-
-        self._T.BlinkVisible = true
-
-        local blinkTick = function()
-            if self.IsInvincible == false then
-                self:StopInvincibleBlink()
-                return
-            end
-
-            self._T.BlinkVisible = not self._T.BlinkVisible
-            if self._T.BlinkVisible == true then
-                spriteRenderer.Color = Color(1, 1, 1, 1)
-            else
-                spriteRenderer.Color = Color(1, 1, 1, 0.35)
-            end
-        end
-
-        self._T.BlinkTimerId = _TimerService:SetTimerRepeat(blinkTick, 0.1, 0)
-    end
-
-    -- Restores sprite color and clears timer handle after invincible state ends.
-    @ExecSpace("ClientOnly")
-    method void StopInvincibleBlink()
-        if self._T.BlinkTimerId ~= nil and self._T.BlinkTimerId > 0 then
-            _TimerService:ClearTimer(self._T.BlinkTimerId)
-            self._T.BlinkTimerId = 0
-        end
-
-        local spriteRenderer = self.Entity.SpriteRendererComponent
-        if spriteRenderer ~= nil and isvalid(spriteRenderer) == true then
-            spriteRenderer.Color = Color.white
         end
     end
 
@@ -344,13 +248,9 @@ script HPSystemComponent extends Component
         log("[HPSystemComponent] Game Over UI trigger requested.")
     end
 
-    -- End play clears outstanding timers to prevent stale callbacks after entity destruction.
+    -- End play currently has no HP-side timer to clear.
     @ExecSpace("ServerOnly")
     method void OnEndPlay()
-        if self._T.InvincibleTimerId ~= nil and self._T.InvincibleTimerId > 0 then
-            _TimerService:ClearTimer(self._T.InvincibleTimerId)
-            self._T.InvincibleTimerId = 0
-        end
     end
 
     -- Utility bootstrap first; fallback flag enables local direct path when global util is unavailable.
