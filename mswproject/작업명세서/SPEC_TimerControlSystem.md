@@ -22,7 +22,7 @@
 | 일시정지 | `PauseSources` 딕셔너리 | `IsPaused` 단일 Sync 플래그 + 예외 목록 |
 | 하위 타이머 | 없음 (각 컴포넌트 자체 `_TimerService`) | 메인 정지 → 하위 자동 정지/재개 |
 | 스테이지 | `CurrentStageId` 단일 정수 | (유지) `CurrentStageId` |
-| 랭킹 연동 | `CompleteRun` → `NotifyRankingServer` | `CompleteRun` → 랭킹 제출 (무한 모드: 누적 처치 수 기반으로 확장 가능) |
+| 기록 저장 | `BestTime` + `_DataStorageService` | **삭제** — 기록/랭킹은 별도 시스템으로 분리 |
 
 ---
 
@@ -77,7 +77,9 @@ ElapsedTime += delta
 
 ### 5-5. 게임 시작/종료
 - `StartRunWithCountdown()` → 카운트다운 → `StartRunNow()` (기존과 동일 인터페이스 유지)
-- `CompleteRun()` → `IsRunning = false` → 랭킹 제출
+- `CompleteRun()` → `IsRunning = false` (기록 저장/랭킹 제출은 별도 시스템 담당)
+
+> ⚠️ 기존 `SpeedrunTimerComponent`의 `BestTime`, `LoadBestTimeFromStorageServer`, `EvaluateBestTimeServer`, `NotifyRankingServer` 등 기록/랭킹 관련 로직은 **모두 삭제**. 향후 무한 모드 랭킹 시스템에서 별도 컴포넌트로 구현 예정.
 
 ### 5-6. UI 표시 (`Client`)
 - `StartClientTimerTextLoop()` → `_TimerService:SetTimerRepeat`로 텍스트 갱신
@@ -254,14 +256,13 @@ ElapsedTime += delta
 
 ---
 
-## 8. 무한 모드 랭킹 시스템 고려사항 (향후 확장)
+## 8. 무한 모드 랭킹 시스템 고려사항 (향후 별도 SPEC)
 
-> `[v.1.2] 무한 모드 랭킹 시스템.md` 분석 결과, 아래 확장을 **지금은 구현하지 않되** API 여유를 둡니다:
+> `[v.1.2] 무한 모드 랭킹 시스템.md` 분석 결과, 랭킹/기록 관련 기능은 `GameTimerComponent`에 포함하지 않고 **별도 SPEC**으로 분리합니다.
 
-- `GameTimerComponent`에 `TotalKillCount` Property 추가 가능성 → 현재 Property 예약만 (구현 없음)
-- 무한 모드 랭킹 = 누적 처치 수 기반 → `MonsterSpawnComponent`에서 처치 시 카운트 → Timer 컴포넌트에 기록
-- `NotifyRankingServer()`는 무한 모드일 때 `ElapsedTime` 대신 `TotalKillCount` 전송으로 확장
-- **이 SPEC에서는 `CompleteRun` → `NotifyRankingServer` 인터페이스만 유지**
+- 기존 `SpeedrunTimerComponent`의 `BestTime` 저장/로드 (`_DataStorageService`) → **완전 삭제**
+- 랭킹 시스템은 별도 `RankingComponent` 또는 유사 컴포넌트로 구현 예정
+- `GameTimerComponent`는 순수하게 **시간 제어/분배** 역할만 담당
 
 ---
 

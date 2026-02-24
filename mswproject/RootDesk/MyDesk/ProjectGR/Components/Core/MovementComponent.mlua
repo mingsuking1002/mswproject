@@ -7,6 +7,8 @@ script MovementComponent extends Component
     property boolean CanMove = true
     @Sync
     property integer FacingDirection = 1
+    @Sync
+    property boolean UsePlayerInput = true
 
     property number MoveSpeed = 1.0
 
@@ -26,6 +28,10 @@ script MovementComponent extends Component
     -- Every movement key transition is sampled client-side and sent to server as intent only.
     @EventSender("Service", "InputService")
     handler HandleKeyDownEvent(KeyDownEvent event)
+        if self.UsePlayerInput ~= true then
+            return
+        end
+
         local key = event.key
         if self:IsMovementKey(key) == false then
             return
@@ -37,6 +43,10 @@ script MovementComponent extends Component
     -- Key release is processed through the same path to keep stuck-key state from persisting.
     @EventSender("Service", "InputService")
     handler HandleKeyUpEvent(KeyUpEvent event)
+        if self.UsePlayerInput ~= true then
+            return
+        end
+
         local key = event.key
         if self:IsMovementKey(key) == false then
             return
@@ -83,6 +93,10 @@ script MovementComponent extends Component
     -- Server-side ownership validation prevents other clients from pushing movement for this entity.
     @ExecSpace("Server")
     method void SubmitMoveInput(Vector2 moveDirection)
+        if self.UsePlayerInput ~= true then
+            return
+        end
+
         if moveDirection == nil then
             return
         end
@@ -97,9 +111,25 @@ script MovementComponent extends Component
         self._T.ServerInputDirection = self:ClampInputDirection(moveDirection)
     end
 
+    -- Monster AI can push server-side direction directly without client input path.
+    @ExecSpace("ServerOnly")
+    method void SetMoveDirectionServer(Vector2 moveDirection)
+        if moveDirection == nil then
+            return
+        end
+        if self.Entity == nil or isvalid(self.Entity) == false then
+            return
+        end
+
+        self._T.ServerInputDirection = self:ClampInputDirection(moveDirection)
+    end
+
     -- Client reads current WASD state to reduce server polling cost.
     @ExecSpace("ClientOnly")
     method Vector2 GetMoveInputClient()
+        if self.UsePlayerInput ~= true then
+            return Vector2.zero
+        end
         if self.CanMove == false then
             return Vector2.zero
         end

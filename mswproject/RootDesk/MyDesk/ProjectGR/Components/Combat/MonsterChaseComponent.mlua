@@ -1,0 +1,502 @@
+@Component
+script MonsterChaseComponent extends Component
+
+    property number ThinkInterval = 0.1
+    property integer ContactDamage = 1
+    property number ContactInvincibleDuration = 2.0
+
+    -- Server initializes timer handle and utility cache once for deterministic chase lifecycle.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self._T.ThinkTimerId = 0
+        self._T.ContactTargetPlayer = nil
+        self:EnsureGRUtil()
+    end
+
+    -- Chase loop starts on begin play so spawned monsters begin pursuit immediately.
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self:StartThinkTimerServer()
+    end
+
+    -- Map transitions can invalidate timers, so map-enter path ensures chase loop is running.
+    @ExecSpace("ServerOnly")
+    method void OnMapEnter(Entity enteredMap)
+        self:StartThinkTimerServer()
+    end
+
+    -- End play stops timer and clears movement to avoid stale velocity on recycled entities.
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        self:ClearThinkTimerServer()
+        self._T.ContactTargetPlayer = nil
+        self:PushChaseDirectionServer(Vector2.zero)
+    end
+
+    -- Destroy repeats cleanup as final safety net for atypical lifecycle order.
+    @ExecSpace("ServerOnly")
+    method void OnDestroy()
+        self:ClearThinkTimerServer()
+        self._T.ContactTargetPlayer = nil
+    end
+
+    @ExecSpace("ServerOnly")
+    method void StartThinkTimerServer()
+        if self._T.ThinkTimerId ~= nil and self._T.ThinkTimerId > 0 then
+            return
+        end
+
+        local interval = self.ThinkInterval
+        if interval <= 0 then
+            interval = 0.1
+        end
+
+        local callback = function()
+            self:ThinkChaseServer()
+        end
+        self._T.ThinkTimerId = _TimerService:SetTimerRepeat(callback, interval, 0)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ClearThinkTimerServer()
+        if self._T.ThinkTimerId ~= nil and self._T.ThinkTimerId > 0 then
+            _TimerService:ClearTimer(self._T.ThinkTimerId)
+            self._T.ThinkTimerId = 0
+        end
+    end
+
+    -- Chase tick computes nearest player in same map and submits direction to movement component.
+    @ExecSpace("ServerOnly")
+    method void ThinkChaseServer()
+        if self.Entity == nil or isvalid(self.Entity) == false then
+            return
+        end
+
+        local movement = self:ResolveComponentSafe(self.Entity, "MovementComponent", "MoveSpeed")
+        if movement == nil then
+            return
+        end
+
+        if self:IsValidContactTargetServer(self._T.ContactTargetPlayer) == false then
+            self._T.ContactTargetPlayer = nil
+        end
+
+        local targetPlayer = self:FindNearestPlayerOnCurrentMapServer()
+        local facingTarget = self._T.ContactTargetPlayer
+        if facingTarget == nil then
+            facingTarget = targetPlayer
+        end
+        if facingTarget ~= nil then
+            self:UpdateFacingFlipServer(facingTarget)
+        end
+
+        if self._T.ContactTargetPlayer ~= nil then
+            self:PushDirectionToMovementServer(movement, Vector2.zero)
+            self:ApplyContactDamageServer(self._T.ContactTargetPlayer)
+            return
+        end
+
+        if targetPlayer == nil then
+            self:PushDirectionToMovementServer(movement, Vector2.zero)
+            return
+        end
+
+        local chaseDirection = self:ComputeDirectionToEntityServer(targetPlayer)
+        self:PushDirectionToMovementServer(movement, chaseDirection)
+    end
+
+    -- Trigger enter marks current contact player so chase movement can be paused while overlapping.
+    @ExecSpace("ServerOnly")
+    @EventSender("Self")
+    handler HandleTriggerEnterEvent(TriggerEnterEvent event)
+        if event == nil then
+            return
+        end
+
+        local triggerBodyEntity = event.TriggerBodyEntity
+        if self:IsPotentialPlayerTargetServer(triggerBodyEntity) == false then
+            return
+        end
+
+        self._T.ContactTargetPlayer = triggerBodyEntity
+    end
+
+    -- Trigger leave clears contact cache when the same player exits overlap area.
+    @ExecSpace("ServerOnly")
+    @EventSender("Self")
+    handler HandleTriggerLeaveEvent(TriggerLeaveEvent event)
+        if event == nil then
+            return
+        end
+
+        local triggerBodyEntity = event.TriggerBodyEntity
+        if triggerBodyEntity == nil or isvalid(triggerBodyEntity) == false then
+            return
+        end
+        if self._T.ContactTargetPlayer == nil then
+            return
+        end
+        if triggerBodyEntity ~= self._T.ContactTargetPlayer then
+            return
+        end
+
+        self._T.ContactTargetPlayer = nil
+    end
+
+    -- Nearest target search is restricted to users in the same map to avoid cross-map pursuit.
+    @ExecSpace("ServerOnly")
+    method Entity FindNearestPlayerOnCurrentMapServer()
+        local users = _UserService.UserEntities
+        if users == nil then
+            return nil
+        end
+
+        local currentMap = self.Entity.CurrentMap
+        if currentMap == nil or isvalid(currentMap) == false then
+            return nil
+        end
+
+        local selfTransform = self.Entity.TransformComponent
+        if selfTransform == nil or isvalid(selfTransform) == false then
+            return nil
+        end
+        local selfPos = selfTransform.WorldPosition
+        if selfPos == nil then
+            return nil
+        end
+
+        local nearest = nil
+        local nearestSqr = -1.0
+
+        for userId, userEntity in pairs(users) do
+            local candidate = userEntity
+            if candidate == nil or isvalid(candidate) == false then
+                local userIdText = tostring(userId)
+                local resolveOk, resolveResult = pcall(function()
+                    return _UserService:GetUserEntityByUserId(userIdText)
+                end)
+                if resolveOk == true then
+                    candidate = resolveResult
+                end
+            end
+
+            if candidate == nil or isvalid(candidate) == false then
+                continue
+            end
+
+            local userMap = candidate.CurrentMap
+            if userMap == nil or isvalid(userMap) == false then
+                continue
+            end
+            if userMap ~= currentMap then
+                continue
+            end
+
+            local userTransform = candidate.TransformComponent
+            if userTransform == nil or isvalid(userTransform) == false then
+                continue
+            end
+            local userPos = userTransform.WorldPosition
+            if userPos == nil then
+                continue
+            end
+
+            local dx = userPos.x - selfPos.x
+            local dy = userPos.y - selfPos.y
+            local sqrDistance = (dx * dx) + (dy * dy)
+
+            if nearest == nil or sqrDistance < nearestSqr then
+                nearest = candidate
+                nearestSqr = sqrDistance
+            end
+        end
+
+        return nearest
+    end
+
+    -- Contact target validity gate ensures stale or cross-map references never block chase.
+    @ExecSpace("ServerOnly")
+    method boolean IsValidContactTargetServer(Entity targetEntity)
+        if self:IsPotentialPlayerTargetServer(targetEntity) == false then
+            return false
+        end
+
+        local currentMap = self.Entity.CurrentMap
+        if currentMap == nil or isvalid(currentMap) == false then
+            return false
+        end
+
+        local targetMap = targetEntity.CurrentMap
+        if targetMap == nil or isvalid(targetMap) == false then
+            return false
+        end
+
+        return (targetMap == currentMap)
+    end
+
+    -- Player-target filter accepts entities that expose PlayerComponent or HPSystemComponent marker.
+    @ExecSpace("ServerOnly")
+    method boolean IsPotentialPlayerTargetServer(Entity targetEntity)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return false
+        end
+
+        local playerComponentOk, playerComponent = pcall(function()
+            return targetEntity.PlayerComponent
+        end)
+        if playerComponentOk == true and playerComponent ~= nil and isvalid(playerComponent) == true then
+            return true
+        end
+
+        local hpSystem = self:ResolveComponentSafe(targetEntity, "HPSystemComponent", "CurrentHP")
+        if hpSystem ~= nil then
+            return true
+        end
+
+        return false
+    end
+
+    -- Direction is normalized each tick so chase speed stays governed only by MovementComponent.MoveSpeed.
+    @ExecSpace("ServerOnly")
+    method Vector2 ComputeDirectionToEntityServer(Entity targetEntity)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return Vector2.zero
+        end
+
+        local selfTransform = self.Entity.TransformComponent
+        if selfTransform == nil or isvalid(selfTransform) == false then
+            return Vector2.zero
+        end
+
+        local targetTransform = targetEntity.TransformComponent
+        if targetTransform == nil or isvalid(targetTransform) == false then
+            return Vector2.zero
+        end
+
+        local selfPos = selfTransform.WorldPosition
+        local targetPos = targetTransform.WorldPosition
+        if selfPos == nil or targetPos == nil then
+            return Vector2.zero
+        end
+
+        local direction = Vector2(targetPos.x - selfPos.x, targetPos.y - selfPos.y)
+        if direction:SqrMagnitude() <= 0 then
+            return Vector2.zero
+        end
+
+        return direction:Normalize()
+    end
+
+    -- Sprite flip is based on relative x-position so monsters face target player while chasing/overlapping.
+    @ExecSpace("ServerOnly")
+    method void UpdateFacingFlipServer(Entity targetEntity)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+
+        local spriteRenderer = self:ResolveComponentSafe(self.Entity, "SpriteRendererComponent", "FlipX")
+        if spriteRenderer == nil then
+            return
+        end
+
+        local selfTransform = self.Entity.TransformComponent
+        if selfTransform == nil or isvalid(selfTransform) == false then
+            return
+        end
+
+        local targetTransform = targetEntity.TransformComponent
+        if targetTransform == nil or isvalid(targetTransform) == false then
+            return
+        end
+
+        local selfPos = selfTransform.WorldPosition
+        local targetPos = targetTransform.WorldPosition
+        if selfPos == nil or targetPos == nil then
+            return
+        end
+
+        local shouldFlipX = (selfPos.x < targetPos.x)
+        pcall(function()
+            spriteRenderer.FlipX = shouldFlipX
+        end)
+    end
+
+    -- Contact damage applies each chase tick while overlapping, using configured monster attack value.
+    @ExecSpace("ServerOnly")
+    method void ApplyContactDamageServer(Entity targetEntity)
+        if self:IsValidContactTargetServer(targetEntity) == false then
+            return
+        end
+
+        local hpSystem = self:ResolveComponentSafe(targetEntity, "HPSystemComponent", "CurrentHP")
+        if hpSystem == nil then
+            return
+        end
+
+        local rawDamage = self:ResolveContactDamageServer()
+        if rawDamage <= 0 then
+            return
+        end
+
+        local invincibleDuration = self.ContactInvincibleDuration
+        if invincibleDuration < 0 then
+            invincibleDuration = 0
+        end
+
+        pcall(function()
+            hpSystem.InvincibleDuration = invincibleDuration
+        end)
+        pcall(function()
+            hpSystem:ApplyDamage(rawDamage)
+        end)
+    end
+
+    -- Contact damage reads configured value first, then falls back to MonsterAttackComponent, then default 1.
+    @ExecSpace("ServerOnly")
+    method integer ResolveContactDamageServer()
+        local configured = tonumber(self.ContactDamage)
+        if configured ~= nil then
+            local clamped = math.floor(configured)
+            if clamped >= 0 then
+                return clamped
+            end
+        end
+
+        local monsterAttack = self:ResolveComponentSafe(self.Entity, "MonsterAttackComponent", "AttackPower")
+        if monsterAttack ~= nil then
+            local readOk, readValue = pcall(function()
+                return monsterAttack.AttackPower
+            end)
+            if readOk == true and readValue ~= nil then
+                local parsed = tonumber(readValue)
+                if parsed ~= nil then
+                    parsed = math.floor(parsed)
+                    if parsed >= 0 then
+                        return parsed
+                    end
+                end
+            end
+        end
+
+        return 1
+    end
+
+    -- Movement direction is sent through public API first, with legacy fallback for partial deployments.
+    @ExecSpace("ServerOnly")
+    method void PushDirectionToMovementServer(any movementComponent, Vector2 direction)
+        if movementComponent == nil then
+            return
+        end
+        if direction == nil then
+            direction = Vector2.zero
+        end
+
+        local pushed = false
+        local pushOk, _ = pcall(function()
+            if movementComponent.SetMoveDirectionServer ~= nil then
+                movementComponent:SetMoveDirectionServer(direction)
+                pushed = true
+            end
+        end)
+        if pushOk == true and pushed == true then
+            return
+        end
+
+        pcall(function()
+            movementComponent._T.ServerInputDirection = direction
+        end)
+    end
+
+    -- Explicit zero push is reused by lifecycle cleanup path to avoid duplicated movement resolve code.
+    @ExecSpace("ServerOnly")
+    method void PushChaseDirectionServer(Vector2 direction)
+        local movement = self:ResolveComponentSafe(self.Entity, "MovementComponent", "MoveSpeed")
+        if movement == nil then
+            return
+        end
+
+        self:PushDirectionToMovementServer(movement, direction)
+    end
+
+    -- Utility bootstrap first; fallback lookup is retained so chase still works if util registration fails.
+    method void EnsureGRUtil()
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, utilApi = pcall(function()
+                return utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and utilApi ~= nil then
+                self._T.GRUtil = utilApi
+            end
+            if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+end

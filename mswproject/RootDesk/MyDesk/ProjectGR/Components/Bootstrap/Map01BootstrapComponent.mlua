@@ -11,6 +11,7 @@ script Map01BootstrapComponent extends Component
     property boolean AutoOpenRankingOnLobby = true
     property integer LobbyRankingTab = 1
     property string LobbyUIRootPath = "/ui/DefaultGroup"
+    property number PlayerInvincibleDuration = 2.0
 
     -- Server initializes utility and sets up per-user configuration flow.
     @ExecSpace("ServerOnly")
@@ -72,6 +73,17 @@ script Map01BootstrapComponent extends Component
 
         if self.AutoAttachMissingComponents == true then
             self:AttachRequiredComponentsServer(playerEntity)
+        end
+
+        local hpSystem = self:ResolveComponentSafe(playerEntity, "HPSystemComponent", "InvincibleDuration")
+        if hpSystem ~= nil then
+            local invincibleDuration = self.PlayerInvincibleDuration
+            if invincibleDuration < 0 then
+                invincibleDuration = 0
+            end
+            pcall(function()
+                hpSystem.InvincibleDuration = invincibleDuration
+            end)
         end
 
         local lobbyFlow = self:ResolveComponentSafe(playerEntity, "LobbyFlowComponent", "IsLobbyActive")

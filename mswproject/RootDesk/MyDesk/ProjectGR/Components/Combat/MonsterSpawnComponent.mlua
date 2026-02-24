@@ -838,6 +838,7 @@ script MonsterSpawnComponent extends Component
         end
 
         self:DisablePhysicsColliderIfMapHasNoSimulator(spawnedEntity)
+        self:EnsureMonsterTriggerComponent(spawnedEntity)
 
         if self._T.SpawnedMonsters == nil then
             self._T.SpawnedMonsters = {}
@@ -849,6 +850,7 @@ script MonsterSpawnComponent extends Component
         end
         self._T.SpawnMetaByEntity[spawnedEntity] = self:BuildSpawnMetaFromRow(row)
 
+        self:AttachMonsterChaseIfNeeded(spawnedEntity)
         self:ApplyMonsterVisualIfAvailable(spawnedEntity, row)
         self:ApplyMonsterColliderIfAvailable(spawnedEntity, row)
         self:ApplyMonsterStatsIfAvailable(spawnedEntity, row)
@@ -1062,6 +1064,64 @@ script MonsterSpawnComponent extends Component
         end)
     end
 
+    -- Contact combat requires trigger overlap events, so spawn path ensures TriggerComponent is always present.
+    method void EnsureMonsterTriggerComponent(Entity targetEntity)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+
+        local trigger = self:ResolveComponentSafe(targetEntity, "TriggerComponent", "BoxSize")
+        if trigger == nil then
+            local addOkA, addResultA = pcall(function()
+                return targetEntity:AddComponent("MOD.Core.TriggerComponent")
+            end)
+            if addOkA == true then
+                trigger = addResultA
+            end
+        end
+        if trigger == nil then
+            local addOkB, addResultB = pcall(function()
+                return targetEntity:AddComponent("TriggerComponent")
+            end)
+            if addOkB == true then
+                trigger = addResultB
+            end
+        end
+        if trigger == nil then
+            return
+        end
+
+        pcall(function()
+            trigger.IsPassive = false
+        end)
+
+        local physicsCollider = self:ResolveComponentSafe(targetEntity, "PhysicsColliderComponent", "BoxSize")
+        if physicsCollider == nil then
+            return
+        end
+
+        local sizeOk, boxSize = pcall(function()
+            return physicsCollider.BoxSize
+        end)
+        if sizeOk == true and boxSize ~= nil then
+            pcall(function()
+                trigger.BoxSize = boxSize
+            end)
+        end
+
+        local offsetOk, colliderOffset = pcall(function()
+            return physicsCollider.ColliderOffset
+        end)
+        if offsetOk == true and colliderOffset ~= nil then
+            pcall(function()
+                trigger.ColliderOffset = colliderOffset
+            end)
+            pcall(function()
+                trigger.BoxOffset = colliderOffset
+            end)
+        end
+    end
+
     method boolean HasPhysicsSimulatorInCurrentMap()
         if self._T.HasMapPhysicsSimulator ~= nil then
             return self._T.HasMapPhysicsSimulator
@@ -1136,14 +1196,53 @@ script MonsterSpawnComponent extends Component
             end
         end
 
-        if monSpd >= 0 then
-            local movement = self:ResolveComponentSafe(targetEntity, "MovementComponent", "MoveSpeed")
-            if movement ~= nil then
+        local chase = self:ResolveComponentSafe(targetEntity, "MonsterChaseComponent", "ThinkInterval")
+        if chase ~= nil then
+            if monAtk >= 0 then
+                pcall(function()
+                    chase.ContactDamage = math.max(monAtk, 0)
+                end)
+            end
+            pcall(function()
+                chase.ContactInvincibleDuration = 2.0
+            end)
+        end
+
+        local movement = self:ResolveComponentSafe(targetEntity, "MovementComponent", "MoveSpeed")
+        if movement ~= nil then
+            pcall(function()
+                movement.UsePlayerInput = false
+            end)
+
+            if monSpd >= 0 then
                 pcall(function()
                     movement.MoveSpeed = monSpd
                 end)
             end
         end
+    end
+
+    -- Every spawned monster gets chase AI once so nearest-player pursuit works without model-side manual setup.
+    method void AttachMonsterChaseIfNeeded(Entity targetEntity)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+
+        local existing = self:ResolveComponentSafe(targetEntity, "MonsterChaseComponent", "ThinkInterval")
+        if existing ~= nil then
+            return
+        end
+
+        local addOkA, addResultA = pcall(function()
+            return targetEntity:AddComponent("script.MonsterChaseComponent")
+        end)
+        if addOkA == true and addResultA ~= nil then
+            return
+        end
+
+        pcall(function()
+            targetEntity:AddComponent("MonsterChaseComponent")
+        end)
     end
 
     -- Public read API exposes spawn metadata without coupling callers to internal cache structure.

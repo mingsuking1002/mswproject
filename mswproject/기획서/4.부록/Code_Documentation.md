@@ -641,3 +641,93 @@
 | `TryResetShopForOwnerServer` | void | void | 런 종료 시 `ShopManagerComponent.ResetShopStateServer()` 안전 호출 |
 | `HandleStageFailedServer` | void | void | 실패 종료 래퍼 |
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
+
+## 2026-02-24 Monster Chase Update
+
+### MonsterChaseComponent
+- **File** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterChaseComponent.mlua`
+- **Sync File** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterChaseComponent.codeblock`
+- **Purpose** Server-authoritative nearest-player chase for spawned monsters.
+
+#### Properties
+| Name | Type | Description |
+|---|---|---|
+| `ThinkInterval` | number | Chase think timer interval (default `0.1`) |
+
+#### Functions
+| Function | Parameters | Returns | Description |
+|---|---|---|---|
+| `ThinkChaseServer` | void | void | Select nearest player in current map and apply movement direction |
+| `FindNearestPlayerOnCurrentMapServer` | void | Entity | Resolve nearest valid player entity in same map |
+| `PushDirectionToMovementServer` | `movementComponent: any, direction: Vector2` | void | Uses `SetMoveDirectionServer()` with fallback path |
+
+### MovementComponent (Updated)
+- **File** `RootDesk/MyDesk/ProjectGR/Components/Core/MovementComponent.mlua`
+- **Sync File** `RootDesk/MyDesk/ProjectGR/Components/Core/MovementComponent.codeblock`
+- **Updated At** `2026-02-24`
+
+#### Added API
+| Name | Type | Description |
+|---|---|---|
+| `UsePlayerInput` | boolean (`@Sync`) | Enables/disables client WASD input path (`false` for monsters) |
+| `SetMoveDirectionServer` | method | Server-only direct direction setter for AI-driven movement |
+
+### MonsterSpawnComponent (Updated)
+- **File** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.mlua`
+- **Sync File** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.codeblock`
+- **Updated At** `2026-02-24`
+
+#### Integration Changes
+| Function | Change |
+|---|---|
+| `SpawnMonsterByRow` | Calls `AttachMonsterChaseIfNeeded(spawnedEntity)` after spawn success |
+| `ApplyMonsterStatsIfAvailable` | Sets `movement.UsePlayerInput = false` and keeps `MoveSpeed = mon_spd` mapping |
+| `AttachMonsterChaseIfNeeded` | New helper to idempotently add `MonsterChaseComponent` |
+
+## 2026-02-24 Monster Contact Combat Update
+
+### MonsterChaseComponent (Updated)
+- **File** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterChaseComponent.mlua`
+- **Sync File** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterChaseComponent.codeblock`
+- **Updated At** `2026-02-24`
+
+#### Added Properties
+| Name | Type | Description |
+|---|---|---|
+| `ContactDamage` | integer | Overlap contact damage base value (default `1`) |
+| `ContactInvincibleDuration` | number | Invincibility override applied to overlap target before damage (default `2.0`) |
+
+#### Added/Changed Functions
+| Function | Parameters | Returns | Description |
+|---|---|---|---|
+| `HandleTriggerEnterEvent` | `event: TriggerEnterEvent` | void | Cache overlap player target |
+| `HandleTriggerLeaveEvent` | `event: TriggerLeaveEvent` | void | Clear overlap target on exit |
+| `UpdateFacingFlipServer` | `targetEntity: Entity` | void | Set `SpriteRenderer.FlipX` by relative X position |
+| `ApplyContactDamageServer` | `targetEntity: Entity` | void | Apply contact damage every chase tick while overlapping |
+| `ThinkChaseServer` | void | void | Stop chase movement during overlap, resume chase after leave |
+
+### MonsterSpawnComponent (Updated)
+- **File** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.mlua`
+- **Sync File** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.codeblock`
+- **Updated At** `2026-02-24`
+
+#### Integration Changes
+| Function | Change |
+|---|---|
+| `SpawnMonsterByRow` | Calls `EnsureMonsterTriggerComponent(spawnedEntity)` after spawn success |
+| `EnsureMonsterTriggerComponent` | Adds `TriggerComponent` if missing, sets `IsPassive=false`, copies collider size/offset when available |
+| `ApplyMonsterStatsIfAvailable` | Injects `MonsterChaseComponent.ContactDamage = mon_atk` and `ContactInvincibleDuration = 2.0` |
+
+### Map01BootstrapComponent (Updated)
+- **File** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
+- **Sync File** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.codeblock`
+- **Updated At** `2026-02-24`
+
+#### Added Property / Behavior
+| Name | Type | Description |
+|---|---|---|
+| `PlayerInvincibleDuration` | number | Player HP invincibility duration default (`2.0`) |
+
+| Function | Change |
+|---|---|
+| `ConfigurePlayer` | Sets player `HPSystemComponent.InvincibleDuration` to `PlayerInvincibleDuration` |
