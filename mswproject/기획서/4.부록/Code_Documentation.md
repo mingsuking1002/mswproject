@@ -92,7 +92,7 @@
 
 ## HPSystemComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.mlua`
-- **수정일:** `2026-02-18`
+- **수정일:** `2026-02-24`
 
 ### Properties
 | 이름 | 타입 | 설명 |
@@ -114,6 +114,7 @@
 | `HandleTriggerEnterEvent` | `event: TriggerEnterEvent` | void | 충돌 기반 피해 진입점 |
 | `ResolveIncomingDamage` | `sourceEntity: Entity` | integer | 투사체/몬스터 공격력 해석 |
 | `ApplyDamage` | `rawDamage: integer` | void | 피해 적용 및 사망 판정 |
+| `ApplyPenaltyDamage` | `rawDamage: integer` | void | 무적/피해감소를 무시하는 패널티 고정 피해 적용 |
 | `StartInvincibleWindow` | void | void | 무적 타이머 시작/갱신 |
 | `Heal` | `amount: integer` | void | 회복 처리 |
 | `ReviveToFullHP` | void | void | 부활 초기화 |
@@ -505,7 +506,7 @@
 
 ## Map01BootstrapComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
-- **수정일:** `2026-02-20`
+- **수정일:** `2026-02-24`
 
 ### Properties
 | 이름 | 타입 | 설명 |
@@ -526,13 +527,13 @@
 | `HandleUserEnterEvent` | `event: UserEnterEvent` | void | 신규 유저 입장 시 플레이어 설정 |
 | `ConfigurePlayerByUserIdServer` | `userId: string` | void | userId 기반 플레이어 엔티티 설정 |
 | `ConfigurePlayer` | `playerEntity: Entity` | void | 필수 컴포넌트 부착 및 LobbyFlow 설정 |
-| `AttachRequiredComponentsServer` | `playerEntity: Entity` | void | Phase 0~4 필수 컴포넌트 자동 부착 (`GoldComponent`, `ShopManagerComponent`, `ShopUIComponent`, `MonsterSpawnComponent` 포함) |
+| `AttachRequiredComponentsServer` | `playerEntity: Entity` | void | Phase 0~4 필수 컴포넌트 자동 부착 (`GoldComponent`, `ShopManagerComponent`, `ShopUIComponent`, `MonsterSpawnComponent`, `PenaltySystemComponent` 포함) |
 | `FindOrAddComponentSafe` | `targetEntity: Entity, typeName: string` | Component | 조회/추가 안전 래퍼 |
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## MonsterSpawnComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.mlua`
-- **수정일:** `2026-02-20`
+- **수정일:** `2026-02-24`
 
 ### Properties
 | 이름 | 타입 | 설명 |
@@ -557,7 +558,36 @@
 | `ApplyMonsterStatsIfAvailable` | `targetEntity: Entity, row: UserDataRow` | void | 스탯 컴포넌트 존재 시 안전 적용(미정 명세 훅) |
 | `GetSpawnMetaByEntity` | `targetEntity: Entity` | table | 엔티티 기준 스폰 메타 조회 API |
 | `RefreshSpawnStateServer` | void | void | 로비/상점/보스/데이터 상태를 반영해 스폰 시작/정지 |
-| `SpawnTick` | void | void | 타이머 틱에서 스폰 제한/좌표/재시도/보스 판정 처리 |
+| `SpawnTick` | void | void | 타이머 틱에서 좌표 검증 1회 기반 스폰/보스 판정 처리 (필드 상한 없음) |
+| `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
+
+## PenaltySystemComponent
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/PenaltySystemComponent.mlua`
+- **수정일:** `2026-02-24`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `WarningThreshold` | integer | 경고 UI 활성 임계 몬스터 수 |
+| `PenaltyThreshold` | integer | 패널티 발동 임계 몬스터 수 |
+| `CullCount` | integer | 패널티 시 강제 비활성화할 일반 몬스터 수 |
+| `PenaltyDamageRatio` | number | 플레이어 MaxHP 대비 패널티 피해 비율 |
+| `MonitorInterval` | number | 몬스터 수 감시 타이머 주기 |
+| `IsWarningActive` | boolean | 경고 UI 활성 상태(Sync) |
+| `WarningIconPath` | string | 경고 아이콘 엔티티 경로 |
+| `WarningTextPath` | string | 경고 텍스트 엔티티 경로 |
+| `WarningBubblePath` | string | 캐릭터 주변 경고 말풍선 엔티티 경로 |
+| `WarningBubbleTextPath` | string | 경고 말풍선 텍스트 엔티티 경로 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `CheckMonsterCountServer` | void | void | 임계치 비교 및 경고/패널티 상태 전환 |
+| `ExecutePenaltyServer` | `monsterSpawn: Component, currentCount: integer` | void | 일반 몬스터 비활성화 + 플레이어 패널티 피해 실행 |
+| `CullNormalMonstersServer` | `monsterSpawn: Component` | integer | 보스/엘리트 제외 랜덤 일반 몬스터 제거 |
+| `ApplyPenaltyDamageServer` | void | void | `HPSystemComponent.ApplyPenaltyDamage()` 호출 |
+| `SetWarningStateServer` | `isActive: boolean, currentCount: integer` | void | Sync 상태 갱신 및 클라이언트 UI 반영 |
+| `ApplyWarningUIClient` | `isActive, currentCount, penaltyThreshold` | void | 경고 UI 토글 및 문구 갱신 |
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## LobbyFlowComponent
@@ -593,5 +623,4 @@
 | `TryResetShopForOwnerServer` | void | void | 런 종료 시 `ShopManagerComponent.ResetShopStateServer()` 안전 호출 |
 | `HandleStageFailedServer` | void | void | 실패 종료 래퍼 |
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
-
 

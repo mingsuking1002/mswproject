@@ -75,7 +75,7 @@
 1. 현재 컨텍스트 계산(`SpeedrunTimerComponent.CurrentStageId`, `ElapsedTime`)
 2. `ResolveSpawnCandidates(stage, elapsedSec)`로 후보 분리(`NormalRows`, `BossRows`)
 3. 보스 후보 존재 시 최신 시간 보스 1회 스폰 후 `IsBossPhase=true`, 일반 스폰 중단
-4. 일반 후보는 `SpawnPerTick`/`MaxFieldMonsters`/`MaxRetryCount` 제약으로 생성
+4. 일반 후보는 `SpawnPerTick` 기준으로 생성(필드 상한 없음, 좌표 시도 1회)
 5. 생성 성공 시 메타 저장 + `ApplyMonsterStatsIfAvailable()` 호출
 
 ### 5-4. 좌표/유효성
@@ -94,8 +94,6 @@
 | `OuterRadius` | `number` | 도넛 최대 반경 |
 | `SpawnInterval` | `number` | 스폰 주기(초) |
 | `SpawnPerTick` | `integer` | 회당 생성 수 |
-| `MaxFieldMonsters` | `integer` | 필드 최대 몬스터 수 |
-| `MaxRetryCount` | `integer` | 좌표 재시도 횟수 |
 
 ### 6-2. `MonsterData` (웨이브+드랍 통합)
 
@@ -118,8 +116,9 @@
 
 1. 드랍 지급 로직: **미구현** (`BuildSpawnMetaFromRow`로 메타만 보관)
 2. 몬스터 스탯 적용: 대상 컴포넌트 존재 시에만 안전 적용, 없으면 스킵
-3. 고급 좌표 검증(NavMesh): **미구현**, 기본 반경+재시도 유지
-4. 변경 포인트 고정: `Resolve*`, `Build*`, `Apply*` 계층으로 후속 교체 가능
+3. 고급 좌표 검증(NavMesh): **미구현**, 기본 반경 검증만 유지
+4. 패널티 시스템 연동: 필드 몬스터 수 상한은 `PenaltySystemComponent`(경고 60 / 패널티 70)에서 관리
+5. 변경 포인트 고정: `Resolve*`, `Build*`, `Apply*` 계층으로 후속 교체 가능
 
 ---
 

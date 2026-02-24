@@ -126,6 +126,7 @@ script Map01BootstrapComponent extends Component
             "CameraFollowComponent",
             "HPSystemComponent",
             "MonsterSpawnComponent",
+            "PenaltySystemComponent",
             "ReloadComponent",
             "FireSystemComponent",
             "WeaponSwapComponent",

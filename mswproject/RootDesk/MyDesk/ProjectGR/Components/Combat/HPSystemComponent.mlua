@@ -103,6 +103,21 @@ script HPSystemComponent extends Component
         self:BroadcastHPState()
     end
 
+    -- Penalty damage bypasses invincibility/reduction so anti-stall punishment is always enforced.
+    @ExecSpace("ServerOnly")
+    method void ApplyPenaltyDamage(integer rawDamage)
+        if self.IsDead == true then
+            return
+        end
+        if rawDamage <= 0 then
+            return
+        end
+
+        self.CurrentHP = math.max(self.CurrentHP - rawDamage, 0)
+        self:EvaluateDeath()
+        self:BroadcastHPState()
+    end
+
     -- Invincibility uses timer scheduling to avoid per-frame state polling.
     @ExecSpace("ServerOnly")
     method void StartInvincibleWindow()

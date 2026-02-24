@@ -1,0 +1,508 @@
+@Component
+script PenaltySystemComponent extends Component
+
+    property integer WarningThreshold = 60
+    property integer PenaltyThreshold = 70
+    property integer CullCount = 30
+    property number PenaltyDamageRatio = 0.7
+    property number MonitorInterval = 0.5
+
+    @Sync
+    property boolean IsWarningActive = false
+
+    property Entity WarningIconEntity = nil
+    property string WarningIconPath = "/ui/DefaultGroup/GRPenaltyWarningIcon"
+    property Entity WarningTextEntity = nil
+    property string WarningTextPath = "/ui/DefaultGroup/GRPenaltyWarningText"
+    property Entity WarningBubbleEntity = nil
+    property string WarningBubblePath = "/ui/DefaultGroup/GRPenaltyWarningBubble"
+    property Entity WarningBubbleTextEntity = nil
+    property string WarningBubbleTextPath = "/ui/DefaultGroup/GRPenaltyWarningBubbleText"
+
+    -- Server cache/timer fields are initialized once so monitor flow survives hot-reload safely.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self:EnsureGRUtil()
+
+        self._T.MonitorTimerId = 0
+        self._T.PenaltyArmed = true
+        self._T.LastWarningCount = -1
+        self._T.CachedMonsterSpawn = nil
+        self._T.CachedHPSystem = nil
+    end
+
+    -- BeginPlay starts authoritative monitoring and pushes initial hidden warning state.
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self:EnsureGRUtil()
+        self:SetWarningStateServer(false, 0)
+        self:StartMonitorTimerServer()
+    end
+
+    -- EndPlay clears monitor timer to stop callbacks after entity lifecycle ends.
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        self:StopMonitorTimerServer()
+    end
+
+    -- Destroy repeats cleanup as final safety net for unusual teardown order.
+    @ExecSpace("ServerOnly")
+    method void OnDestroy()
+        self:StopMonitorTimerServer()
+    end
+
+    -- Timer service is used instead of OnUpdate so penalty checks stay lightweight at scale.
+    @ExecSpace("ServerOnly")
+    method void StartMonitorTimerServer()
+        if self._T.MonitorTimerId ~= nil and self._T.MonitorTimerId > 0 then
+            return
+        end
+
+        local interval = self.MonitorInterval
+        if interval <= 0 then
+            interval = 0.5
+        end
+
+        local callback = function()
+            self:CheckMonsterCountServer()
+        end
+        self._T.MonitorTimerId = _TimerService:SetTimerRepeat(callback, interval, 0)
+    end
+
+    -- Stop path is centralized so timer id state remains consistent for all lifecycle exits.
+    @ExecSpace("ServerOnly")
+    method void StopMonitorTimerServer()
+        if self._T.MonitorTimerId ~= nil and self._T.MonitorTimerId > 0 then
+            _TimerService:ClearTimer(self._T.MonitorTimerId)
+            self._T.MonitorTimerId = 0
+        end
+    end
+
+    -- Count checker owns warning transitions and threshold-crossing policy in one place.
+    @ExecSpace("ServerOnly")
+    method void CheckMonsterCountServer()
+        local monsterSpawn = self:ResolveMonsterSpawnComponentServer()
+        if monsterSpawn == nil then
+            self:SetWarningStateServer(false, 0)
+            return
+        end
+
+        if monsterSpawn.PruneSpawnedMonsters ~= nil then
+            pcall(function()
+                monsterSpawn:PruneSpawnedMonsters()
+            end)
+        end
+
+        local currentCount = 0
+        local countOk, countValue = pcall(function()
+            return monsterSpawn:GetSpawnedMonsterCount()
+        end)
+        if countOk == true and countValue ~= nil then
+            currentCount = math.max(0, math.floor(countValue))
+        end
+
+        if currentCount < self.WarningThreshold then
+            self._T.PenaltyArmed = true
+            self:SetWarningStateServer(false, currentCount)
+            return
+        end
+
+        if currentCount >= self.PenaltyThreshold then
+            self:SetWarningStateServer(true, currentCount)
+
+            -- Retrigger policy: exactly once per threshold crossing, re-armed only under warning threshold.
+            if self._T.PenaltyArmed == true then
+                self._T.PenaltyArmed = false
+                self:ExecutePenaltyServer(monsterSpawn, currentCount)
+            end
+            return
+        end
+
+        self:SetWarningStateServer(true, currentCount)
+    end
+
+    -- Penalty sequence keeps cull and HP punishment server-authoritative to avoid client exploits.
+    @ExecSpace("ServerOnly")
+    method void ExecutePenaltyServer(Component monsterSpawn, integer currentCount)
+        local destroyedCount = self:CullNormalMonstersServer(monsterSpawn)
+        self:ApplyPenaltyDamageServer()
+        self:SetWarningStateServer(false, currentCount)
+
+        log("[PenaltySystemComponent] Penalty executed. count=", currentCount, ", culled=", destroyedCount)
+    end
+
+    -- Culling selects only normal monsters so elite/boss fight pacing remains protected.
+    @ExecSpace("ServerOnly")
+    method integer CullNormalMonstersServer(Component monsterSpawn)
+        if monsterSpawn == nil then
+            return 0
+        end
+
+        local candidates = self:CollectCullCandidatesServer(monsterSpawn)
+        if candidates == nil or #candidates <= 0 then
+            return 0
+        end
+
+        self:ShuffleEntities(candidates)
+
+        local targetCount = math.max(0, math.floor(self.CullCount))
+        local cullLimit = math.min(targetCount, #candidates)
+        local destroyedCount = 0
+
+        for index = 1, cullLimit do
+            local targetEntity = candidates[index]
+            if targetEntity ~= nil and isvalid(targetEntity) == true then
+                local destroyOk, _ = pcall(function()
+                    _EntityService:Destroy(targetEntity)
+                end)
+                if destroyOk == true then
+                    destroyedCount += 1
+                end
+            end
+        end
+
+        if monsterSpawn.PruneSpawnedMonsters ~= nil then
+            pcall(function()
+                monsterSpawn:PruneSpawnedMonsters()
+            end)
+        end
+
+        return destroyedCount
+    end
+
+    -- Candidate collector reads spawn caches directly to avoid heavy per-entity component lookups.
+    @ExecSpace("ServerOnly")
+    method table CollectCullCandidatesServer(Component monsterSpawn)
+        local result = {}
+        if monsterSpawn == nil then
+            return result
+        end
+
+        local spawnedMonsters = nil
+        local spawnedOk, spawnedValue = pcall(function()
+            return monsterSpawn._T.SpawnedMonsters
+        end)
+        if spawnedOk == true then
+            spawnedMonsters = spawnedValue
+        end
+        if spawnedMonsters == nil then
+            return result
+        end
+
+        local spawnMetaByEntity = nil
+        local metaOk, metaValue = pcall(function()
+            return monsterSpawn._T.SpawnMetaByEntity
+        end)
+        if metaOk == true then
+            spawnMetaByEntity = metaValue
+        end
+
+        for _, monsterEntity in pairs(spawnedMonsters) do
+            if monsterEntity == nil or isvalid(monsterEntity) == false then
+                continue
+            end
+
+            if self:IsNormalMonsterEntityServer(monsterSpawn, spawnMetaByEntity, monsterEntity) == true then
+                table.insert(result, monsterEntity)
+            end
+        end
+
+        return result
+    end
+
+    -- Type filter enforces SPEC rule: elite/boss are never removed by penalty culling.
+    @ExecSpace("ServerOnly")
+    method boolean IsNormalMonsterEntityServer(Component monsterSpawn, table spawnMetaByEntity, Entity monsterEntity)
+        local monType = ""
+
+        if spawnMetaByEntity ~= nil and spawnMetaByEntity[monsterEntity] ~= nil then
+            local sourceMeta = spawnMetaByEntity[monsterEntity]
+            if sourceMeta.MonType ~= nil then
+                monType = tostring(sourceMeta.MonType)
+            elseif sourceMeta.mon_type ~= nil then
+                monType = tostring(sourceMeta.mon_type)
+            end
+        end
+
+        if monType == "" and monsterSpawn ~= nil and monsterSpawn.GetSpawnMetaByEntity ~= nil then
+            local readOk, clonedMeta = pcall(function()
+                return monsterSpawn:GetSpawnMetaByEntity(monsterEntity)
+            end)
+            if readOk == true and clonedMeta ~= nil then
+                if clonedMeta.MonType ~= nil then
+                    monType = tostring(clonedMeta.MonType)
+                elseif clonedMeta.mon_type ~= nil then
+                    monType = tostring(clonedMeta.mon_type)
+                end
+            end
+        end
+
+        local loweredType = string.lower(monType)
+        if loweredType == "boss" or loweredType == "elite" then
+            return false
+        end
+
+        return true
+    end
+
+    -- Fisher-Yates shuffle keeps random cull selection unbiased and cheap.
+    method void ShuffleEntities(table entityList)
+        if entityList == nil or #entityList <= 1 then
+            return
+        end
+
+        for index = #entityList, 2, -1 do
+            local randomIndex = math.random(1, index)
+            local temp = entityList[index]
+            entityList[index] = entityList[randomIndex]
+            entityList[randomIndex] = temp
+        end
+    end
+
+    -- HP penalty bypasses invincible/reduction path by calling dedicated HPSystem API.
+    @ExecSpace("ServerOnly")
+    method void ApplyPenaltyDamageServer()
+        local hpSystem = self:ResolveHPSystemComponentServer()
+        if hpSystem == nil then
+            return
+        end
+
+        local maxHp = 1
+        local maxHpOk, maxHpValue = pcall(function()
+            return hpSystem.MaxHP
+        end)
+        if maxHpOk == true and maxHpValue ~= nil then
+            maxHp = math.max(1, math.floor(maxHpValue))
+        end
+
+        local ratio = math.max(0, self.PenaltyDamageRatio)
+        local damage = math.max(0, math.floor(maxHp * ratio))
+        if damage <= 0 then
+            return
+        end
+
+        if hpSystem.ApplyPenaltyDamage ~= nil then
+            hpSystem:ApplyPenaltyDamage(damage)
+            return
+        end
+
+        log_warning("[PenaltySystemComponent] ApplyPenaltyDamage is missing on HPSystemComponent.")
+    end
+
+    -- Warning state setter is the only writer so sync/UI transitions stay deterministic.
+    @ExecSpace("ServerOnly")
+    method void SetWarningStateServer(boolean isActive, integer currentCount)
+        local safeCount = math.max(0, math.floor(currentCount))
+        local isChanged = (self.IsWarningActive ~= isActive) or (self._T.LastWarningCount ~= safeCount)
+
+        self.IsWarningActive = isActive
+        self._T.LastWarningCount = safeCount
+
+        if isChanged == true then
+            self:ApplyWarningUIClient(isActive, safeCount, self.PenaltyThreshold)
+        end
+    end
+
+    -- Client warning renderer is isolated from server logic so UI can be swapped by path only.
+    @ExecSpace("Client")
+    method void ApplyWarningUIClient(boolean isActive, integer currentCount, integer penaltyThreshold)
+        self:ResolveWarningUIClient()
+
+        self:SetEntityVisibleClient(self.WarningIconEntity, isActive)
+        self:SetEntityVisibleClient(self.WarningTextEntity, isActive)
+        self:SetEntityVisibleClient(self.WarningBubbleEntity, isActive)
+        self:SetEntityVisibleClient(self.WarningBubbleTextEntity, isActive)
+
+        if isActive == false then
+            return
+        end
+
+        local safeCount = math.max(0, math.floor(currentCount))
+        local safeThreshold = math.max(1, math.floor(penaltyThreshold))
+
+        local warningText = "WARNING: Monster Count Critical! " .. tostring(safeCount) .. "/" .. tostring(safeThreshold)
+        local bubbleText = "Too many enemies! Reduce their numbers!"
+
+        self:SetTextByEntityClient(self.WarningTextEntity, warningText)
+        self:SetTextByEntityClient(self.WarningBubbleTextEntity, bubbleText)
+    end
+
+    -- Client resolver supports runtime UI re-instantiation by re-finding invalid entities.
+    @ExecSpace("Client")
+    method void ResolveWarningUIClient()
+        if self.WarningIconEntity == nil or isvalid(self.WarningIconEntity) == false then
+            self.WarningIconEntity = self:ResolveEntityByPath(self.WarningIconPath)
+        end
+        if self.WarningTextEntity == nil or isvalid(self.WarningTextEntity) == false then
+            self.WarningTextEntity = self:ResolveEntityByPath(self.WarningTextPath)
+        end
+        if self.WarningBubbleEntity == nil or isvalid(self.WarningBubbleEntity) == false then
+            self.WarningBubbleEntity = self:ResolveEntityByPath(self.WarningBubblePath)
+        end
+        if self.WarningBubbleTextEntity == nil or isvalid(self.WarningBubbleTextEntity) == false then
+            self.WarningBubbleTextEntity = self:ResolveEntityByPath(self.WarningBubbleTextPath)
+        end
+    end
+
+    -- Visibility helper keeps warning UI toggles consistent across all configured entities.
+    @ExecSpace("Client")
+    method void SetEntityVisibleClient(Entity targetEntity, boolean visible)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+
+        pcall(function()
+            targetEntity.Enable = visible
+            targetEntity.Visible = visible
+        end)
+    end
+
+    -- Text helper writes only when TextComponent exists to avoid nil errors in partial UI setups.
+    @ExecSpace("Client")
+    method void SetTextByEntityClient(Entity targetEntity, string textValue)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+
+        local textComponent = targetEntity.TextComponent
+        if textComponent == nil or isvalid(textComponent) == false then
+            return
+        end
+
+        pcall(function()
+            textComponent.Text = textValue
+        end)
+    end
+
+    -- Path resolver centralizes entity lookup so all UI refs follow one nil-safe path.
+    method Entity ResolveEntityByPath(string entityPath)
+        if entityPath == nil or entityPath == "" then
+            return nil
+        end
+
+        local resolvedEntity = nil
+        local resolvedOk, resolvedValue = pcall(function()
+            return _EntityService:GetEntityByPath(entityPath)
+        end)
+        if resolvedOk == true then
+            resolvedEntity = resolvedValue
+        end
+        if resolvedEntity == nil or isvalid(resolvedEntity) == false then
+            return nil
+        end
+
+        return resolvedEntity
+    end
+
+    -- MonsterSpawn resolve is cached to avoid repeated component search every monitor tick.
+    @ExecSpace("ServerOnly")
+    method Component ResolveMonsterSpawnComponentServer()
+        local cached = self._T.CachedMonsterSpawn
+        if cached ~= nil and isvalid(cached) == true then
+            return cached
+        end
+
+        local resolved = self:ResolveComponentSafe(self.Entity, "MonsterSpawnComponent", nil)
+        if resolved ~= nil then
+            self._T.CachedMonsterSpawn = resolved
+        end
+        return resolved
+    end
+
+    -- HPSystem resolve is cached for the same reason as spawn component lookup.
+    @ExecSpace("ServerOnly")
+    method Component ResolveHPSystemComponentServer()
+        local cached = self._T.CachedHPSystem
+        if cached ~= nil and isvalid(cached) == true then
+            return cached
+        end
+
+        local resolved = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", nil)
+        if resolved ~= nil then
+            self._T.CachedHPSystem = resolved
+        end
+        return resolved
+    end
+
+    -- Utility bootstrap first; fallback lookup stays available in partially configured maps.
+    method void EnsureGRUtil()
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, utilApi = pcall(function()
+                return utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and utilApi ~= nil then
+                self._T.GRUtil = utilApi
+            end
+            if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+end

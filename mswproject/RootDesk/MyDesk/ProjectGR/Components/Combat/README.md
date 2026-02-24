@@ -5,6 +5,7 @@ Server-authoritative combat logic and weapon runtime flow.
 
 ## Components
 - HPSystemComponent
+- PenaltySystemComponent
 - FireSystemComponent
 - ProjectileComponent
 - ReloadComponent

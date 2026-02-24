@@ -127,10 +127,7 @@ script MonsterSpawnComponent extends Component
         local outerRadius = self:GetRowNumber(row, "OuterRadius", -1)
         local spawnInterval = self:GetRowNumber(row, "SpawnInterval", -1)
         local spawnPerTick = self:GetRowInteger(row, "SpawnPerTick", -1)
-        local maxFieldMonsters = self:GetRowInteger(row, "MaxFieldMonsters", -1)
-        local maxRetryCount = self:GetRowInteger(row, "MaxRetryCount", -1)
-
-        if innerRadius < 0 or outerRadius < 0 or spawnInterval <= 0 or spawnPerTick <= 0 or maxFieldMonsters <= 0 or maxRetryCount <= 0 then
+        if innerRadius < 0 or outerRadius < 0 or spawnInterval <= 0 or spawnPerTick <= 0 then
             self:LogError("[MonsterSpawnComponent] Invalid SpawnConfig values. Check SpawnConfig.csv.")
             return false
         end
@@ -144,8 +141,6 @@ script MonsterSpawnComponent extends Component
         config.OuterRadius = outerRadius
         config.SpawnInterval = spawnInterval
         config.SpawnPerTick = spawnPerTick
-        config.MaxFieldMonsters = maxFieldMonsters
-        config.MaxRetryCount = maxRetryCount
 
         self._T.Config = config
         return true
@@ -421,10 +416,6 @@ script MonsterSpawnComponent extends Component
         if config == nil then
             return
         end
-        if self:GetSpawnedMonsterCount() >= config.MaxFieldMonsters then
-            return
-        end
-
         local context = self:ResolveCurrentSpawnContext()
         local candidates = self:ResolveSpawnCandidates(context.Stage, context.ElapsedSec)
 
@@ -446,25 +437,16 @@ script MonsterSpawnComponent extends Component
 
         for i = 1, config.SpawnPerTick do
             self:PruneSpawnedMonsters()
-            if self:GetSpawnedMonsterCount() >= config.MaxFieldMonsters then
-                break
-            end
 
             local selectedRow = self:PickRandomRow(normalRows)
             if selectedRow == nil then
                 break
             end
 
-            for retry = 1, config.MaxRetryCount do
-                local spawnPosition = self:CalcDonutPosition()
-                if self:IsValidSpawnPosition(spawnPosition) == false then
-                    continue
-                end
-
-                local spawned = self:SpawnMonsterByRow(selectedRow, spawnPosition, false)
-                if spawned ~= nil and isvalid(spawned) == true then
-                    break
-                end
+            -- Spawn config no longer retries; penalty system now owns overflow control.
+            local spawnPosition = self:CalcDonutPosition()
+            if spawnPosition ~= nil and self:IsValidSpawnPosition(spawnPosition) == true then
+                self:SpawnMonsterByRow(selectedRow, spawnPosition, false)
             end
         end
     end
