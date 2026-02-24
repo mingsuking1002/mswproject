@@ -840,3 +840,19 @@
 | `Map01BootstrapComponent` | 필수 부착 목록을 `GameTimerComponent` + `InfiniteModeComponent` 기준으로 갱신 |
 | `ShopManagerComponent` | 상점 잠금 시 `PauseGame()` / 해제 시 `ResumeGame()` 사용 |
 | `WeaponSwapComponent` | 무기교체 잠금 시 `PauseGame()` / 해제 시 `ResumeGame()` 사용 |
+
+### DefaultGroup UI (Infinite/Ranking Placement)
+- **파일명:** `ui/DefaultGroup.ui`
+- **수정일:** `2026-02-24`
+
+#### Added Entities
+| 경로 | 초기 상태 | 용도 |
+|---|---|---|
+| `/ui/DefaultGroup/GRScoreText` | `enable: false`, `visible: false` | 실시간 점수 표시 |
+| `/ui/DefaultGroup/GRResultPanel` | `enable: false`, `visible: false` | 결과 패널 텍스트 표시 |
+| `/ui/DefaultGroup/GRReentryPopup` | `enable: false`, `visible: false` | 보스 클리어 후 재돌입 선택 팝업 |
+| `/ui/DefaultGroup/GRReentryPopup/AcceptButton` | `enable: true`, `visible: true` | 무한 모드 진입 수락 버튼 |
+| `/ui/DefaultGroup/GRReentryPopup/DeclineButton` | `enable: true`, `visible: true` | 무한 모드 거부 버튼 |
+
+#### Layout Note
+- 기존 랭킹 UI (`GRRankingText`, `GRMyRankText`)의 좌표/크기/표시순서는 유지하고, 신규 엔티티만 추가 배치.

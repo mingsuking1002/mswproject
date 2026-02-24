@@ -172,7 +172,7 @@
 - [x] `RankingUIComponent`: 탭 라벨 + 포맷 변경 (§6)
 - [x] `MonsterSpawnComponent`: 보스 감지 + Kill 콜백 + ModeMonsterData 전환
 - [x] `HPSystemComponent`: 무한 모드 사망 분기
-- [ ] UI 틀 제작 (GRResultPanel, GRReentryPopup, GRScoreText)
+- [x] UI 틀 제작 (GRResultPanel, GRReentryPopup, GRScoreText)
 - [x] `Map01BootstrapComponent` 목록 추가
 - [x] `Code_Documentation.md` 업데이트
 - [ ] 완료 후 `🟢 완료`
