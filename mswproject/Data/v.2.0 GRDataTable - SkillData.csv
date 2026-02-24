@@ -1,0 +1,24 @@
+id,skill_name,skill_effect,skill_type,skill_dmg,plus_speed,plus_dmg,sprite_ruid,sound_ruid,,,,,
+tag_skill_a,신속이동,3초간 캐릭터의 이동속도가 60% 증가합니다.,instant,-,0.6,,,,,,,,
+tag_skill_b,초집중,6초간 캐릭터의 공격력이 60% 증가합니다.,instant,-,,0.6,,,,,,,
+boss1_skill_1,3점 산탄 사격,3발 사격,instant,mon_atk,,,,,,,,,
+boss1_skill_2,가로 2연쇄 폭발,가로로 2줄 빔,instant,mon_atk,,,,,,,,,
+boss1_skill_3,세로 2연쇄 폭발,세로로 2줄 빔,instant,mon_atk,,,,,,,,,
+boss1_skill_4,삼삼 타일 폭발,3*3 타일 스마이트 타격,instant,mon_atk,,,,,,,,,
+boss2_skill_1,5점 산탄 사격,5발 사격,instant,mon_atk,,,,,,,,,
+boss2_skill_2,가로 3연쇄 폭발,가로로 3줄 빔,instant,mon_atk,,,,,,,,,
+boss2_skill_3,세로 3연쇄 폭발,세로로 3줄 빔,instant,mon_atk,,,,,,,,,
+boss2_skill_4,오오 타일 폭발,5*5 타일 스마이트 타격,instant,mon_atk,,,,,,,,,
+,,,,,,,,,,,,,
+,,,,,,,,,,,,,
+,,,,,,,,,,SkillData자료형 정의,,,
+,,,,,,,,,,컬럼명,역할,자료형,설명
+,,,,,,,,,,id,스킬 아이디,STRING,스킬을 호출하는 아이디 값입니다.
+,,,,,,,,,,skill_name,스킬 이름,STRING,스킬을 호출하는 아이디 값입니다.
+,,,,,,,,,,skill_effect,스킬 효과,STRING,스킬을 호출하는 아이디 값입니다.
+,,,,,,,,,,skill_type,스킬 지속 시간,int,스킬을 호출하는 아이디 값입니다.
+,,,,,,,,,,skill_dmg,스킬 지속 시간,int,스킬을 호출하는 아이디 값입니다.
+,,,,,,,,,,plus_speed,스킬 지속 시간,int,스킬을 호출하는 아이디 값입니다.
+,,,,,,,,,,plus_dmg,스킬 재사용시간,int,스킬을 호출하는 아이디 값입니다.
+,,,,,,,,,,sprite_ruid,스킬 재사용시간,int,스킬을 호출하는 아이디 값입니다.
+,,,,,,,,,,sound_ruid,스킬 재사용시간,int,스킬을 호출하는 아이디 값입니다.
