@@ -1,29 +1,30 @@
-id,name,mon_type,model_type,mon_hp,mon_atk,mon_spd,spawn_stage,spawn_time,creep_score,drop_id,spite_ruid,sound_ruid,death_effect_ruid,,,,,
-mon_n001,몬스터 1,normal,normal_s,900,20,2.6,1,0,10,normal_drop01,,,,,,,,
-mon_n002,몬스터 2,normal,normal_m,1800,20,2.6,1,2,10,normal_drop01,,,,,MonsterData 자료형 정의,,,
-mon_n003,몬스터 3,normal,,2700,20,2.6,1,4,10,normal_drop01,,,,,컬럼명,역할,자료형,설명
-mon_n004,몬스터 4,normal,,3600,20,2.6,1,6,10,normal_drop01,,,,,id,몬스터 테이블 ID,STRING,
-mon_n005,몬스터 5,normal,,4500,20,2.6,1,8,10,normal_drop01,,,,,name,몬스터 테이블 이름,STRING,
-mon_n006,몬스터 6,normal,,5400,20,2.6,1,10,10,normal_drop01,,,,,mon_type,몬스터 타입,ERUM,
-mon_n007,몬스터 7,normal,,6300,20,2.6,1,12,10,normal_drop01,,,,,model_type,모델 타입 (프리팹),ERUM,
-mon_n008,몬스터 8,normal,,7300,25,2.6,2,0,10,normal_drop01,,,,,mon_hp,몬스터 최대 체력,FLOAT,
-mon_n009,몬스터 9,normal,,8200,25,2.6,2,2,10,normal_drop01,,,,,mon_atk,몬스터 공격력,FLOAT,
-mon_n010,몬스터 10,normal,,9100,25,2.6,2,4,10,normal_drop01,,,,,mon_spd,몬스터 이동속도,FLOAT,
-mon_n011,몬스터 11,normal,,10000,25,2.6,2,6,10,normal_drop01,,,,,spawn_stage,스폰 스테이지,ERUM,
-mon_n012,몬스터 12,normal,,10900,25,2.6,2,8,10,normal_drop01,,,,,spawn_time,스폰 시간 (분),FLOAT,
-mon_n013,몬스터 13,normal,,11800,25,2.6,2,10,10,normal_drop01,,,,,gold,처치 시 획득 골드,INT,
-mon_n014,몬스터 14,normal,,12700,25,2.6,2,12,10,normal_drop01,,,,,creep_score,처치 시 획득 스코어,INT,
-mon_e001,엘리트 B 1,elite,elite_l,1000,25,3.3,1,1,500,elite_drop01,,,,,drop_id,드롭 테이블 ID,STRING,
-mon_e002,엘리트 A 2,elite,,3600,35,2.3,1,3,500,elite_drop01,,,,,spite_ruid,몬스터 RUID (애니메이션),STRING,
-mon_e003,엘리트 A 3,elite,,5400,35,2.3,1,5,500,elite_drop01,,,,,sound_ruid,피격 사운드 RUID,STRING,
-mon_e004,엘리트 B 4,elite,,4000,25,3.3,1,7,500,elite_drop01,,,,,death_effect_ruid,몬스터 죽음 애니메이션 RUID,STRING,
-mon_e005,엘리트 B 5,elite,,5000,25,3.3,1,9,500,elite_drop01,,,,,,,,
-mon_e006,엘리트 A 6,elite,,10800,35,2.3,1,11,500,elite_drop01,,,,,,,,
-mon_e007,엘리트 B 7,elite,,7000,25,3.3,1,13,500,elite_drop01,,,,,,,,
-mon_e008,엘리트 A 8,elite,,14600,40,2.3,2,1,500,elite_drop01,,,,,,,,
-mon_e009,엘리트 B 9,elite,,9000,30,3.3,2,3,500,elite_drop01,,,,,,,,
-mon_e010,엘리트 B 10,elite,,10000,30,3.3,2,5,500,elite_drop01,,,,,,,,
-mon_e011,엘리트 A 11,elite,,20000,40,2.3,2,7,500,elite_drop01,,,,,,,,
-mon_e012,엘리트 A 12,elite,,21800,40,2.3,2,9,500,elite_drop01,,,,,,,,
-mon_e013,엘리트 A 13,elite,,23600,40,2.3,2,11,500,elite_drop01,,,,,,,,
-mon_e014,엘리트 B 14,elite,,14000,30,3.3,2,13,500,elite_drop01,,,,,,,,
+﻿id,name,mon_type,model_type,mon_hp,mon_atk,mon_spd,spawn_stage,spawn_time,creep_score,drop_id,sprite_ruid,sound_ruid,death_effect_ruid,collider_w,collider_h,collider_offset_x,collider_offset_y
+mon_n001,몬스??1,normal,normal_s,900,20,2.6,1,0,10,normal_drop01,bde703ee45784e49bd62192f94248bf3,,b06f8dda65c34bfa8de53afb2a0906c7,,,,
+mon_n002,몬스??2,normal,normal_s,1800,20,2.6,1,2,10,normal_drop01,c3a90d05576f43608d37be10387315b1,,34dd0f03fece434485668743d89ff9cf,,MonsterData ?�료???�의,,
+mon_n003,몬스??3,normal,normal_s,2700,20,2.6,1,4,10,normal_drop01,6c1aa4d5c67540b29b74fdf46daef1d3,,d5dea7445ff842a3891a03e9e7c1fc1e,,컬럼�???��,?�료???�명,
+mon_n004,몬스??4,normal,normal_s,3600,20,2.6,1,6,10,normal_drop01,68dad519868b4fad94870237de0c5d66,,2bf6cd21cda34b59a8804fef805e5913,,id,몬스???�이�?ID,STRING
+mon_n005,몬스??5,normal,normal_s,4500,20,2.6,1,8,10,normal_drop01,4a141fc777a14395b6af8444cef50d73,,5fddbc2a267f463cb513cdd4d0b6b88d,,name,몬스???�이�??�름,STRING
+mon_n006,몬스??6,normal,normal_s,5400,20,2.6,1,10,10,normal_drop01,3aa1f1f7c0304a7ca49a131309621f3a,,0dc0ca9f839f48cda105f8093800b86b,,mon_type,몬스???�??ERUM,
+mon_n007,몬스??7,normal,normal_s,6300,20,2.6,1,12,10,normal_drop01,0067555ff61c44428916c666fa1db6d7,,9ba5750fa8aa4e2d879d37588e45816e,,model_type,모델 ?�??(?�리??,ERUM
+mon_n008,몬스??8,normal,normal_s,7300,25,2.6,2,0,10,normal_drop01,7627eb62b3e84bd48ac557f36f582080,,5a7806d64e7b4b938946b58591141010,,mon_hp,몬스??최�? 체력,FLOAT
+mon_n009,몬스??9,normal,normal_s,8200,25,2.6,2,2,10,normal_drop01,f46c4862e92746afb183cd7351ce36f4,,1656e04f11a64f66b2fd4961390728d6,,mon_atk,몬스??공격??FLOAT,
+mon_n010,몬스??10,normal,normal_s,9100,25,2.6,2,4,10,normal_drop01,94a782f4bde04b29a828bd333941533f,,5fea633c00dc4210bf8154cc2fc0241a,,mon_spd,몬스???�동?�도,FLOAT
+mon_n011,몬스??11,normal,normal_s,10000,25,2.6,2,6,10,normal_drop01,4f4cbf63b65a460caa9deac96ada79d2,,228fa67492024363a10311504f36a843,,spawn_stage,?�폰 ?�테?��?,ERUM
+mon_n012,몬스??12,normal,normal_s,10900,25,2.6,2,8,10,normal_drop01,41146ececdc245edadd8f4d6e8a0203b,,89e31f577b8f404a88adc2dae13da566,,spawn_time,?�폰 ?�간 (�?,FLOAT
+mon_n013,몬스??13,normal,normal_s,11800,25,2.6,2,10,10,normal_drop01,b6b38bcb66134fb78e45fbb4bfcb128c,,ddfad1214ff7443aa392e412ecb9cd4f,,gold,처치 ???�득 골드,INT
+mon_n014,몬스??14,normal,normal_s,12700,25,2.6,2,12,10,normal_drop01,fe3401ccd794443fbba0baffa213b3c5,,b109290f05a04ef38ac3bb47eb712824,,creep_score,처치 ???�득 ?�코??INT,
+mon_e001,?�리??B 1,elite,normal_s,1000,25,3.3,1,1,500,elite_drop01,ebcff13482b44588b3a08f5088cbab08,,387a447e4efe46aeb0b6a79bc64c2845,,drop_id,?�롭 ?�이�?ID,STRING
+mon_e002,?�리??A 2,elite,normal_s,3600,35,2.3,1,3,500,elite_drop01,8febe9e8a4f94d788e464f33d6b80ebf,,4d4486e2294249cdb0098f1339d7a4c7,,sprite_ruid,몬스??RUID (?�니메이??,STRING
+mon_e003,?�리??A 3,elite,normal_s,5400,35,2.3,1,5,500,elite_drop01,aef6c99e56e84291be52316dc62b5976,,77bd3eb20a134173b28aee06852b737b,,sound_ruid,?�격 ?�운??RUID,STRING
+mon_e004,?�리??B 4,elite,normal_s,4000,25,3.3,1,7,500,elite_drop01,bba813156bee4516b71934b17d7434ad,,9e1f9913f579480a9308fe6ed68e97f2,,death_effect_ruid,몬스??죽음 ?�니메이??RUID,STRING
+mon_e005,?�리??B 5,elite,normal_s,5000,25,3.3,1,9,500,elite_drop01,c3b415711ec34aaba57b63c4a9450fb6,,872698bbb097465e923a005422d7a9ef,,,,
+mon_e006,?�리??A 6,elite,normal_s,10800,35,2.3,1,11,500,elite_drop01,3f531938fadf455eaa295e0ad9bfaaba,,12fdc9abfc48426489660bf3bf394338,,,,
+mon_e007,?�리??B 7,elite,normal_s,7000,25,3.3,1,13,500,elite_drop01,606705303cd149ad9347afe891ed3f4e,,bc81848e0f2d452ca5c899149ac590c3,,,,
+mon_e008,?�리??A 8,elite,normal_s,14600,40,2.3,2,1,500,elite_drop01,937d90a064ce4fc192681996c3bef60e,,5c90792182c84c4b8eaf7fe78f53675a,,,,
+mon_e009,?�리??B 9,elite,normal_s,9000,30,3.3,2,3,500,elite_drop01,485d08a89a07463ba7f86d0604cb249a,,13d9f22ac70d4e93b8d596eb3034d88f,,,,
+mon_e010,?�리??B 10,elite,normal_s,10000,30,3.3,2,5,500,elite_drop01,48a47baf04b44abba907c983148b6e98,,b4723e03efbc4341944aaa960b32b574,,,,
+mon_e011,?�리??A 11,elite,normal_s,20000,40,2.3,2,7,500,elite_drop01,368721ea7f9f454cae87e3b02b817427,,a2ab5c17c7fc44c49857c6ad6ed51adf,,,,
+mon_e012,?�리??A 12,elite,normal_s,21800,40,2.3,2,9,500,elite_drop01,e68585536b53488ba84e792fc7326521,,b295c0c5840e425595a1f833efeaa95c,,,,
+mon_e013,?�리??A 13,elite,normal_s,23600,40,2.3,2,11,500,elite_drop01,de08118996d44827856ef57ae7a42b7b,,dcbedfdec6b741a7acaa068502bec03d,,,,
+mon_e014,?�리??B 14,elite,normal_s,14000,30,3.3,2,13,500,elite_drop01,98a252733b63436eb979ae2c5ad818ed,,b42fd6cd61a54397be90d77fba521cb6,,,,
+

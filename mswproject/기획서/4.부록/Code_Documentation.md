@@ -553,8 +553,9 @@
 | `LoadSpawnDataFromTable` | void | boolean | `SpawnConfig`/`MonsterData` 로드 및 준비 상태 갱신 |
 | `LoadMonsterDataFromTable` | void | boolean | 몬스터 통합 테이블 로드 |
 | `ResolveSpawnCandidates` | `stage: integer, elapsedSec: number` | table | 현재 시점 스폰 후보(일반/보스) 분리 |
-| `BuildSpawnMetaFromRow` | `row: UserDataRow` | table | 드랍/보상 후속 연동용 메타 데이터 구성 |
+| `BuildSpawnMetaFromRow` | `row: UserDataRow` | table | 드랍/보상 + 콜라이더(`collider_*`) 후속 연동용 메타 데이터 구성 |
 | `ApplyMonsterVisualIfAvailable` | `targetEntity: Entity, row: UserDataRow` | void | `sprite_ruid`가 있으면 SpriteRenderer 외형만 안전 교체 |
+| `ApplyMonsterColliderIfAvailable` | `targetEntity: Entity, row: UserDataRow` | void | `collider_w/h/offset` 데이터가 있으면 Trigger/Hit/PhysicsCollider 크기/오프셋 반영 |
 | `ApplyMonsterStatsIfAvailable` | `targetEntity: Entity, row: UserDataRow` | void | 스탯 컴포넌트 존재 시 안전 적용(미정 명세 훅) |
 | `GetSpawnMetaByEntity` | `targetEntity: Entity` | table | 엔티티 기준 스폰 메타 조회 API |
 | `RefreshSpawnStateServer` | void | void | 로비/상점/보스/데이터 상태를 반영해 스폰 시작/정지 |
@@ -623,4 +624,3 @@
 | `TryResetShopForOwnerServer` | void | void | 런 종료 시 `ShopManagerComponent.ResetShopStateServer()` 안전 호출 |
 | `HandleStageFailedServer` | void | void | 실패 종료 래퍼 |
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
-

@@ -1,4 +1,4 @@
-﻿id,name,mon_type,model_type,mon_hp,mon_atk,mon_spd,spawn_stage,spawn_time (min),gold,drop_item_1_id,drop_item_1_rate,drop_item_1_amount,drop_item_2_id,drop_item_2_rate,drop_item_2_amount,sprite_ruid,sound_ruid,death_effect_ruid
+﻿id,name,mon_type,model_type,mon_hp,mon_atk,mon_spd,spawn_stage,spawn_time (min),gold,drop_item_1_id,drop_item_1_rate,drop_item_1_amount,drop_item_2_id,drop_item_2_rate,drop_item_2_amount,sprite_ruid,sound_ruid,death_effect_ruid,collider_w,collider_h,collider_offset_x,collider_offset_y
 mon_n001,몬스터 1,normal,normal_s,900,20,2.6,1,0,10,box_resource,0.01,1,potion_hp,0.01,1,,,
 mon_n002,몬스터 2,normal,normal_m,1800,20,2.6,1,3,10,box_resource,0.01,1,potion_hp,0.01,1,,,
 mon_n003,몬스터 3,normal,,2700,20,2.6,1,5,10,box_resource,0.01,1,potion_hp,0.01,1,,,
@@ -29,3 +29,4 @@ mon_e013,엘리트 A 13,elite,,23800,40,2.3,2,11,40,box_resource,1,1,potion_hp,0
 mon_e014,엘리트 B 14,elite,,14000,30,3.3,2,13,40,box_resource,1,1,potion_hp,0.01,1,,,
 mon_b001,중간보스,boss,boss1,130000,50,0,1,14,100,box_resource,1,2,potion_hp,0.01,1,,,
 mon_b002,보스,boss,,270000,60,0,2,14,100,box_resource,1,2,potion_hp,0.01,1,,,
+

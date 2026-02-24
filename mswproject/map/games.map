@@ -301,6 +301,47 @@
           ],
           "@version": 1
         }
+      },
+      {
+        "id": "3e6de59b-2e35-4f5f-aeb5-9a8d8cf43af2",
+        "path": "/maps/games/MonsterContainer",
+        "componentNames": "MOD.Core.TransformComponent",
+        "jsonString": {
+          "name": "MonsterContainer",
+          "path": "/maps/games/MonsterContainer",
+          "nameEditable": true,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 5,
+          "pathConstraints": "///",
+          "revision": 1,
+          "modelId": null,
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "Position": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "ZRotation": 0.0,
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
       }
     ]
   }

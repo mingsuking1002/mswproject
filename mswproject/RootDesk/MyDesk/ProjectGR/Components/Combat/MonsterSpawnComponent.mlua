@@ -683,6 +683,7 @@ script MonsterSpawnComponent extends Component
         self._T.SpawnMetaByEntity[spawnedEntity] = self:BuildSpawnMetaFromRow(row)
 
         self:ApplyMonsterVisualIfAvailable(spawnedEntity, row)
+        self:ApplyMonsterColliderIfAvailable(spawnedEntity, row)
         self:ApplyMonsterStatsIfAvailable(spawnedEntity, row)
 
         if isBoss == true then
@@ -716,6 +717,10 @@ script MonsterSpawnComponent extends Component
         meta.SpriteRuid = self:GetRowString(row, "sprite_ruid", "")
         meta.SoundRuid = self:GetRowString(row, "sound_ruid", "")
         meta.DeathEffectRuid = self:GetRowString(row, "death_effect_ruid", "")
+        meta.ColliderW = self:GetRowNumber(row, "collider_w", -1)
+        meta.ColliderH = self:GetRowNumber(row, "collider_h", -1)
+        meta.ColliderOffsetX = self:GetRowNumber(row, "collider_offset_x", 0)
+        meta.ColliderOffsetY = self:GetRowNumber(row, "collider_offset_y", 0)
         meta.IsBoss = self:IsBossRow(row)
 
         return meta
@@ -746,6 +751,96 @@ script MonsterSpawnComponent extends Component
         if applyOk == false then
             local rowId = self:GetRowString(row, "id", "(unknown)")
             log_warning("[MonsterSpawnComponent] Failed to apply sprite_ruid. rowId=", rowId, ", sprite_ruid=", spriteRuid)
+        end
+    end
+
+    -- Runtime sprite swaps do not auto-fit colliders, so collider bounds are explicitly data-driven.
+    method void ApplyMonsterColliderIfAvailable(Entity targetEntity, UserDataRow row)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+        if row == nil then
+            return
+        end
+
+        local colliderW = self:GetRowNumber(row, "collider_w", -1)
+        local colliderH = self:GetRowNumber(row, "collider_h", -1)
+        if colliderW <= 0 or colliderH <= 0 then
+            return
+        end
+
+        local colliderSize = Vector2(colliderW, colliderH)
+        local offsetXText = self:GetRowString(row, "collider_offset_x", "")
+        local offsetYText = self:GetRowString(row, "collider_offset_y", "")
+        local hasOffset = false
+        local colliderOffset = Vector2.zero
+        if offsetXText ~= "" and offsetYText ~= "" then
+            local offsetX = tonumber(offsetXText)
+            local offsetY = tonumber(offsetYText)
+            if offsetX ~= nil and offsetY ~= nil then
+                hasOffset = true
+                colliderOffset = Vector2(offsetX, offsetY)
+            end
+        end
+
+        local appliedAny = false
+        local trigger = self:ResolveComponentSafe(targetEntity, "TriggerComponent", "BoxSize")
+        if trigger ~= nil then
+            local sizeOk, _ = pcall(function()
+                trigger.BoxSize = colliderSize
+            end)
+            if sizeOk == true then
+                appliedAny = true
+            end
+            if hasOffset == true then
+                pcall(function()
+                    trigger.ColliderOffset = colliderOffset
+                end)
+                pcall(function()
+                    trigger.BoxOffset = colliderOffset
+                end)
+            end
+        end
+
+        local hit = self:ResolveComponentSafe(targetEntity, "HitComponent", "BoxSize")
+        if hit ~= nil then
+            local sizeOk, _ = pcall(function()
+                hit.BoxSize = colliderSize
+            end)
+            if sizeOk == true then
+                appliedAny = true
+            end
+            if hasOffset == true then
+                pcall(function()
+                    hit.ColliderOffset = colliderOffset
+                end)
+                pcall(function()
+                    hit.BoxOffset = colliderOffset
+                end)
+            end
+        end
+
+        local physicsCollider = self:ResolveComponentSafe(targetEntity, "PhysicsColliderComponent", "BoxSize")
+        if physicsCollider ~= nil then
+            local sizeOk, _ = pcall(function()
+                physicsCollider.BoxSize = colliderSize
+            end)
+            if sizeOk == true then
+                appliedAny = true
+            end
+            if hasOffset == true then
+                pcall(function()
+                    physicsCollider.ColliderOffset = colliderOffset
+                end)
+                pcall(function()
+                    physicsCollider.BoxOffset = colliderOffset
+                end)
+            end
+        end
+
+        if appliedAny == false then
+            local rowId = self:GetRowString(row, "id", "(unknown)")
+            log_warning("[MonsterSpawnComponent] collider_w/h provided but no collider component found. rowId=", rowId)
         end
     end
 
