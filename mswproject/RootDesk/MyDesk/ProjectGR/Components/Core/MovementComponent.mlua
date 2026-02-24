@@ -6,23 +6,51 @@ script MovementComponent extends Component
     @Sync
     property boolean CanMove = true
     @Sync
-    property integer FacingDirection = 1
-    @Sync
     property boolean UsePlayerInput = true
 
-    property number MoveSpeed = 1.0
+    property number MoveSpeed = 0
+    property string IdleStateName = "IDLE"
+    property string MoveStateName = "MOVE"
+    property boolean AutoRegisterStates = true
+    property boolean DisableNativeJumpAction = true
+    property boolean UsePhysicsMovement = true
 
     -- Server initializes authoritative input cache so movement always has a deterministic source.
     @ExecSpace("ServerOnly")
     method void OnInitialize()
         self._T.ServerInputDirection = Vector2.zero
         self:EnsureGRUtil()
+        self:EnsureAnimationStatesRegistered()
     end
 
     -- Client bootstraps GR utility first to keep ownership checks and component lookup behavior consistent.
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         self:EnsureGRUtil()
+        self:DisableNativeJumpActionClient()
+    end
+
+    -- Custom top-down movement does not use native jump, so Space key mapping is removed to prevent jump sfx spam.
+    @ExecSpace("ClientOnly")
+    method void DisableNativeJumpActionClient()
+        if self.DisableNativeJumpAction ~= true then
+            return
+        end
+        if self.Entity == nil or isvalid(self.Entity) == false then
+            return
+        end
+
+        local playerController = self.Entity.PlayerControllerComponent
+        if playerController == nil or isvalid(playerController) == false then
+            return
+        end
+        if playerController.RemoveActionKey == nil then
+            return
+        end
+
+        pcall(function()
+            playerController:RemoveActionKey(KeyboardKey.Space)
+        end)
     end
 
     -- Every movement key transition is sampled client-side and sent to server as intent only.
@@ -69,7 +97,6 @@ script MovementComponent extends Component
         end
 
         self:ApplyMovementServer(moveDirection, finalSpeed, delta)
-        self:UpdateFacingDirection(moveDirection)
         self:UpdateStateAnimation(moveDirection)
     end
 
@@ -172,13 +199,15 @@ script MovementComponent extends Component
         return inputDirection:Normalize()
     end
 
-    -- Rigidbody is preferred for wall-slide behavior, with transform fallback for non-rigidbody entities.
+    -- Physics velocity path can be disabled for player entities that use custom top-down transform movement.
     @ExecSpace("ServerOnly")
     method void ApplyMovementServer(Vector2 moveDirection, number speed, number delta)
-        local rigidbody = self.Entity.RigidbodyComponent
-        if rigidbody ~= nil and isvalid(rigidbody) == true then
-            rigidbody.MoveVelocity = moveDirection * speed
-            return
+        if self.UsePhysicsMovement == true then
+            local rigidbody = self.Entity.RigidbodyComponent
+            if rigidbody ~= nil and isvalid(rigidbody) == true then
+                rigidbody.MoveVelocity = moveDirection * speed
+                return
+            end
         end
 
         local transform = self.Entity.TransformComponent
@@ -191,48 +220,6 @@ script MovementComponent extends Component
         transform:Translate(deltaX, deltaY)
     end
 
-    -- Facing direction is synchronized from server to keep sprite orientation consistent across clients.
-    @ExecSpace("ServerOnly")
-    method void UpdateFacingDirection(Vector2 moveDirection)
-        if moveDirection == nil then
-            return
-        end
-        if moveDirection:SqrMagnitude() <= 0 then
-            return
-        end
-
-        local direction = self:ComputeFacingDirection(moveDirection)
-        if direction ~= self.FacingDirection then
-            self.FacingDirection = direction
-        end
-    end
-
-    method integer ComputeFacingDirection(Vector2 direction)
-        local angle = math.deg(math.atan(direction.y, direction.x))
-        if angle < 0 then
-            angle = angle + 360
-        end
-
-        -- 8-direction index (1~8): right, up-right, up, up-left, left, down-left, down, down-right.
-        if angle >= 337.5 or angle < 22.5 then
-            return 1
-        elseif angle < 67.5 then
-            return 2
-        elseif angle < 112.5 then
-            return 3
-        elseif angle < 157.5 then
-            return 4
-        elseif angle < 202.5 then
-            return 5
-        elseif angle < 247.5 then
-            return 6
-        elseif angle < 292.5 then
-            return 7
-        else
-            return 8
-        end
-    end
-
     -- State updates are server-authoritative to avoid divergent animation states per client.
     @ExecSpace("ServerOnly")
     method void UpdateStateAnimation(Vector2 moveDirection)
@@ -241,24 +228,96 @@ script MovementComponent extends Component
             return
         end
 
+        local targetState = self.IdleStateName
         if moveDirection ~= nil and moveDirection:SqrMagnitude() > 0 then
-            if stateComponent.CurrentStateName ~= "MOVE" then
-                stateComponent:ChangeState("MOVE")
-            end
+            targetState = self.MoveStateName
+        end
+
+        self:TryChangeStateSafely(stateComponent, targetState)
+    end
+
+    -- State registration is best-effort because 일부 player model은 상태 키가 비어 있어 ChangeState 호출 시 엔진 오류가 발생한다.
+    @ExecSpace("ServerOnly")
+    method void EnsureAnimationStatesRegistered()
+        local stateComponent = self:ResolveComponentSafe(self.Entity, "StateComponent", "CurrentStateName")
+        if stateComponent == nil then
             return
         end
 
-        if stateComponent.CurrentStateName ~= "IDLE" then
-            stateComponent:ChangeState("IDLE")
+        self:TryAddStateSafely(stateComponent, self.IdleStateName)
+        self:TryAddStateSafely(stateComponent, self.MoveStateName)
+    end
+
+    -- ChangeState는 등록되지 않은 상태명에서 예외를 던질 수 있으므로 pcall + 등록 재시도로 보호한다.
+    method boolean TryChangeStateSafely(Component stateComponent, string stateName)
+        if stateComponent == nil then
+            return false
         end
+        if stateName == nil or stateName == "" then
+            return false
+        end
+
+        local currentState = ""
+        local readOk, readValue = pcall(function()
+            return stateComponent.CurrentStateName
+        end)
+        if readOk == true and readValue ~= nil then
+            currentState = tostring(readValue)
+        end
+        if currentState == stateName then
+            return true
+        end
+
+        local changed = false
+        local changeOk, changeResult = pcall(function()
+            return stateComponent:ChangeState(stateName)
+        end)
+        if changeOk == true and changeResult == true then
+            changed = true
+        end
+        if changed == true then
+            return true
+        end
+
+        if self.AutoRegisterStates == true then
+            self:TryAddStateSafely(stateComponent, stateName)
+            local retryOk, retryResult = pcall(function()
+                return stateComponent:ChangeState(stateName)
+            end)
+            if retryOk == true and retryResult == true then
+                return true
+            end
+        end
+
+        return false
+    end
+
+    -- AddState overload 차이로 인한 예외를 막기 위해 호출 자체를 안전 래핑한다.
+    method boolean TryAddStateSafely(Component stateComponent, string stateName)
+        if stateComponent == nil then
+            return false
+        end
+        if stateName == nil or stateName == "" then
+            return false
+        end
+
+        local addOk, addResult = pcall(function()
+            return stateComponent:AddState(stateName)
+        end)
+        if addOk == true and addResult == true then
+            return true
+        end
+        return false
     end
 
     -- Stops velocity explicitly on end play so recycled entities do not keep stale movement.
     @ExecSpace("ServerOnly")
     method void OnEndPlay()
-        local rigidbody = self.Entity.RigidbodyComponent
-        if rigidbody ~= nil and isvalid(rigidbody) == true then
-            rigidbody.MoveVelocity = Vector2.zero
+        if self.UsePhysicsMovement == true then
+            local rigidbody = self.Entity.RigidbodyComponent
+            if rigidbody ~= nil and isvalid(rigidbody) == true then
+                rigidbody.MoveVelocity = Vector2.zero
+            end
         end
     end
 

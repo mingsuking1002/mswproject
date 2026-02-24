@@ -4,6 +4,8 @@ script Map01BootstrapComponent extends Component
     property boolean ConfigureOnBeginPlay = true
     property boolean ConfigureOnUserEnter = true
     property boolean AutoAttachMissingComponents = true
+    property boolean EnablePeriodicConfigure = true
+    property number PeriodicConfigureInterval = 1.0
 
     property boolean EnableLobbyMapSplit = false
     property string LobbyMapName = "games"
@@ -12,28 +14,40 @@ script Map01BootstrapComponent extends Component
     property integer LobbyRankingTab = 1
     property string LobbyUIRootPath = "/ui/DefaultGroup"
     property number PlayerInvincibleDuration = 2.0
+    property boolean ForcePlayerTransformMovement = true
 
     -- Server initializes utility and sets up per-user configuration flow.
     @ExecSpace("ServerOnly")
     method void OnInitialize()
         self:EnsureGRUtil()
+        self._T.PeriodicConfigureTimerId = 0
     end
 
     -- BeginPlay configures already connected users so bootstrap works after hot-reload/rejoin.
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
-        if self.ConfigureOnBeginPlay == false then
-            return
+        if self.ConfigureOnBeginPlay == true then
+            local users = _UserService.UserEntities
+            if users ~= nil then
+                for userId, _ in pairs(users) do
+                    self:ConfigurePlayerByUserIdServer(userId)
+                end
+            end
         end
 
-        local users = _UserService.UserEntities
-        if users == nil then
-            return
-        end
+        self:StartPeriodicConfigureTimerServer()
+    end
 
-        for userId, _ in pairs(users) do
-            self:ConfigurePlayerByUserIdServer(userId)
-        end
+    -- EndPlay clears reconciliation timer so stale callbacks never touch invalid entities.
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        self:StopPeriodicConfigureTimerServer()
+    end
+
+    -- Destroy repeats timer cleanup as final safety net.
+    @ExecSpace("ServerOnly")
+    method void OnDestroy()
+        self:StopPeriodicConfigureTimerServer()
     end
 
     -- New users are configured at join time so required components are always attached.
@@ -64,6 +78,46 @@ script Map01BootstrapComponent extends Component
         self:ConfigurePlayer(userEntity)
     end
 
+    -- Periodic reconciliation fixes late user-entity creation races where UserEnter event fires before entity is ready.
+    @ExecSpace("ServerOnly")
+    method void StartPeriodicConfigureTimerServer()
+        if self.EnablePeriodicConfigure ~= true then
+            return
+        end
+        if self.ConfigureOnBeginPlay == false and self.ConfigureOnUserEnter == false then
+            return
+        end
+        if self._T.PeriodicConfigureTimerId ~= nil and self._T.PeriodicConfigureTimerId > 0 then
+            return
+        end
+
+        local interval = self.PeriodicConfigureInterval
+        if interval <= 0 then
+            interval = 1.0
+        end
+
+        local tick = function()
+            local users = _UserService.UserEntities
+            if users == nil then
+                return
+            end
+
+            for userId, _ in pairs(users) do
+                self:ConfigurePlayerByUserIdServer(userId)
+            end
+        end
+
+        self._T.PeriodicConfigureTimerId = _TimerService:SetTimerRepeat(tick, interval, 0)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void StopPeriodicConfigureTimerServer()
+        if self._T.PeriodicConfigureTimerId ~= nil and self._T.PeriodicConfigureTimerId > 0 then
+            _TimerService:ClearTimer(self._T.PeriodicConfigureTimerId)
+            self._T.PeriodicConfigureTimerId = 0
+        end
+    end
+
     -- Public configuration API is used by workspace runbook and can be called manually if needed.
     @ExecSpace("ServerOnly")
     method void ConfigurePlayer(Entity playerEntity)
@@ -75,6 +129,9 @@ script Map01BootstrapComponent extends Component
             self:AttachRequiredComponentsServer(playerEntity)
         end
 
+        -- Weapon branch is render/aim only; player root collider remains authoritative for hit collisions.
+        self:EnforceWeaponHolderNoCollisionServer(playerEntity)
+
         local hpSystem = self:ResolveComponentSafe(playerEntity, "HPSystemComponent", "InvincibleDuration")
         if hpSystem ~= nil then
             local invincibleDuration = self.PlayerInvincibleDuration
@@ -83,6 +140,14 @@ script Map01BootstrapComponent extends Component
             end
             pcall(function()
                 hpSystem.InvincibleDuration = invincibleDuration
+            end)
+        end
+
+        local movement = self:ResolveComponentSafe(playerEntity, "MovementComponent", "CanMove")
+        if movement ~= nil then
+            local usePhysics = not self.ForcePlayerTransformMovement
+            pcall(function()
+                movement.UsePhysicsMovement = usePhysics
             end)
         end
 
@@ -126,6 +191,29 @@ script Map01BootstrapComponent extends Component
                 end)
             end
         end
+
+        local characterData = self:ResolveComponentSafe(playerEntity, "CharacterDataInitComponent", "CurrentCharacterId")
+        if characterData ~= nil then
+            if characterData.InitializeCharacterDataServer ~= nil then
+                pcall(function()
+                    characterData:InitializeCharacterDataServer()
+                end)
+            end
+
+            if characterData.ApplyCharacterDataServer ~= nil then
+                local targetCharId = "player_a"
+                local readOk, readValue = pcall(function()
+                    return characterData.CurrentCharacterId
+                end)
+                if readOk == true and readValue ~= nil and tostring(readValue) ~= "" then
+                    targetCharId = tostring(readValue)
+                end
+
+                pcall(function()
+                    characterData:ApplyCharacterDataServer(targetCharId, true)
+                end)
+            end
+        end
     end
 
     -- Required component list is attached idempotently via shared utility resolver.
@@ -136,6 +224,8 @@ script Map01BootstrapComponent extends Component
             "GoldComponent",
             "MovementComponent",
             "CameraFollowComponent",
+            "CharacterDataInitComponent",
+            "WeaponModelComponent",
             "HPSystemComponent",
             "MonsterSpawnComponent",
             "PenaltySystemComponent",
@@ -144,6 +234,7 @@ script Map01BootstrapComponent extends Component
             "WeaponSwapComponent",
             "ShopManagerComponent",
             "TagManagerComponent",
+            "TagSkillComponent",
             "GameTimerComponent",
             "RankingComponent",
             "InfiniteModeComponent",
@@ -157,6 +248,69 @@ script Map01BootstrapComponent extends Component
         for _, typeName in pairs(required) do
             self:FindOrAddComponentSafe(playerEntity, typeName)
         end
+    end
+
+    -- Disables collision components only under WeaponHolder branch so player root hitbox remains unchanged.
+    @ExecSpace("ServerOnly")
+    method void EnforceWeaponHolderNoCollisionServer(Entity playerEntity)
+        if playerEntity == nil or isvalid(playerEntity) == false then
+            return
+        end
+
+        local holder = nil
+        local findOk, findResult = pcall(function()
+            return playerEntity:GetChildByName("WeaponHolder", true)
+        end)
+        if findOk == true then
+            holder = findResult
+        end
+        if holder == nil or isvalid(holder) == false then
+            return
+        end
+
+        self:DisableWeaponCollisionBranchRecursiveServer(holder)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void DisableWeaponCollisionBranchRecursiveServer(Entity targetEntity)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+
+        self:TryDisableCollisionComponent(targetEntity, "PhysicsColliderComponent")
+        self:TryDisableCollisionComponent(targetEntity, "TriggerComponent")
+        self:TryDisableCollisionComponent(targetEntity, "RigidbodyComponent")
+        self:TryDisableCollisionComponent(targetEntity, "PhysicsRigidbodyComponent")
+        self:TryDisableCollisionComponent(targetEntity, "KinematicbodyComponent")
+        self:TryDisableCollisionComponent(targetEntity, "SideviewbodyComponent")
+
+        local children = targetEntity.Children
+        if children == nil then
+            return
+        end
+
+        for _, child in pairs(children) do
+            if child ~= nil and isvalid(child) == true then
+                self:DisableWeaponCollisionBranchRecursiveServer(child)
+            end
+        end
+    end
+
+    method void TryDisableCollisionComponent(Entity targetEntity, string componentName)
+        local component = self:ResolveComponentSafe(targetEntity, componentName, nil)
+        if component == nil then
+            return
+        end
+
+        pcall(function()
+            component.Enable = false
+        end)
+        pcall(function()
+            component.IsPassive = true
+        end)
+        pcall(function()
+            component.MoveVelocity = Vector2.zero
+        end)
     end
 
     method Component FindOrAddComponentSafe(Entity targetEntity, string typeName)

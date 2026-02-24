@@ -1,4 +1,4 @@
-﻿# 🟡 대기중
+﻿# 🔵 진행중
 # SPEC_TagSkill — 태그 스킬(Entry Skill) 시스템
 
 ## 1. 개요
@@ -109,15 +109,17 @@ PlaySkillCutscene(charId):
 
 ## 8. Codex 체크리스트
 
-- [ ] `TagSkillComponent` 신규 작성
-- [ ] `SkillData` CSV 연동
+- [x] `TagSkillComponent` 신규 작성
+- [x] `SkillData` CSV 연동
 - [ ] 스킬 컷씬 UI 틀 제작
-- [ ] `Map01BootstrapComponent` 목록 추가
-- [ ] `Code_Documentation.md` 업데이트
+- [x] `Map01BootstrapComponent` 목록 추가
+- [x] `Code_Documentation.md` 업데이트
 - [ ] 완료 후 `🟢 완료`
 
 ---
 
-| **작성자** | Antigravity (TD) | **상태** | 🟡 대기중 |
+| **작성자** | Antigravity (TD) | **상태** | 🔵 진행중 |
 |---|---|---|---|
 | **담당자** | Codex | **작성일** | 2026-02-24 |
+
+

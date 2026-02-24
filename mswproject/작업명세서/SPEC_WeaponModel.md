@@ -1,4 +1,4 @@
-# 🟡 대기중
+﻿# 🔵 진행중
 # SPEC_WeaponModel — 무기 모델 프리팹 부착 & 회전
 
 ## 1. 개요
@@ -100,14 +100,16 @@ end
 
 ## 8. Codex 체크리스트
 
-- [ ] `WeaponModelComponent` 신규 작성
+- [x] `WeaponModelComponent` 신규 작성
 - [ ] `WeaponHolder` 자식 엔티티 구조 정의
-- [ ] `Map01BootstrapComponent` 목록 추가
-- [ ] `Code_Documentation.md` 업데이트
+- [x] `Map01BootstrapComponent` 목록 추가
+- [x] `Code_Documentation.md` 업데이트
 - [ ] 완료 후 `🟢 완료`
 
 ---
 
-| **작성자** | Antigravity (TD) | **상태** | 🟡 대기중 |
+| **작성자** | Antigravity (TD) | **상태** | 🔵 진행중 |
 |---|---|---|---|
 | **담당자** | Codex | **작성일** | 2026-02-24 |
+
+

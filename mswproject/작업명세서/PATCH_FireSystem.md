@@ -1,4 +1,4 @@
-﻿# 🟡 대기중
+﻿# 🔵 진행중
 # PATCH_FireSystem — 무기 모델 회전 위임 + Muzzle 변경
 
 > 기존 `SPEC_FireSystem.md` (🟢 완료)에 대한 **패치 문서**
@@ -39,12 +39,14 @@
 
 ## Codex 체크리스트
 
-- [ ] 캐릭터 회전 로직 제거
-- [ ] MuzzleOffset → `WeaponModelComponent.GetMuzzlePosition()` 교체
-- [ ] 발사 방향 → `WeaponModelComponent.GetAimDirection()` 교체
-- [ ] `Code_Documentation.md` 업데이트
+- [x] 캐릭터 회전 로직 제거
+- [x] MuzzleOffset → `WeaponModelComponent.GetMuzzlePosition()` 교체
+- [x] 발사 방향 → `WeaponModelComponent.GetAimDirection()` 교체
+- [x] `Code_Documentation.md` 업데이트
 
 ---
 
-| **작성자** | Antigravity (TD) | **상태** | 🟡 대기중 |
+| **작성자** | Antigravity (TD) | **상태** | 🔵 진행중 |
 |---|---|---|---|
+
+

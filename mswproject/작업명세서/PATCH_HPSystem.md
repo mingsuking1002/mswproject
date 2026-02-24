@@ -1,4 +1,4 @@
-﻿# 🟡 대기중
+﻿# 🔵 진행중
 # PATCH_HPSystem — PlayerbleData 초기값 연동
 
 > 기존 `SPEC_HPSystem.md` (🟢 완료)에 대한 **패치 문서**
@@ -24,11 +24,13 @@
 
 ## Codex 체크리스트
 
-- [ ] `MaxHP`/`CurrentHP` 초기화 하드코딩 제거
-- [ ] `CharacterDataInitComponent` 주입 수신 확인
-- [ ] `Code_Documentation.md` 업데이트
+- [x] `MaxHP`/`CurrentHP` 초기화 하드코딩 제거
+- [x] `CharacterDataInitComponent` 주입 수신 확인
+- [x] `Code_Documentation.md` 업데이트
 
 ---
 
-| **작성자** | Antigravity (TD) | **상태** | 🟡 대기중 |
+| **작성자** | Antigravity (TD) | **상태** | 🔵 진행중 |
 |---|---|---|---|
+
+

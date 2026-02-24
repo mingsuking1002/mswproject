@@ -2,9 +2,9 @@
 script HPSystemComponent extends Component
 
     @Sync
-    property integer MaxHP = 100
+    property integer MaxHP = 1
     @Sync
-    property integer CurrentHP = 100
+    property integer CurrentHP = 1
     @Sync
     property boolean IsInvincible = false
     @Sync

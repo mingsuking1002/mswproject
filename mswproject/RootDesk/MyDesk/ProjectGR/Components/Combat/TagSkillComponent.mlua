@@ -1,0 +1,557 @@
+﻿@Component
+script TagSkillComponent extends Component
+
+    @Sync
+    property boolean IsSkillActive = false
+    @Sync
+    property number SkillBuffMultiplier = 1.0
+
+    property string SkillBuffType = ""
+
+    property string CharacterTableName = "PlayerbleData"
+    property string SkillDataTableName = "SkillData"
+    property number CharacterASkillDuration = 3.0
+    property number CharacterBSkillDuration = 6.0
+    property number CharacterBSkillCooldown = 16.0
+
+    property string SkillCutscenePath = "/ui/DefaultGroup/GRSkillCutscene"
+    property boolean EnableDebugLogs = true
+
+    -- Server initializes buff/cooldown runtime state before first tag activation.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self:EnsureGRUtil()
+        self.IsSkillActive = false
+        self.SkillBuffMultiplier = 1.0
+        self.SkillBuffType = ""
+
+        self._T.BuffTimerId = 0
+        self._T.CutsceneTimerId = 0
+        self._T.ActiveSkillId = ""
+        self._T.ActiveCharId = ""
+        self._T.AppliedMoveMultiplier = 1.0
+        self._T.AppliedAttackPercent = 0
+        self._T.CooldownEndsAt = {}
+
+        self._T.SkillRowById = {}
+        self._T.SkillRowsLoaded = false
+        self._T.CharacterRowById = {}
+        self._T.CharacterRowsLoaded = false
+    end
+
+    -- EndPlay clears timers to prevent delayed callbacks on invalid entities.
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self._T.BuffTimerId ~= nil and self._T.BuffTimerId > 0 then
+            _TimerService:ClearTimer(self._T.BuffTimerId)
+            self._T.BuffTimerId = 0
+        end
+    end
+
+    -- Public tag entry API applies character-specific buff and schedules removal.
+    @ExecSpace("ServerOnly")
+    method void ActivateTagSkillServer(string charId)
+        if charId == nil or charId == "" then
+            return
+        end
+
+        local skillId = self:ResolveSkillIdByCharacterServer(charId)
+        if skillId == nil or skillId == "" then
+            return
+        end
+
+        local nowSec = self:GetServerNowSeconds()
+        if self:IsSkillOnCooldownServer(skillId, nowSec) == true then
+            if self.EnableDebugLogs == true then
+                log("[TagSkill] cooldown active. skillId=", skillId)
+            end
+            return
+        end
+
+        self:RemoveBuffServer()
+
+        local skillRow = self:GetSkillRowByIdServer(skillId)
+        local buffType, buffValue = self:ResolveBuffTypeAndValueServer(charId, skillId, skillRow)
+        if buffType == "" or buffValue <= 0 then
+            return
+        end
+
+        local duration = self:ResolveSkillDurationServer(charId, skillId)
+        if duration <= 0 then
+            return
+        end
+
+        if buffType == "movespeed" then
+            local movement = self:ResolveComponentSafe(self.Entity, "MovementComponent", "SpeedMultiplier")
+            if movement == nil then
+                return
+            end
+
+            local multiplier = 1.0 + buffValue
+            if multiplier <= 0 then
+                multiplier = 1.0
+            end
+            self._T.AppliedMoveMultiplier = multiplier
+
+            pcall(function()
+                movement.SpeedMultiplier = movement.SpeedMultiplier * multiplier
+            end)
+
+            self.SkillBuffType = "movespeed"
+            self.SkillBuffMultiplier = multiplier
+        elseif buffType == "attack" then
+            local fire = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "BuffIncreasePercent")
+            if fire == nil then
+                return
+            end
+
+            local attackPercent = buffValue
+            if attackPercent <= 1 then
+                attackPercent = attackPercent * 100
+            end
+            self._T.AppliedAttackPercent = attackPercent
+
+            pcall(function()
+                fire.BuffIncreasePercent = fire.BuffIncreasePercent + attackPercent
+            end)
+
+            self.SkillBuffType = "attack"
+            self.SkillBuffMultiplier = 1.0 + (attackPercent * 0.01)
+        else
+            return
+        end
+
+        self.IsSkillActive = true
+        self._T.ActiveSkillId = skillId
+        self._T.ActiveCharId = charId
+
+        if self._T.BuffTimerId ~= nil and self._T.BuffTimerId > 0 then
+            _TimerService:ClearTimer(self._T.BuffTimerId)
+            self._T.BuffTimerId = 0
+        end
+
+        local clearBuff = function()
+            self._T.BuffTimerId = 0
+            self:RemoveBuffServer()
+        end
+        self._T.BuffTimerId = _TimerService:SetTimerOnce(clearBuff, duration)
+
+        if skillId == "tag_skill_b" then
+            self._T.CooldownEndsAt[skillId] = nowSec + math.max(self.CharacterBSkillCooldown, 0)
+        end
+
+        self:PlaySkillCutsceneClient(charId, skillId)
+    end
+
+    -- Removes currently active buff and restores modified stats using tracked delta values.
+    @ExecSpace("ServerOnly")
+    method void RemoveBuffServer()
+        if self.IsSkillActive ~= true then
+            return
+        end
+
+        if self.SkillBuffType == "movespeed" then
+            local movement = self:ResolveComponentSafe(self.Entity, "MovementComponent", "SpeedMultiplier")
+            if movement ~= nil then
+                local applied = self._T.AppliedMoveMultiplier
+                if applied == nil or applied <= 0 then
+                    applied = 1.0
+                end
+                pcall(function()
+                    movement.SpeedMultiplier = movement.SpeedMultiplier / applied
+                end)
+            end
+            self._T.AppliedMoveMultiplier = 1.0
+        elseif self.SkillBuffType == "attack" then
+            local fire = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "BuffIncreasePercent")
+            if fire ~= nil then
+                local applied = self._T.AppliedAttackPercent
+                if applied == nil then
+                    applied = 0
+                end
+                pcall(function()
+                    fire.BuffIncreasePercent = fire.BuffIncreasePercent - applied
+                    if fire.BuffIncreasePercent < 0 then
+                        fire.BuffIncreasePercent = 0
+                    end
+                end)
+            end
+            self._T.AppliedAttackPercent = 0
+        end
+
+        self.IsSkillActive = false
+        self.SkillBuffType = ""
+        self.SkillBuffMultiplier = 1.0
+        self._T.ActiveSkillId = ""
+        self._T.ActiveCharId = ""
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean IsSkillOnCooldownServer(string skillId, number nowSec)
+        if skillId == nil or skillId == "" then
+            return false
+        end
+
+        local endsAt = self._T.CooldownEndsAt[skillId]
+        if endsAt == nil then
+            return false
+        end
+
+        return nowSec < endsAt
+    end
+
+    @ExecSpace("ServerOnly")
+    method string ResolveSkillIdByCharacterServer(string charId)
+        -- Runtime decision is fixed to A/B immediate mapping, while table value remains fallback.
+        if charId == "player_a" then
+            return "tag_skill_a"
+        end
+        if charId == "player_b" then
+            return "tag_skill_b"
+        end
+
+        local row = self:GetCharacterRowByIdServer(charId)
+        if row == nil then
+            return ""
+        end
+
+        return self:GetRowString(row, "tag_skill", "")
+    end
+
+    @ExecSpace("ServerOnly")
+    method table ResolveBuffTypeAndValueServer(string charId, string skillId, table skillRow)
+        local result = {}
+        result.Type = ""
+        result.Value = 0
+
+        local plusSpeed = 0
+        local plusDmg = 0
+        if skillRow ~= nil then
+            plusSpeed = self:GetRowNumber(skillRow, "plus_speed", 0)
+            plusDmg = self:GetRowNumber(skillRow, "plus_dmg", 0)
+        end
+
+        if skillId == "tag_skill_a" or charId == "player_a" then
+            if plusSpeed <= 0 then
+                plusSpeed = 0.6
+            end
+            result.Type = "movespeed"
+            result.Value = plusSpeed
+            return result.Type, result.Value
+        end
+
+        if skillId == "tag_skill_b" or charId == "player_b" then
+            if plusDmg <= 0 then
+                plusDmg = 0.6
+            end
+            result.Type = "attack"
+            result.Value = plusDmg
+            return result.Type, result.Value
+        end
+
+        if plusSpeed > 0 then
+            return "movespeed", plusSpeed
+        end
+        if plusDmg > 0 then
+            return "attack", plusDmg
+        end
+
+        return "", 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method number ResolveSkillDurationServer(string charId, string skillId)
+        if skillId == "tag_skill_b" or charId == "player_b" then
+            return math.max(self.CharacterBSkillDuration, 0)
+        end
+        return math.max(self.CharacterASkillDuration, 0)
+    end
+
+    -- Client cutscene uses optional UI path and auto-hides after a short duration.
+    @ExecSpace("Client")
+    method void PlaySkillCutsceneClient(string charId, string skillId)
+        local panel = _EntityService:GetEntityByPath(self.SkillCutscenePath)
+        if panel == nil or isvalid(panel) == false then
+            return
+        end
+
+        local textComponent = panel.TextComponent
+        if textComponent ~= nil and isvalid(textComponent) == true then
+            local label = "TAG SKILL"
+            if skillId == "tag_skill_a" then
+                label = "A TAG SKILL"
+            elseif skillId == "tag_skill_b" then
+                label = "B TAG SKILL"
+            end
+            pcall(function()
+                textComponent.Text = label
+            end)
+        end
+
+        pcall(function()
+            panel.Enable = true
+            panel.Visible = true
+        end)
+
+        if self._T.CutsceneTimerId ~= nil and self._T.CutsceneTimerId > 0 then
+            _TimerService:ClearTimer(self._T.CutsceneTimerId)
+            self._T.CutsceneTimerId = 0
+        end
+
+        local hideFn = function()
+            if panel ~= nil and isvalid(panel) == true then
+                pcall(function()
+                    panel.Enable = false
+                    panel.Visible = false
+                end)
+            end
+            self._T.CutsceneTimerId = 0
+        end
+        self._T.CutsceneTimerId = _TimerService:SetTimerOnce(hideFn, 1.0)
+    end
+
+    @ExecSpace("ServerOnly")
+    method table GetSkillRowByIdServer(string skillId)
+        if skillId == nil or skillId == "" then
+            return nil
+        end
+
+        if self._T.SkillRowsLoaded ~= true then
+            self:LoadSkillRowsServer()
+        end
+
+        if self._T.SkillRowById == nil then
+            return nil
+        end
+
+        return self._T.SkillRowById[skillId]
+    end
+
+    @ExecSpace("ServerOnly")
+    method table GetCharacterRowByIdServer(string charId)
+        if charId == nil or charId == "" then
+            return nil
+        end
+
+        if self._T.CharacterRowsLoaded ~= true then
+            self:LoadCharacterRowsServer()
+        end
+
+        if self._T.CharacterRowById == nil then
+            return nil
+        end
+
+        return self._T.CharacterRowById[charId]
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadSkillRowsServer()
+        local dataTable = self:LoadTableServer(self.SkillDataTableName)
+        if dataTable == nil then
+            return
+        end
+
+        local rows = nil
+        local rowsOk, rowsResult = pcall(function()
+            return dataTable:GetAllRow()
+        end)
+        if rowsOk == true then
+            rows = rowsResult
+        end
+        if rows == nil then
+            return
+        end
+
+        local cache = {}
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+
+            local id = self:GetRowString(row, "id", "")
+            if id == "" then
+                continue
+            end
+            cache[id] = row
+        end
+
+        self._T.SkillRowById = cache
+        self._T.SkillRowsLoaded = true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadCharacterRowsServer()
+        local dataTable = self:LoadTableServer(self.CharacterTableName)
+        if dataTable == nil then
+            return
+        end
+
+        local rows = nil
+        local rowsOk, rowsResult = pcall(function()
+            return dataTable:GetAllRow()
+        end)
+        if rowsOk == true then
+            rows = rowsResult
+        end
+        if rows == nil then
+            return
+        end
+
+        local cache = {}
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+
+            local id = self:GetRowString(row, "id", "")
+            if id == "" then
+                continue
+            end
+            cache[id] = row
+        end
+
+        self._T.CharacterRowById = cache
+        self._T.CharacterRowsLoaded = true
+    end
+
+    method table LoadTableServer(string tableName)
+        if tableName == nil or tableName == "" then
+            return nil
+        end
+
+        local loadOk, loadResult = pcall(function()
+            return _DataService:GetTable(tableName)
+        end)
+        if loadOk == true then
+            return loadResult
+        end
+
+        return nil
+    end
+
+    method string GetRowString(any row, string columnName, string fallbackValue)
+        if row == nil then
+            return fallbackValue
+        end
+
+        local value = nil
+        local readOk, readResult = pcall(function()
+            return row:GetItem(columnName)
+        end)
+        if readOk == true then
+            value = readResult
+        end
+        if value == nil or value == "" then
+            return fallbackValue
+        end
+
+        return tostring(value)
+    end
+
+    method number GetRowNumber(any row, string columnName, number fallbackValue)
+        local text = self:GetRowString(row, columnName, "")
+        if text == "" then
+            return fallbackValue
+        end
+
+        local parsed = tonumber(text)
+        if parsed == nil then
+            return fallbackValue
+        end
+
+        return parsed
+    end
+
+    method number GetServerNowSeconds()
+        local nowSec = 0
+        local readOk, readValue = pcall(function()
+            return _UtilLogic.ServerElapsedSeconds
+        end)
+        if readOk == true and readValue ~= nil then
+            nowSec = readValue
+        end
+        return nowSec
+    end
+
+    -- Utility bootstrap first; fallback local lookup remains when global util is absent.
+    method void EnsureGRUtil()
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, utilApi = pcall(function()
+                return utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and utilApi ~= nil then
+                self._T.GRUtil = utilApi
+            end
+            if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+end

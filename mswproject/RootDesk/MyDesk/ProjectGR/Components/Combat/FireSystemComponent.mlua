@@ -7,10 +7,10 @@ script FireSystemComponent extends Component
     property boolean CanAttack = true
 
     property number FireCooldown = 0.5
-    property Vector2 MuzzleOffset = Vector2(0.5, 0.2)
     property string ProjectileModelId = ""
     property Entity ProjectileTemplateEntity = nil
 
+    property integer BasePlayerAtk = 0
     property integer BaseWeaponAttack = 10
     property integer PassiveFlatAttack = 0
     property number BuffIncreasePercent = 0
@@ -76,17 +76,26 @@ script FireSystemComponent extends Component
             return
         end
 
-        local shooterPosition = self.Entity.TransformComponent.WorldPosition
-        if shooterPosition == nil then
-            return
+        local shooterPosition2D = self:ResolveMuzzlePositionServer()
+        local fireDirection = nil
+
+        local weaponModel = self:ResolveComponentSafe(self.Entity, "WeaponModelComponent", "CurrentWeaponId")
+        if weaponModel ~= nil and weaponModel.GetAimDirection ~= nil then
+            local aimOk, aimResult = pcall(function()
+                return weaponModel:GetAimDirection(targetWorldPosition)
+            end)
+            if aimOk == true and aimResult ~= nil and aimResult:SqrMagnitude() > 0 then
+                fireDirection = aimResult:Normalize()
+            end
         end
 
-        local shooterPosition2D = Vector2(shooterPosition.x, shooterPosition.y)
-        local fireDirection = targetWorldPosition - shooterPosition2D
-        if fireDirection:SqrMagnitude() <= 0 then
-            fireDirection = self:GetFallbackDirection()
-        else
-            fireDirection = fireDirection:Normalize()
+        if fireDirection == nil then
+            fireDirection = targetWorldPosition - shooterPosition2D
+            if fireDirection:SqrMagnitude() <= 0 then
+                fireDirection = self:GetFallbackDirection()
+            else
+                fireDirection = fireDirection:Normalize()
+            end
         end
 
         local reloadComponent = self:ResolveComponentSafe(self.Entity, "ReloadComponent", "CurrentAmmo")
@@ -101,7 +110,6 @@ script FireSystemComponent extends Component
             return
         end
 
-        self:RotateShooter(fireDirection)
         self:SpawnProjectileServer(fireDirection, shooterPosition2D)
         self:StartFireCooldown()
     end
@@ -167,12 +175,31 @@ script FireSystemComponent extends Component
         log_warning("[FireSystem] Fire blocked: set ProjectileModelId or place /maps/games/GRProjectileTemplate with ProjectileComponent+TriggerComponent.")
     end
 
-    -- Muzzle offset is rotated by shot direction so spawned projectiles start in front of the shooter.
+    -- Server resolves muzzle directly from WeaponModelComponent, and falls back to shooter center when missing.
+    @ExecSpace("ServerOnly")
+    method Vector2 ResolveMuzzlePositionServer()
+        local weaponModel = self:ResolveComponentSafe(self.Entity, "WeaponModelComponent", "CurrentWeaponId")
+        if weaponModel ~= nil and weaponModel.GetMuzzlePosition ~= nil then
+            local muzzleOk, muzzleValue = pcall(function()
+                return weaponModel:GetMuzzlePosition()
+            end)
+            if muzzleOk == true and muzzleValue ~= nil then
+                return Vector2(muzzleValue.x, muzzleValue.y)
+            end
+        end
+
+        local shooterPosition = self.Entity.TransformComponent.WorldPosition
+        if shooterPosition == nil then
+            return Vector2.zero
+        end
+
+        return Vector2(shooterPosition.x, shooterPosition.y)
+    end
+
+    -- Compatibility wrapper keeps existing spawn pipeline while using muzzle world position as final spawn point.
     @ExecSpace("ServerOnly")
     method Vector2 CalculateMuzzleWorldPosition(Vector2 direction, Vector2 shooterPosition)
-        local forward = direction
-        local right = Vector2(-forward.y, forward.x)
-        return shooterPosition + (forward * self.MuzzleOffset.x) + (right * self.MuzzleOffset.y)
+        return shooterPosition
     end
 
     -- Projectile is spawned and initialized with snapshot stats to keep post-swap damage immutable.
@@ -252,21 +279,10 @@ script FireSystemComponent extends Component
         return templateEntity
     end
 
-    -- Shooter rotation is committed on server so all clients observe identical aim direction.
-    @ExecSpace("ServerOnly")
-    method void RotateShooter(Vector2 direction)
-        local transform = self.Entity.TransformComponent
-        if transform == nil or isvalid(transform) == false then
-            return
-        end
-
-        transform.ZRotation = math.deg(math.atan(direction.y, direction.x))
-    end
-
     -- Final damage formula is server-side to prevent packet-level damage spoofing.
     @ExecSpace("ServerOnly")
     method integer CalculateFinalDamage()
-        local baseDamage = self.BaseWeaponAttack + self.PassiveFlatAttack
+        local baseDamage = self.BasePlayerAtk + self.BaseWeaponAttack + self.PassiveFlatAttack
         local buffMultiplier = 1 + (self.BuffIncreasePercent * 0.01)
         local passiveMultiplier = 1 + (self.PassiveIncreasePercent * 0.01)
         local finalDamage = baseDamage * buffMultiplier * passiveMultiplier
@@ -295,6 +311,16 @@ script FireSystemComponent extends Component
     -- If click overlaps shooter position, previous facing direction is used as fallback fire direction.
     @ExecSpace("ServerOnly")
     method Vector2 GetFallbackDirection()
+        local weaponModel = self:ResolveComponentSafe(self.Entity, "WeaponModelComponent", "CurrentWeaponId")
+        if weaponModel ~= nil and weaponModel.GetForwardDirectionFromHolder ~= nil then
+            local dirOk, dirValue = pcall(function()
+                return weaponModel:GetForwardDirectionFromHolder()
+            end)
+            if dirOk == true and dirValue ~= nil and dirValue:SqrMagnitude() > 0 then
+                return dirValue:Normalize()
+            end
+        end
+
         local transform = self.Entity.TransformComponent
         if transform == nil or isvalid(transform) == false then
             return Vector2.right

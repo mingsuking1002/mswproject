@@ -1,18 +1,22 @@
-id,name,player_hp,player_atk,movespeed,current_weaponslot,weaponslot1,weaponslot2,weaponslot3,weaponslot4,tag_skill,sprite_ruid,,,,,,
-player_a,베루아,100,100,3,,bow,cannon,turret_minigun,deathperado,tag_skill_char_a_01,,,,,,,
-player_b,카르테,90,100,3,,gun,fireball,turret_sniper,gungnir,tag_skill_char_b_01,,,,,,,
-,,,,,,,,,,,,,,,,,
-,,,,,,,,,,,,,,,,,
-,,,,,,,,,,,,,,,,,
-,,,,,,,,,,,,,,PlayerData자료형 정의,,,
-,,,,,,,,,,,,,,컬럼명,역할,자료형,설명
-,,,,,,,,,,,,,,id,데이터 id,string,캐릭터 id입니다
-,,,,,,,,,,,,,,name,이름,string,캐릭터 이름입니다
-,,,,,,,,,,,,,,player_hp,스탯1,int,캐릭터 체력입니다
-,,,,,,,,,,,,,,player_atk,기본공격력,int,캐릭터 기본 공격력입니다. 각 무기가 가진 공격력(배수 값)의 기준됩니다.
-,,,,,,,,,,,,,,movespeed,스탯2,int,캐릭터 이동속도입니다
-,,,,,,,,,,,,,,current_weaponslot,현재 무기 슬롯,enum,"현재 장착중인 무기슬롯 id입니다. (weaponslot1,  weaponslot2, weaponslot3, weaponslot4) 중 하나를 불러옵니다."
-,,,,,,,,,,,,,,weaponslot1,무기 슬롯1,string,무기 슬롯1번에 불러올 무기 id입니다
-,,,,,,,,,,,,,,weaponslot2,무기 슬롯2,string,무기 슬롯2번에 불러올 무기 id입니다
-,,,,,,,,,,,,,,weaponslot3,무기 슬롯3,string,무기 슬롯3번에 불러올 무기 id입니다
-,,,,,,,,,,,,,,weaponslot4,무기 슬롯4,string,무기 슬롯4번에 불러올 무기 id입니다
+id,name,player_hp,player_atk,movespeed,current_weaponslot,weaponslot1,weaponslot2,weaponslot3,weaponslot4,tag_skill,idle_ruid,walk_ruid,dead_ruid,,,,,,
+player_a,베루아,100,100,3,,bow,cannon,turret_minigun,deathperado,tag_skill_char_a_01,e7dae469096d4c04a0a5378d07801afa,1e3524d38b974c80b348a23ecb1bb083,d9212148bc364dada63218913bbb4775,,,,,,
+player_b,카르테,90,100,3,,gun,fireball,turret_sniper,gungnir,tag_skill_char_b_01,a02de449888a41f981084922bba36c89,6d9688ed9b544d4dba87bba3bbb9249f,c8895e5741134fd5bf76ee85da99a91a,,,,,,
+,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,PlayerData자료형 정의,,,
+,,,,,,,,,,,,,,,,컬럼명,역할,자료형,설명
+,,,,,,,,,,,,,,,,id,데이터 id,string,캐릭터 id입니다
+,,,,,,,,,,,,,,,,name,이름,string,캐릭터 이름입니다
+,,,,,,,,,,,,,,,,player_hp,스탯1,int,캐릭터 체력입니다
+,,,,,,,,,,,,,,,,player_atk,기본공격력,int,캐릭터 기본 공격력입니다. 각 무기가 가진 공격력(배수 값)의 기준됩니다.
+,,,,,,,,,,,,,,,,movespeed,스탯2,int,캐릭터 이동속도입니다
+,,,,,,,,,,,,,,,,current_weaponslot,현재 무기 슬롯,enum,"현재 장착중인 무기슬롯 id입니다. (weaponslot1,  weaponslot2, weaponslot3, weaponslot4) 중 하나를 불러옵니다."
+,,,,,,,,,,,,,,,,weaponslot1,무기 슬롯1,string,무기 슬롯1번에 불러올 무기 id입니다
+,,,,,,,,,,,,,,,,weaponslot2,무기 슬롯2,string,무기 슬롯2번에 불러올 무기 id입니다
+,,,,,,,,,,,,,,,,weaponslot3,무기 슬롯3,string,무기 슬롯3번에 불러올 무기 id입니다
+,,,,,,,,,,,,,,,,weaponslot4,무기 슬롯4,string,무기 슬롯4번에 불러올 무기 id입니다
+,,,,,,,,,,,,,,,,tag_skill,태그스킬,string,태그스킬을 불러옵니다 SkillData
+,,,,,,,,,,,,,,,,idle_ruid,idle 애니 ruid,string,idle 애니메이션 ruid 값
+,,,,,,,,,,,,,,,,walk_ruid,walk 애니 ruid,string,walk 애니메이션 ruid 값
+,,,,,,,,,,,,,,,,dead_ruid,dead 애니 ruid,string,dead 애니메이션 ruid 값

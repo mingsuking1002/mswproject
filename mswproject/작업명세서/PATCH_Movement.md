@@ -1,4 +1,4 @@
-﻿# 🟡 대기중
+﻿# 🔵 진행중
 # PATCH_Movement — 캐릭터 방향 판단 변경
 
 > 기존 `SPEC_Movement.md` (🟢 완료)에 대한 **패치 문서**
@@ -29,11 +29,13 @@
 
 ## Codex 체크리스트
 
-- [ ] `FacingDirection` 기반 스프라이트 교체 로직 제거
-- [ ] `MoveSpeed` 초기값 로직 제거 (CharacterDataInit이 주입)
-- [ ] `Code_Documentation.md` 업데이트
+- [x] `FacingDirection` 기반 스프라이트 교체 로직 제거
+- [x] `MoveSpeed` 초기값 로직 제거 (CharacterDataInit이 주입)
+- [x] `Code_Documentation.md` 업데이트
 
 ---
 
-| **작성자** | Antigravity (TD) | **상태** | 🟡 대기중 |
+| **작성자** | Antigravity (TD) | **상태** | 🔵 진행중 |
 |---|---|---|---|
+
+

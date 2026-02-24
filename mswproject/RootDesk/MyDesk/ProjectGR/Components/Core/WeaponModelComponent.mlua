@@ -1,0 +1,454 @@
+﻿@Component
+script WeaponModelComponent extends Component
+
+    @Sync
+    property string CurrentWeaponId = ""
+
+    property Entity WeaponHolderEntityRef = nil
+    property string WeaponHolderName = "WeaponHolder"
+    property string WeaponDataTableName = "WeaponData"
+    property number FlipThreshold = 0
+    property number MuzzleDistance = 0.6
+
+    -- Server initializes utility and data cache for weapon-id lookup.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self:EnsureGRUtil()
+        self._T.WeaponRowById = {}
+        self._T.WeaponRowsLoaded = false
+    end
+
+    -- Client resolves holder after begin play so aim/facing can start immediately.
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self:EnsureGRUtil()
+        self:ResolveWeaponHolderEntity(false)
+    end
+
+    -- Map transitions can invalidate cached holder entity path; re-resolve on enter.
+    @ExecSpace("ClientOnly")
+    method void OnMapEnter(Entity enteredMap)
+        self:ResolveWeaponHolderEntity(true)
+    end
+
+    -- Client-side holder rotation and player flip keeps input responsiveness and avoids server load.
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number delta)
+        local holder = self:ResolveWeaponHolderEntity(false)
+        if holder == nil or isvalid(holder) == false then
+            return
+        end
+
+        local cursorScreen = nil
+        local cursorOk, cursorValue = pcall(function()
+            return _InputService:GetCursorPosition()
+        end)
+        if cursorOk == true then
+            cursorScreen = cursorValue
+        end
+        if cursorScreen == nil then
+            return
+        end
+
+        local targetWorld = _UILogic:ScreenToWorldPosition(cursorScreen)
+        if targetWorld == nil then
+            return
+        end
+
+        self:ApplyHolderRotationClient(holder, targetWorld)
+        self:ApplyPlayerFlipClient(cursorScreen)
+    end
+
+    -- Server swaps visual sprite by weapon id while keeping holder entity persistent.
+    @ExecSpace("ServerOnly")
+    method void SwapModel(string weaponId)
+        if weaponId == nil then
+            weaponId = ""
+        end
+
+        local normalizedId = tostring(weaponId)
+        if normalizedId == "" then
+            return
+        end
+
+        local holder = self:ResolveWeaponHolderEntity(true)
+        if holder == nil or isvalid(holder) == false then
+            return
+        end
+
+        local row = self:GetWeaponRowByIdServer(normalizedId)
+        if row == nil then
+            return
+        end
+
+        local spriteRuid = self:GetRowString(row, "sprite_ruid", "")
+        if spriteRuid == "" then
+            return
+        end
+
+        local spriteRenderer = self:ResolveComponentSafe(holder, "SpriteRendererComponent", "SpriteRUID")
+        if spriteRenderer == nil then
+            local addOkA, addResultA = pcall(function()
+                return holder:AddComponent("MOD.Core.SpriteRendererComponent")
+            end)
+            if addOkA == true then
+                spriteRenderer = addResultA
+            end
+        end
+        if spriteRenderer == nil then
+            local addOkB, addResultB = pcall(function()
+                return holder:AddComponent("SpriteRendererComponent")
+            end)
+            if addOkB == true then
+                spriteRenderer = addResultB
+            end
+        end
+        if spriteRenderer == nil then
+            return
+        end
+
+        pcall(function()
+            spriteRenderer.SpriteRUID = spriteRuid
+        end)
+        pcall(function()
+            spriteRenderer.Enable = true
+        end)
+        pcall(function()
+            holder.Enable = true
+            holder.Visible = true
+        end)
+
+        self.CurrentWeaponId = normalizedId
+    end
+
+    -- FireSystem queries muzzle position in world space from holder transform and configured muzzle distance.
+    method Vector2 GetMuzzlePosition()
+        local holder = self:ResolveWeaponHolderEntity(false)
+        if holder == nil or isvalid(holder) == false then
+            local selfPos = self.Entity.TransformComponent.WorldPosition
+            if selfPos == nil then
+                return Vector2.zero
+            end
+            return Vector2(selfPos.x, selfPos.y)
+        end
+
+        local holderTransform = holder.TransformComponent
+        if holderTransform == nil or isvalid(holderTransform) == false then
+            return Vector2.zero
+        end
+
+        local worldPos = holderTransform.WorldPosition
+        if worldPos == nil then
+            return Vector2.zero
+        end
+
+        local radian = math.rad(holderTransform.ZRotation)
+        local forward = Vector2(math.cos(radian), math.sin(radian))
+        if forward:SqrMagnitude() <= 0 then
+            forward = Vector2.right
+        else
+            forward = forward:Normalize()
+        end
+
+        local distance = self.MuzzleDistance
+        if distance < 0 then
+            distance = 0
+        end
+
+        return Vector2(worldPos.x, worldPos.y) + (forward * distance)
+    end
+
+    -- FireSystem uses this API to align shot direction with holder-based aim instead of body rotation.
+    method Vector2 GetAimDirection(Vector2 targetWorldPos)
+        local muzzle = self:GetMuzzlePosition()
+        if targetWorldPos == nil then
+            return self:GetForwardDirectionFromHolder()
+        end
+
+        local direction = targetWorldPos - muzzle
+        if direction:SqrMagnitude() <= 0 then
+            return self:GetForwardDirectionFromHolder()
+        end
+
+        return direction:Normalize()
+    end
+
+    method Vector2 GetForwardDirectionFromHolder()
+        local holder = self:ResolveWeaponHolderEntity(false)
+        if holder == nil or isvalid(holder) == false then
+            return Vector2.right
+        end
+
+        local holderTransform = holder.TransformComponent
+        if holderTransform == nil or isvalid(holderTransform) == false then
+            return Vector2.right
+        end
+
+        local radian = math.rad(holderTransform.ZRotation)
+        local direction = Vector2(math.cos(radian), math.sin(radian))
+        if direction:SqrMagnitude() <= 0 then
+            return Vector2.right
+        end
+
+        return direction:Normalize()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ApplyHolderRotationClient(Entity holder, Vector2 targetWorld)
+        local holderTransform = holder.TransformComponent
+        if holderTransform == nil or isvalid(holderTransform) == false then
+            return
+        end
+
+        local holderPos = holderTransform.WorldPosition
+        if holderPos == nil then
+            return
+        end
+
+        local direction = Vector2(targetWorld.x - holderPos.x, targetWorld.y - holderPos.y)
+        if direction:SqrMagnitude() <= 0 then
+            return
+        end
+
+        local angle = math.deg(math.atan(direction.y, direction.x))
+        pcall(function()
+            holderTransform.ZRotation = angle
+        end)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ApplyPlayerFlipClient(Vector2 cursorScreen)
+        if cursorScreen == nil then
+            return
+        end
+
+        local screenWidth = _UILogic.ScreenWidth
+        if screenWidth == nil or screenWidth <= 0 then
+            return
+        end
+
+        local threshold = (screenWidth * 0.5) + self.FlipThreshold
+        local flipLeft = (cursorScreen.x < threshold)
+
+        local transform = self.Entity.TransformComponent
+        if transform == nil or isvalid(transform) == false then
+            return
+        end
+
+        local scale = transform.Scale
+        if scale == nil then
+            scale = Vector3.one
+        end
+
+        local absX = math.abs(scale.x)
+        if absX <= 0 then
+            absX = 1
+        end
+
+        if flipLeft == true then
+            scale.x = -absX
+        else
+            scale.x = absX
+        end
+
+        pcall(function()
+            transform.Scale = scale
+        end)
+    end
+
+    method Entity ResolveWeaponHolderEntity(boolean forceRefresh)
+        if forceRefresh ~= true then
+            if self.WeaponHolderEntityRef ~= nil and isvalid(self.WeaponHolderEntityRef) == true then
+                return self.WeaponHolderEntityRef
+            end
+        end
+
+        local holder = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            local findOk, findResult = pcall(function()
+                return self.Entity:GetChildByName(self.WeaponHolderName, true)
+            end)
+            if findOk == true then
+                holder = findResult
+            end
+        end
+
+        if holder ~= nil and isvalid(holder) == true then
+            self.WeaponHolderEntityRef = holder
+            return holder
+        end
+
+        self.WeaponHolderEntityRef = nil
+        return nil
+    end
+
+    @ExecSpace("ServerOnly")
+    method table GetWeaponRowByIdServer(string weaponId)
+        if weaponId == nil or weaponId == "" then
+            return nil
+        end
+        if self._T.WeaponRowsLoaded ~= true then
+            self:LoadWeaponRowsServer()
+        end
+
+        if self._T.WeaponRowById == nil then
+            return nil
+        end
+
+        return self._T.WeaponRowById[weaponId]
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadWeaponRowsServer()
+        local dataTable = self:LoadTableServer(self.WeaponDataTableName)
+        if dataTable == nil then
+            return
+        end
+
+        local rows = nil
+        local rowsOk, rowsResult = pcall(function()
+            return dataTable:GetAllRow()
+        end)
+        if rowsOk == true then
+            rows = rowsResult
+        end
+        if rows == nil then
+            return
+        end
+
+        local cache = {}
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+
+            local id = self:GetRowString(row, "id", "")
+            if id == "" then
+                continue
+            end
+            cache[id] = row
+        end
+
+        self._T.WeaponRowById = cache
+        self._T.WeaponRowsLoaded = true
+    end
+
+    method table LoadTableServer(string tableName)
+        if tableName == nil or tableName == "" then
+            return nil
+        end
+
+        local loadOk, loadResult = pcall(function()
+            return _DataService:GetTable(tableName)
+        end)
+        if loadOk == true then
+            return loadResult
+        end
+
+        return nil
+    end
+
+    method string GetRowString(any row, string columnName, string fallbackValue)
+        if row == nil then
+            return fallbackValue
+        end
+        if columnName == nil or columnName == "" then
+            return fallbackValue
+        end
+
+        local value = nil
+        local readOk, readResult = pcall(function()
+            return row:GetItem(columnName)
+        end)
+        if readOk == true then
+            value = readResult
+        end
+        if value == nil or value == "" then
+            return fallbackValue
+        end
+
+        return tostring(value)
+    end
+
+    -- Utility bootstrap first; fallback local lookup remains when global util is absent.
+    method void EnsureGRUtil()
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, utilApi = pcall(function()
+                return utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and utilApi ~= nil then
+                self._T.GRUtil = utilApi
+            end
+            if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+end

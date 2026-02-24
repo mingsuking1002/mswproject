@@ -29,6 +29,10 @@ script TagManagerComponent extends Component
         self._T.TagUnlockTimerId = 0
         self._T.IsTagInProgress = false
 
+        self._T.CharacterIdByIndex = {}
+        self._T.CharacterIdByIndex[1] = "player_a"
+        self._T.CharacterIdByIndex[2] = "player_b"
+
         self._T.CharacterStates = {}
         self._T.CharacterStates[1] = self:CaptureCurrentCharacterState()
         self._T.CharacterStates[2] = self:CloneCharacterState(self._T.CharacterStates[1])
@@ -108,12 +112,14 @@ script TagManagerComponent extends Component
         self._T.IsTagInProgress = true
         local fromIndex = self:ClampCharacterIndex(self.CurrentCharIndex)
         local toIndex = self:GetOtherCharacterIndex(fromIndex)
+        local toCharacterId = self:GetCharacterIdByIndex(toIndex)
 
         if self.DisableMoveDuringTag == true then
             self:SetCanMoveSafely(false)
         end
 
         self:StoreCharacterState(fromIndex)
+        self:ApplyCharacterDataByIdServer(toCharacterId)
         self:ApplyCharacterState(toIndex)
         self.CurrentCharIndex = toIndex
 
@@ -123,6 +129,7 @@ script TagManagerComponent extends Component
         self:StartTagCooldownServer()
         self:StartMovementUnlockServer()
         self:NotifyTagChangedClient(toIndex)
+        self:ActivateTagSkillByCharacterServer(toCharacterId)
     end
 
     -- Cooldown timer is server-driven to prevent client clock manipulation.
@@ -263,9 +270,24 @@ script TagManagerComponent extends Component
         local hpComponent = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "CurrentHP")
         if hpComponent ~= nil and state.CurrentHP ~= nil then
             pcall(function()
-                hpComponent.CurrentHP = math.max(0, math.floor(state.CurrentHP))
+                local maxHp = hpComponent.MaxHP
+                if maxHp == nil or maxHp <= 0 then
+                    maxHp = 1
+                end
+
+                local restoredHp = math.max(0, math.floor(state.CurrentHP))
+                if restoredHp > maxHp then
+                    restoredHp = maxHp
+                end
+
+                hpComponent.CurrentHP = restoredHp
                 hpComponent.IsDead = (hpComponent.CurrentHP <= 0)
             end)
+            if hpComponent.BroadcastHPState ~= nil then
+                pcall(function()
+                    hpComponent:BroadcastHPState()
+                end)
+            end
         end
 
         local swapComponent = self:ResolveComponentSafe(self.Entity, "WeaponSwapComponent", "CurrentWeaponSlot")
@@ -388,6 +410,52 @@ script TagManagerComponent extends Component
             return 2
         end
         return 1
+    end
+
+    method string GetCharacterIdByIndex(integer charIndex)
+        local index = self:ClampCharacterIndex(charIndex)
+        local characterId = self._T.CharacterIdByIndex[index]
+        if characterId == nil or characterId == "" then
+            if index == 1 then
+                return "player_a"
+            end
+            return "player_b"
+        end
+
+        return tostring(characterId)
+    end
+
+    -- CharacterDataInit remains the single source for PlayerbleData stat application on tag swap.
+    @ExecSpace("ServerOnly")
+    method void ApplyCharacterDataByIdServer(string characterId)
+        if characterId == nil or characterId == "" then
+            return
+        end
+
+        local characterData = self:ResolveComponentSafe(self.Entity, "CharacterDataInitComponent", "CurrentCharacterId")
+        if characterData == nil or characterData.ApplyCharacterDataServer == nil then
+            return
+        end
+
+        pcall(function()
+            characterData:ApplyCharacterDataServer(characterId, false)
+        end)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ActivateTagSkillByCharacterServer(string characterId)
+        if characterId == nil or characterId == "" then
+            return
+        end
+
+        local tagSkill = self:ResolveComponentSafe(self.Entity, "TagSkillComponent", "IsSkillActive")
+        if tagSkill == nil or tagSkill.ActivateTagSkillServer == nil then
+            return
+        end
+
+        pcall(function()
+            tagSkill:ActivateTagSkillServer(characterId)
+        end)
     end
 
     -- Clone helper avoids accidental shared-table mutation between character snapshots.

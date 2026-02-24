@@ -1,0 +1,343 @@
+﻿@Component
+script CharacterDataInitComponent extends Component
+
+    @Sync
+    property string CurrentCharacterId = "player_a"
+
+    property string CharacterTableName = "PlayerbleData"
+    property string CharacterAId = "player_a"
+    property string CharacterBId = "player_b"
+    property boolean EnableDebugLogs = true
+
+    -- Server initializes table cache and utility bootstrap before character data injection.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self:EnsureGRUtil()
+        self._T.CharDataById = {}
+        self._T.CharacterRowsLoaded = false
+    end
+
+    -- BeginPlay loads A/B rows and applies default character baseline once.
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self:InitializeCharacterDataServer()
+        if self.CurrentCharacterId == nil or self.CurrentCharacterId == "" then
+            self.CurrentCharacterId = self.CharacterAId
+        end
+        self:ApplyCharacterDataServer(self.CurrentCharacterId, true)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void InitializeCharacterDataServer()
+        if self._T.CharacterRowsLoaded == true then
+            return
+        end
+
+        local dataTable = self:LoadTableServer(self.CharacterTableName)
+        if dataTable == nil then
+            if self.EnableDebugLogs == true then
+                log_warning("[CharacterDataInit] table load failed: " .. tostring(self.CharacterTableName))
+            end
+            return
+        end
+
+        local rows = nil
+        local rowsOk, rowsResult = pcall(function()
+            return dataTable:GetAllRow()
+        end)
+        if rowsOk == true then
+            rows = rowsResult
+        end
+        if rows == nil then
+            return
+        end
+
+        local cache = {}
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+
+            local id = self:GetRowString(row, "id", "")
+            if id == "" then
+                continue
+            end
+            cache[id] = row
+        end
+
+        self._T.CharDataById = cache
+        self._T.CharacterRowsLoaded = true
+
+        if self.EnableDebugLogs == true then
+            log("[CharacterDataInit] loaded character rows: ", tostring(self:CountTableEntries(cache)))
+        end
+    end
+
+    -- Public getter allows TagSkill/TagManager to resolve row data without duplicating table-loading code.
+    @ExecSpace("ServerOnly")
+    method table GetCharacterDataRowServer(string charId)
+        if charId == nil or charId == "" then
+            return nil
+        end
+        if self._T.CharacterRowsLoaded ~= true then
+            self:InitializeCharacterDataServer()
+        end
+
+        if self._T.CharDataById == nil then
+            return nil
+        end
+
+        return self._T.CharDataById[charId]
+    end
+
+    -- Character apply injects HP/move/attack/weapon model baseline while preserving runtime state when needed.
+    @ExecSpace("ServerOnly")
+    method boolean ApplyCharacterDataServer(string charId, boolean isInitialApply)
+        if charId == nil or charId == "" then
+            return false
+        end
+
+        local row = self:GetCharacterDataRowServer(charId)
+        if row == nil then
+            if self.EnableDebugLogs == true then
+                log_warning("[CharacterDataInit] row missing. charId=" .. tostring(charId))
+            end
+            return false
+        end
+
+        local hpValue = math.max(1, self:GetRowInteger(row, "player_hp", 100))
+        local atkValue = math.max(0, self:GetRowInteger(row, "player_atk", 0))
+        local moveSpeed = self:GetRowNumber(row, "movespeed", 1.0)
+        if moveSpeed < 0 then
+            moveSpeed = 0
+        end
+
+        local hpSystem = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "CurrentHP")
+        if hpSystem ~= nil then
+            local currentHp = hpValue
+
+            pcall(function()
+                hpSystem.MaxHP = hpValue
+            end)
+            pcall(function()
+                hpSystem.CurrentHP = math.max(0, math.min(currentHp, hpValue))
+            end)
+            pcall(function()
+                hpSystem.IsDead = (hpSystem.CurrentHP <= 0)
+            end)
+            if hpSystem.BroadcastHPState ~= nil then
+                pcall(function()
+                    hpSystem:BroadcastHPState()
+                end)
+            end
+        end
+
+        local movement = self:ResolveComponentSafe(self.Entity, "MovementComponent", "MoveSpeed")
+        if movement ~= nil then
+            pcall(function()
+                movement.MoveSpeed = moveSpeed
+            end)
+        end
+
+        local fire = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "BaseWeaponAttack")
+        if fire ~= nil then
+            pcall(function()
+                fire.BasePlayerAtk = atkValue
+            end)
+        end
+
+        local swap = self:ResolveComponentSafe(self.Entity, "WeaponSwapComponent", "CurrentWeaponSlot")
+        if swap ~= nil and swap.InitSlotsFromPlayerbleData ~= nil then
+            pcall(function()
+                swap:InitSlotsFromPlayerbleData(charId, row)
+            end)
+        end
+
+        local weaponModel = self:ResolveComponentSafe(self.Entity, "WeaponModelComponent", "CurrentWeaponId")
+        if weaponModel ~= nil and weaponModel.SwapModel ~= nil and swap ~= nil and swap.GetSlotDataBySlot ~= nil then
+            local slot = 1
+            local slotOk, slotValue = pcall(function()
+                return swap.CurrentWeaponSlot
+            end)
+            if slotOk == true and slotValue ~= nil then
+                slot = math.max(1, math.floor(slotValue))
+            end
+
+            local data = nil
+            local dataOk, dataValue = pcall(function()
+                return swap:GetSlotDataBySlot(slot)
+            end)
+            if dataOk == true then
+                data = dataValue
+            end
+
+            if data ~= nil and data.WeaponId ~= nil and data.WeaponId ~= "" then
+                pcall(function()
+                    weaponModel:SwapModel(tostring(data.WeaponId))
+                end)
+            end
+        end
+
+        self.CurrentCharacterId = charId
+        return true
+    end
+
+    method table LoadTableServer(string tableName)
+        if tableName == nil or tableName == "" then
+            return nil
+        end
+
+        local loadOk, loadResult = pcall(function()
+            return _DataService:GetTable(tableName)
+        end)
+        if loadOk == true then
+            return loadResult
+        end
+
+        return nil
+    end
+
+    method string GetRowString(any row, string columnName, string fallbackValue)
+        if row == nil then
+            return fallbackValue
+        end
+        if columnName == nil or columnName == "" then
+            return fallbackValue
+        end
+
+        local value = nil
+        local readOk, readResult = pcall(function()
+            return row:GetItem(columnName)
+        end)
+        if readOk == true then
+            value = readResult
+        end
+        if value == nil or value == "" then
+            return fallbackValue
+        end
+
+        return tostring(value)
+    end
+
+    method integer GetRowInteger(any row, string columnName, integer fallbackValue)
+        local text = self:GetRowString(row, columnName, "")
+        if text == "" then
+            return math.floor(fallbackValue)
+        end
+
+        local parsed = tonumber(text)
+        if parsed == nil then
+            return math.floor(fallbackValue)
+        end
+
+        return math.floor(parsed)
+    end
+
+    method number GetRowNumber(any row, string columnName, number fallbackValue)
+        local text = self:GetRowString(row, columnName, "")
+        if text == "" then
+            return fallbackValue
+        end
+
+        local parsed = tonumber(text)
+        if parsed == nil then
+            return fallbackValue
+        end
+
+        return parsed
+    end
+
+    method integer CountTableEntries(table source)
+        local count = 0
+        if source == nil then
+            return count
+        end
+
+        for _, _ in pairs(source) do
+            count += 1
+        end
+        return count
+    end
+
+    -- Utility bootstrap first; fallback local lookup remains when global util is absent.
+    method void EnsureGRUtil()
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, utilApi = pcall(function()
+                return utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and utilApi ~= nil then
+                self._T.GRUtil = utilApi
+            end
+            if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+end

@@ -1,4 +1,4 @@
-﻿# 🟡 대기중
+﻿# 🔵 진행중
 # PATCH_TagSystem — PlayerbleData 연동 + 태그 스킬 호출
 
 > 기존 `SPEC_TagSystem.md` (🟢 완료)에 대한 **패치 문서**
@@ -39,12 +39,14 @@
 
 ## Codex 체크리스트
 
-- [ ] `CharacterDataInitComponent.ApplyCharacterData` 연동
-- [ ] `TagSkillComponent.ActivateTagSkill` 호출 추가
-- [ ] 장전 쿨타임 백그라운드 진행 보장
-- [ ] `Code_Documentation.md` 업데이트
+- [x] `CharacterDataInitComponent.ApplyCharacterData` 연동
+- [x] `TagSkillComponent.ActivateTagSkill` 호출 추가
+- [x] 장전 쿨타임 백그라운드 진행 보장
+- [x] `Code_Documentation.md` 업데이트
 
 ---
 
-| **작성자** | Antigravity (TD) | **상태** | 🟡 대기중 |
+| **작성자** | Antigravity (TD) | **상태** | 🔵 진행중 |
 |---|---|---|---|
+
+

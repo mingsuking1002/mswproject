@@ -19,11 +19,14 @@ script WeaponSwapComponent extends Component
     property integer DefaultDamage = 10
     property number DefaultFireCooldown = 0.5
     property number DefaultReloadTime = 1.5
+    property string WeaponDataTableName = "WeaponData"
 
     -- Server initializes deterministic slot state so tag/swap can load valid data even before first fire.
     @ExecSpace("ServerOnly")
     method void OnInitialize()
         self:EnsureGRUtil()
+        self._T.WeaponRowById = {}
+        self._T.WeaponRowsLoaded = false
         self.CurrentWeaponSlot = self:ClampSlot(self.CurrentWeaponSlot)
         self:InitializeSlotData()
         self:ApplySlotDataToCombat(self.CurrentWeaponSlot)
@@ -229,6 +232,99 @@ script WeaponSwapComponent extends Component
         self.Weapon4_Data = self:NormalizeSlotData(self.Weapon4_Data, 4)
     end
 
+    -- CharacterDataInit calls this API to load initial A/B weapon slots directly from PlayerbleData rows.
+    @ExecSpace("ServerOnly")
+    method void InitSlotsFromPlayerbleData(string charId, table row)
+        if row == nil then
+            return
+        end
+
+        local maxSlot = math.max(self.WeaponSlotCount, 1)
+        for slot = 1, maxSlot do
+            local slotColumn = "weaponslot" .. tostring(slot)
+            local weaponId = self:GetRowString(row, slotColumn, "")
+
+            local data = self:NormalizeSlotData(self:GetSlotDataBySlot(slot), slot)
+            if weaponId ~= nil and weaponId ~= "" then
+                data.WeaponId = tostring(weaponId)
+            end
+
+            self:ApplyWeaponRowToSlotDataServer(data, data.WeaponId)
+            self:SetSlotDataBySlot(slot, data)
+        end
+
+        local resolvedSlot = self:ResolveCurrentSlotFromRow(row)
+        self.CurrentWeaponSlot = resolvedSlot
+        self:ApplySlotDataToCombat(self.CurrentWeaponSlot)
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer ResolveCurrentSlotFromRow(table row)
+        if row == nil then
+            return self:ClampSlot(self.CurrentWeaponSlot)
+        end
+
+        local slotText = self:GetRowString(row, "current_weaponslot", "")
+        if slotText == "" then
+            return self:ClampSlot(self.CurrentWeaponSlot)
+        end
+
+        local lower = string.lower(slotText)
+        if string.find(lower, "weaponslot", 1, true) == 1 then
+            local parsed = tonumber(string.sub(lower, 11))
+            if parsed ~= nil then
+                return self:ClampSlot(math.floor(parsed))
+            end
+        end
+
+        local numeric = tonumber(slotText)
+        if numeric ~= nil then
+            return self:ClampSlot(math.floor(numeric))
+        end
+
+        return self:ClampSlot(self.CurrentWeaponSlot)
+    end
+
+    -- Slot baseline values are hydrated from WeaponData so char/slot swaps stay data-driven.
+    @ExecSpace("ServerOnly")
+    method void ApplyWeaponRowToSlotDataServer(table data, string weaponId)
+        if data == nil then
+            return
+        end
+        if weaponId == nil or weaponId == "" then
+            return
+        end
+
+        local row = self:GetWeaponRowByIdServer(weaponId)
+        if row == nil then
+            return
+        end
+
+        local maxAmmo = self:GetRowInteger(row, "max_basic_resource", data.Ammo)
+        if maxAmmo > 0 then
+            data.Ammo = maxAmmo
+        end
+
+        local fireRate = self:GetRowNumber(row, "fire_rate", data.FireCooldown)
+        if fireRate > 0 then
+            data.FireCooldown = fireRate
+        end
+
+        local reloadTime = self:GetRowNumber(row, "reload_time", data.ReloadTime)
+        if reloadTime > 0 then
+            data.ReloadTime = reloadTime
+        end
+
+        local damageRatio = self:GetRowNumber(row, "dmg_raito", 0)
+        if damageRatio > 0 then
+            local defaultDamage = math.max(self.DefaultDamage, 1)
+            data.Damage = math.max(math.floor(defaultDamage * damageRatio), 1)
+        end
+
+        -- Keep existing projectile model mapping untouched here.
+        -- `projectile_id` -> projectile model resolution remains in dedicated projectile data flow.
+    end
+
     -- Data normalization prevents missing fields from older save/state payloads.
     method table NormalizeSlotData(table source, integer slot)
         local data = source
@@ -408,6 +504,13 @@ script WeaponSwapComponent extends Component
             end)
         end
 
+        local weaponModel = self:ResolveComponentSafe(self.Entity, "WeaponModelComponent", "CurrentWeaponId")
+        if weaponModel ~= nil and weaponModel.SwapModel ~= nil then
+            pcall(function()
+                weaponModel:SwapModel(tostring(data.WeaponId))
+            end)
+        end
+
         self:NotifySwapMenuClient(self.IsSwapMenuOpen, finalSlot, self.CurrentWeaponSlot)
     end
 
@@ -560,6 +663,114 @@ script WeaponSwapComponent extends Component
         else
             self.Weapon4_Data = data
         end
+    end
+
+    @ExecSpace("ServerOnly")
+    method table GetWeaponRowByIdServer(string weaponId)
+        if weaponId == nil or weaponId == "" then
+            return nil
+        end
+        if self._T.WeaponRowsLoaded ~= true then
+            self:LoadWeaponRowsServer()
+        end
+
+        if self._T.WeaponRowById == nil then
+            return nil
+        end
+
+        return self._T.WeaponRowById[weaponId]
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadWeaponRowsServer()
+        local tableName = self.WeaponDataTableName
+        if tableName == nil or tableName == "" then
+            return
+        end
+
+        local dataTable = nil
+        local loadOk, loadValue = pcall(function()
+            return _DataService:GetTable(tableName)
+        end)
+        if loadOk == true then
+            dataTable = loadValue
+        end
+        if dataTable == nil then
+            return
+        end
+
+        local rows = nil
+        local rowsOk, rowsValue = pcall(function()
+            return dataTable:GetAllRow()
+        end)
+        if rowsOk == true then
+            rows = rowsValue
+        end
+        if rows == nil then
+            return
+        end
+
+        local cache = {}
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+            local id = self:GetRowString(row, "id", "")
+            if id == "" then
+                continue
+            end
+            cache[id] = row
+        end
+
+        self._T.WeaponRowById = cache
+        self._T.WeaponRowsLoaded = true
+    end
+
+    method string GetRowString(any row, string columnName, string fallbackValue)
+        if row == nil then
+            return fallbackValue
+        end
+        if columnName == nil or columnName == "" then
+            return fallbackValue
+        end
+
+        local value = nil
+        local readOk, readValue = pcall(function()
+            return row:GetItem(columnName)
+        end)
+        if readOk == true then
+            value = readValue
+        end
+        if value == nil or value == "" then
+            return fallbackValue
+        end
+        return tostring(value)
+    end
+
+    method integer GetRowInteger(any row, string columnName, integer fallbackValue)
+        local text = self:GetRowString(row, columnName, "")
+        if text == "" then
+            return math.floor(fallbackValue)
+        end
+
+        local numeric = tonumber(text)
+        if numeric == nil then
+            return math.floor(fallbackValue)
+        end
+        return math.floor(numeric)
+    end
+
+    method number GetRowNumber(any row, string columnName, number fallbackValue)
+        local text = self:GetRowString(row, columnName, "")
+        if text == "" then
+            return fallbackValue
+        end
+
+        local numeric = tonumber(text)
+        if numeric == nil then
+            return fallbackValue
+        end
+        return numeric
     end
 
     -- Clone utility avoids reference sharing between slots and tag character snapshots.

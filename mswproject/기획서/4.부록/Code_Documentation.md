@@ -925,3 +925,159 @@
 ### 2026-02-24 Lobby First Screen Hotfix
 - `LobbyFlowComponent.AutoOpenRankingOnLobby` 기본값을 `false`로 고정.
 - `LobbyFlowComponent.OnInitialize()`에서 `self.AutoOpenRankingOnLobby = false`를 강제 적용해, 에디터 저장값이 남아 있어도 로비 최초 진입 시 랭킹 자동 오픈이 발생하지 않도록 수정.
+
+## 2026-02-24 Character System Refactor (A/B Immediate Swap)
+
+### CharacterDataInitComponent (New)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/CharacterDataInitComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/CharacterDataInitComponent.codeblock`
+- **Updated:** `2026-02-24`
+
+#### Properties
+| Name | Type | Description |
+|---|---|---|
+| `CurrentCharacterId` | string (Sync) | 현재 활성 캐릭터 ID (`player_a`/`player_b`) |
+| `CharacterTableName` | string | 캐릭터 데이터 테이블명 (`PlayerbleData`) |
+| `CharacterAId`, `CharacterBId` | string | A/B 캐릭터 식별자 |
+
+#### Functions
+| Function | Parameters | Returns | Description |
+|---|---|---|---|
+| `InitializeCharacterDataServer` | void | void | `PlayerbleData` 전 행 캐시 |
+| `GetCharacterDataRowServer` | `charId: string` | table | 캐시된 캐릭터 행 조회 |
+| `ApplyCharacterDataServer` | `charId: string, isInitialApply: boolean` | boolean | HP/이속/기본공격/무기슬롯/무기모델 적용 |
+
+### WeaponModelComponent (New)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.codeblock`
+- **Updated:** `2026-02-24`
+
+#### Properties
+| Name | Type | Description |
+|---|---|---|
+| `CurrentWeaponId` | string (Sync) | 현재 무기 ID |
+| `WeaponHolderEntityRef` | Entity | WeaponHolder 엔티티 캐시 |
+| `WeaponHolderName` | string | WeaponHolder 탐색 이름 |
+| `WeaponDataTableName` | string | 무기 데이터 테이블명 |
+
+#### Functions
+| Function | Parameters | Returns | Description |
+|---|---|---|---|
+| `SwapModel` | `weaponId: string` | void | 무기 스프라이트 교체 |
+| `GetMuzzlePosition` | void | Vector2 | 총구 월드 좌표 반환 |
+| `GetAimDirection` | `targetWorldPos: Vector2` | Vector2 | 목표 기준 발사 방향 계산 |
+| `ApplyHolderRotationClient` | `holder: Entity, targetWorld: Vector2` | void | WeaponHolder 회전 |
+| `ApplyPlayerFlipClient` | `cursorScreen: Vector2` | void | 화면 좌우 기준 플레이어 반전 |
+
+### TagSkillComponent (New)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/TagSkillComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/TagSkillComponent.codeblock`
+- **Updated:** `2026-02-24`
+
+#### Properties
+| Name | Type | Description |
+|---|---|---|
+| `IsSkillActive` | boolean (Sync) | 태그 스킬 활성 여부 |
+| `SkillBuffMultiplier` | number (Sync) | 현재 버프 배율 |
+| `SkillBuffType` | string | 버프 종류 (`movespeed`/`attack`) |
+| `CharacterTableName`, `SkillDataTableName` | string | 캐릭터/스킬 데이터 테이블명 |
+
+#### Functions
+| Function | Parameters | Returns | Description |
+|---|---|---|---|
+| `ActivateTagSkillServer` | `charId: string` | void | A/B 매핑 기준 태그 스킬 발동 |
+| `RemoveBuffServer` | void | void | 적용된 이동/공격 버프 복원 |
+| `ResolveSkillIdByCharacterServer` | `charId: string` | string | `player_a->tag_skill_a`, `player_b->tag_skill_b` 매핑 |
+| `PlaySkillCutsceneClient` | `charId: string, skillId: string` | void | 컷씬 패널 노출/자동 숨김 |
+
+### Map01BootstrapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.codeblock`
+- **Updated:** `2026-02-24`
+
+#### Integration Changes
+| Function | Change |
+|---|---|
+| `AttachRequiredComponentsServer` | `CharacterDataInitComponent`, `WeaponModelComponent`, `TagSkillComponent` 자동 부착 추가 |
+| `ConfigurePlayer` | `CharacterDataInitComponent` 초기 데이터 적용 호출 추가 |
+| `ConfigurePlayer` | `ForcePlayerTransformMovement=true`일 때 `MovementComponent.UsePhysicsMovement=false` 강제 |
+| `EnforceWeaponHolderNoCollisionServer` | WeaponHolder 하위 충돌 컴포넌트 비활성화 강제 |
+| `StartPeriodicConfigureTimerServer` | 유저 엔티티 지연 생성 시 컴포넌트 누락 복구를 위한 주기 재구성 루프 추가 |
+
+### MovementComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Core/MovementComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Core/MovementComponent.codeblock`
+- **Updated:** `2026-02-24`
+
+#### Interface Changes
+| Name | Type | Description |
+|---|---|---|
+| `UsePlayerInput` | boolean (Sync) | 플레이어 입력 경로 사용 여부 |
+| `IdleStateName` | string | 정지 상태 전환 키 (기본값: `IDLE`) |
+| `MoveStateName` | string | 이동 상태 전환 키 (기본값: `MOVE`) |
+| `AutoRegisterStates` | boolean | 상태 키 미등록 시 `AddState` 자동 시도 |
+| `DisableNativeJumpAction` | boolean | 클라이언트에서 Space 기본 점프 액션 제거 여부 |
+| `UsePhysicsMovement` | boolean | true면 `Rigidbody.MoveVelocity` 우선, false면 `Transform.Translate`만 사용 |
+| `SetMoveDirectionServer` | method | 서버 주도 이동 벡터 주입 API (AI/몬스터 추격용) |
+| `EnsureAnimationStatesRegistered` | method | 시작 시 상태 키 등록 시도 |
+| `TryChangeStateSafely` | method | `ChangeState` 예외를 안전 처리하고 재시도 |
+| `DisableNativeJumpActionClient` | method | `PlayerControllerComponent`의 Space 입력 바인딩 제거 |
+| Removed | property/function | `FacingDirection` 동기화/계산 경로 제거 |
+
+### HPSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.codeblock`
+- **Updated:** `2026-02-24`
+
+#### Changes
+| Item | Detail |
+|---|---|
+| Baseline | 기본 HP 값을 `1/1`로 축소해 외부 주입(`CharacterDataInit`) 우선 구조로 정리 |
+| Runtime | 기존 무적/피격/사망/브로드캐스트 경로는 유지 |
+
+### FireSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.codeblock`
+- **Updated:** `2026-02-24`
+
+#### Interface Changes
+| Name | Type | Description |
+|---|---|---|
+| `BasePlayerAtk` | integer | 캐릭터 기본 공격력 주입값 |
+| Removed | property/function | `MuzzleOffset`, `RotateShooter` 제거 |
+
+#### Behavior Changes
+| Function | Change |
+|---|---|
+| `TryFireServer` | `WeaponModelComponent.GetMuzzlePosition()` + `GetAimDirection()` 기반 발사 |
+| `CalculateFinalDamage` | `BasePlayerAtk + BaseWeaponAttack + PassiveFlatAttack` 공식 적용 |
+| `GetFallbackDirection` | WeaponHolder 전방 벡터 폴백 경로 추가 |
+
+### WeaponSwapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.codeblock`
+- **Updated:** `2026-02-24`
+
+#### Added API
+| Function | Parameters | Returns | Description |
+|---|---|---|---|
+| `InitSlotsFromPlayerbleData` | `charId: string, row: table` | void | PlayerbleData 기반 슬롯 초기화 |
+| `ApplyWeaponRowToSlotDataServer` | `data: table, weaponId: string` | void | WeaponData 기반 슬롯 파라미터 주입 |
+| `GetWeaponRowByIdServer` | `weaponId: string` | table | WeaponData 캐시 조회 |
+
+#### Integration Changes
+| Function | Change |
+|---|---|
+| `ApplySlotDataToCombat` | 슬롯 적용 직후 `WeaponModelComponent:SwapModel()` 동기화 |
+
+### TagManagerComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/TagManagerComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/TagManagerComponent.codeblock`
+- **Updated:** `2026-02-24`
+
+#### Integration Changes
+| Function | Change |
+|---|---|
+| `ExecuteTagSwapServer` | 태그 시 `CharacterDataInitComponent.ApplyCharacterDataServer()` 호출 후 스냅샷 복원 |
+| `ExecuteTagSwapServer` | 태그 완료 후 `TagSkillComponent.ActivateTagSkillServer()` 호출 |
+| `ApplyCharacterState` | 복원 HP를 `MaxHP` 기준으로 클램프하고 HP 브로드캐스트 갱신 |

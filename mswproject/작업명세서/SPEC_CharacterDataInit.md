@@ -1,4 +1,4 @@
-﻿# 🟡 대기중
+﻿# 🔵 진행중
 # SPEC_CharacterDataInit — PlayerbleData 기반 캐릭터 초기화
 
 ## 1. 개요
@@ -76,13 +76,15 @@ Player Entity → `script.CharacterDataInitComponent` (Bootstrap 자동 부착)
 
 ## 7. Codex 체크리스트
 
-- [ ] `CharacterDataInitComponent` 신규 작성
-- [ ] `Map01BootstrapComponent` 목록 추가
-- [ ] `Code_Documentation.md` 업데이트
+- [x] `CharacterDataInitComponent` 신규 작성
+- [x] `Map01BootstrapComponent` 목록 추가
+- [x] `Code_Documentation.md` 업데이트
 - [ ] 완료 후 `🟢 완료`
 
 ---
 
-| **작성자** | Antigravity (TD) | **상태** | 🟡 대기중 |
+| **작성자** | Antigravity (TD) | **상태** | 🔵 진행중 |
 |---|---|---|---|
 | **담당자** | Codex | **작성일** | 2026-02-24 |
+
+
