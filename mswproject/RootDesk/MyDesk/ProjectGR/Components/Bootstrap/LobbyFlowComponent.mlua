@@ -136,6 +136,7 @@ script LobbyFlowComponent extends Component
             log("[LobbyFlow][DEBUG] BeginInGameStateServer called. targetUserId=", targetUserId)
         end
         self:SetLobbyStateServer(false)
+        self:NotifyRunStartServer()
         self:TryStartRunTimerServer()
 
         if targetUserId == nil or targetUserId == "" then
@@ -154,10 +155,10 @@ script LobbyFlowComponent extends Component
     -- Timer kickoff is optional and nil-safe so lobby->ingame transition never depends on timer component state.
     @ExecSpace("ServerOnly")
     method void TryStartRunTimerServer()
-        local timerComponent = self:ResolveComponentSafe(self.Entity, "SpeedrunTimerComponent", "IsRunning")
+        local timerComponent = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "IsRunning")
         if timerComponent == nil then
             if self.EnableDebugLogs == true then
-                log_warning("[LobbyFlow][DEBUG] Timer start skipped: SpeedrunTimerComponent missing.")
+                log_warning("[LobbyFlow][DEBUG] Timer start skipped: GameTimerComponent missing.")
             end
             return
         end
@@ -185,6 +186,22 @@ script LobbyFlowComponent extends Component
         if self.EnableDebugLogs == true then
             log_warning("[LobbyFlow][DEBUG] Timer start skipped: no StartRunWithCountdown/StartRunNow method.")
         end
+    end
+
+    -- Infinite-mode state is reset at run start so every play session begins in normal mode.
+    @ExecSpace("ServerOnly")
+    method void NotifyRunStartServer()
+        local infiniteMode = self:ResolveComponentSafe(self.Entity, "InfiniteModeComponent", "CurrentScore")
+        if infiniteMode == nil then
+            return
+        end
+        if infiniteMode.ResetForNewRunServer == nil then
+            return
+        end
+
+        pcall(function()
+            infiniteMode:ResetForNewRunServer()
+        end)
     end
 
     -- Run completion path keeps compatibility with existing HP/game-over integration.

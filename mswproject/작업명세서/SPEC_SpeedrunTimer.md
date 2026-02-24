@@ -1,5 +1,8 @@
-# 🟢 완료
-# SPEC_SpeedrunTimer — 스피드런 타이머 시스템
+# 🔴 폐기
+# SPEC_SpeedrunTimer — 스피드런 타이머 시스템 (GameTimerComponent로 대체)
+
+> [!IMPORTANT]
+> 본 명세는 `SPEC_TimerControlSystem`의 `GameTimerComponent`로 대체되어 운영 경로에서 폐기되었습니다.
 
 ## 1. 개요
 
@@ -126,5 +129,4 @@ ESC/상점/무기교체 → IsRunning = false → 닫히면 복귀
 | **작성자** | Antigravity (TD) |
 | **담당자** | Codex |
 | **작성일** | 2026-02-18 |
-| **상태** | 🟢 완료 |
-
+| **상태** | 🔴 폐기 |

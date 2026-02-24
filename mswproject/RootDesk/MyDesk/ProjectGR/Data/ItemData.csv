@@ -1,0 +1,20 @@
+﻿item_id,item_name,item_type,effect_type,effect_value_1,effect_value_2,max_stack,description,icon_ruid,-copy9,-copy10,-copy11,-copy12,-copy13
+potion_hp,포션,hp_plus,heal_hp,30,0,99,체력을 30 회복시킵니다.,,,,,,
+mag_a,베루아 마나 충전기,a_mana,a_mag,0,,99,A_탄약을 보충합니다,,,,,,
+mag_b,케르타 마나 충전기,b_mana,b_mag,0,1,99,B_탄약을 보충합니다,,,,,,
+gold,골드,total_money,None,0,0,0,상점에서 아이템을 살 수 있습니다.,,,,,,
+,,,,,,,,,,,,,
+,,,,,,,,,,,,,
+,,,,,,,,,,,,,
+,,,,,,,,,,,,,
+,,,,,,,,,,DropData자료형 정의,,,
+,,,,,,,,,,컬럼명,역할,자료형,설명
+,,,,,,,,,,item_id,호출 아이디,string,호출되는 아이디 입니다.
+,,,,,,,,,,item_name,아이디 이름,string,호출되는 아이디의 이름입니다.
+,,,,,,,,,,item_type,호출되는 아이템의 타입,string,호출되는 아이템의 타입입니다.
+,,,,,,,,,,effect_type,효과 적용,string,호출된 아이템의 효과 입니다.
+,,,,,,,,,,effect_value_1,체력 회복,int,현재 활성화된 캐릭터의 체력을 수치만큼 회복시킵니다.
+,,,,,,,,,,effect_value_2,탄약 회복,int,현재 활성화된 캐릭터의 무기의 탄약을 최대치로 회복시킵니다.
+,,,,,,,,,,max_stack,최대 소지 수,int,플레이어가 최대로 소지할 수 있는 수치입니다.
+,,,,,,,,,,description,아이템 설명,string,아이템 설명
+,,,,,,,,,,icon_ruid,아이콘 RUID,string,아이콘 RUID

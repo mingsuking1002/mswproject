@@ -3,6 +3,7 @@ script MonsterSpawnComponent extends Component
 
     property string SpawnConfigTableName = "SpawnConfig"
     property string MonsterDataTableName = "MonsterData"
+    property string ModeMonsterDataTableName = "ModeMonsterData"
     property string SpawnWaveTableName = ""
 
     @Sync
@@ -31,10 +32,13 @@ script MonsterSpawnComponent extends Component
         self._T.RowFallbackModelById = nil
         self._T.OptionalColumnAvailability = {}
         self._T.OptionalColumnMissingWarned = {}
+        self._T.CreepScoreByMonsterId = {}
         self._T.BossSpawnedEntity = nil
         self._T.WarnedMissingContainer = false
         self._T.HasMapPhysicsSimulator = nil
         self._T.WarnedMissingPhysicsSimulator = false
+        self._T.UseModeMonsterData = false
+        self._T.CurrentSpawnElapsedSec = 0
         self._T.DataReady = false
         self._T.LastSpawnGateAllowed = nil
         self._T.LastSpawnGateReason = ""
@@ -205,7 +209,30 @@ script MonsterSpawnComponent extends Component
         self._T.MonsterRows = rows
         self:BuildRowModelFallbackCache(rows)
         self:BuildOptionalMonsterColumnsCache(rows)
+        self:BuildCreepScoreCache(rows)
         return true
+    end
+
+    -- Creep-score cache avoids repeated table scans when kill-score callbacks are triggered frequently.
+    method void BuildCreepScoreCache(table rows)
+        self._T.CreepScoreByMonsterId = {}
+        if rows == nil then
+            return
+        end
+
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+
+            local rowId = self:GetRowString(row, "id", "")
+            if rowId == "" then
+                continue
+            end
+
+            local creepScore = self:GetRowInteger(row, "creep_score", 0)
+            self._T.CreepScoreByMonsterId[rowId] = math.max(0, creepScore)
+        end
     end
 
     -- Fallback cache keeps CSV authoring flexible when repetitive model_type cells are intentionally left empty.
@@ -332,6 +359,13 @@ script MonsterSpawnComponent extends Component
 
     -- Backward-compatible resolver allows old SPEC alias without blocking current MonsterData naming.
     method string ResolveMonsterDataTableName()
+        if self._T.UseModeMonsterData == true then
+            if self.ModeMonsterDataTableName ~= nil and self.ModeMonsterDataTableName ~= "" then
+                return self.ModeMonsterDataTableName
+            end
+            return ""
+        end
+
         if self.MonsterDataTableName ~= nil and self.MonsterDataTableName ~= "" then
             return self.MonsterDataTableName
         end
@@ -339,6 +373,45 @@ script MonsterSpawnComponent extends Component
             return self.SpawnWaveTableName
         end
         return ""
+    end
+
+    -- Infinite-mode entry switches spawn source table and restarts gate evaluation in one server API.
+    @ExecSpace("ServerOnly")
+    method boolean ActivateInfiniteModeServer(boolean enabled)
+        local useModeData = (enabled == true)
+        self._T.UseModeMonsterData = useModeData
+
+        self.IsBossPhase = false
+        self._T.BossSpawnedEntity = nil
+
+        local loaded = self:LoadMonsterDataFromTable()
+        self._T.DataReady = (self._T.Config ~= nil and loaded == true)
+
+        if loaded == false then
+            self:StopSpawning()
+            return false
+        end
+
+        self:RefreshSpawnStateServer()
+        return true
+    end
+
+    -- Score lookup API is used by InfiniteMode fallback path when spawn meta is unavailable.
+    @ExecSpace("ServerOnly")
+    method integer GetCreepScoreByMonsterIdServer(string monsterId)
+        if monsterId == nil or monsterId == "" then
+            return 0
+        end
+
+        if self._T.CreepScoreByMonsterId == nil then
+            self._T.CreepScoreByMonsterId = {}
+        end
+
+        local cached = self._T.CreepScoreByMonsterId[monsterId]
+        if cached ~= nil then
+            return math.max(0, math.floor(cached))
+        end
+        return 0
     end
 
     method string GetFallbackModelType(UserDataRow row)
@@ -453,6 +526,16 @@ script MonsterSpawnComponent extends Component
             self:TraceSpawnGateServer(false, "LobbySafeZoneActive")
             return false
         end
+        local timerComponent = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "IsPaused")
+        if timerComponent ~= nil then
+            local pauseOk, isPaused = pcall(function()
+                return timerComponent.IsPaused
+            end)
+            if pauseOk == true and isPaused == true then
+                self:TraceSpawnGateServer(false, "GameTimerPaused")
+                return false
+            end
+        end
 
         self:TraceSpawnGateServer(true, "Ready")
         return true
@@ -557,6 +640,7 @@ script MonsterSpawnComponent extends Component
             return
         end
         local context = self:ResolveCurrentSpawnContext()
+        self._T.CurrentSpawnElapsedSec = context.ElapsedSec
         local candidates = self:ResolveSpawnCandidates(context.Stage, context.ElapsedSec)
         if self.EnableDebugLogs == true then
             log("[MonsterSpawnComponent][DEBUG] SpawnTick start. tick=", self._T.SpawnTickCounter, ", stage=", context.Stage, ", elapsed=", context.ElapsedSec, ", normal=", #candidates.NormalRows, ", boss=", #candidates.BossRows, ", alive=", self:GetSpawnedMonsterCount())
@@ -618,14 +702,34 @@ script MonsterSpawnComponent extends Component
         end
     end
 
-    -- Stage/time context is read from timer component so wave progression stays server-authoritative.
+    -- Stage/time context is read from GameTimer or InfiniteMode elapsed timer, both server-authoritative.
     @ExecSpace("ServerOnly")
     method table ResolveCurrentSpawnContext()
         local context = {}
         context.Stage = 1
         context.ElapsedSec = 0
 
-        local timerComponent = self:ResolveComponentSafe(self.Entity, "SpeedrunTimerComponent", "ElapsedTime")
+        local infiniteMode = self:ResolveComponentSafe(self.Entity, "InfiniteModeComponent", "IsInfiniteActive")
+        if infiniteMode ~= nil then
+            local activeOk, isInfinite = pcall(function()
+                return infiniteMode.IsInfiniteActive
+            end)
+            if activeOk == true and isInfinite == true then
+                local elapsedOk, elapsedValue = pcall(function()
+                    if infiniteMode.GetInfiniteElapsedSecondsServer ~= nil then
+                        return infiniteMode:GetInfiniteElapsedSecondsServer()
+                    end
+                    return 0
+                end)
+                if elapsedOk == true and elapsedValue ~= nil then
+                    context.ElapsedSec = math.max(0, elapsedValue)
+                end
+                context.Stage = 1
+                return context
+            end
+        end
+
+        local timerComponent = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "ElapsedTime")
         if timerComponent == nil then
             return context
         end
@@ -653,6 +757,7 @@ script MonsterSpawnComponent extends Component
         local result = {}
         result.NormalRows = {}
         result.BossRows = {}
+        local enforceStage = (self._T.UseModeMonsterData ~= true)
 
         local rows = self._T.MonsterRows
         if rows == nil then
@@ -664,9 +769,11 @@ script MonsterSpawnComponent extends Component
                 continue
             end
 
-            local rowStage = self:GetRowInteger(row, "spawn_stage", 1)
-            if rowStage ~= stage then
-                continue
+            if enforceStage == true then
+                local rowStage = self:GetRowInteger(row, "spawn_stage", 1)
+                if rowStage ~= stage then
+                    continue
+                end
             end
 
             local spawnMinute = self:GetSpawnMinuteFromRow(row)
@@ -874,6 +981,7 @@ script MonsterSpawnComponent extends Component
         meta.MonSpd = self:GetRowNumber(row, "mon_spd", 0)
         meta.SpawnStage = self:GetRowInteger(row, "spawn_stage", 1)
         meta.SpawnTimeMin = self:GetSpawnMinuteFromRow(row)
+        meta.CreepScore = math.max(0, self:GetRowInteger(row, "creep_score", 0))
         meta.Gold = 0
 
         meta.DropId = self:GetRowString(row, "drop_id", "")
@@ -1171,9 +1279,10 @@ script MonsterSpawnComponent extends Component
             return
         end
 
-        local monHp = self:GetRowInteger(row, "mon_hp", -1)
-        local monAtk = self:GetRowInteger(row, "mon_atk", -1)
-        local monSpd = self:GetRowNumber(row, "mon_spd", -1)
+        local scaled = self:ResolveMonsterStatValues(row, self._T.CurrentSpawnElapsedSec)
+        local monHp = scaled.MonHP
+        local monAtk = scaled.MonAtk
+        local monSpd = scaled.MonSpd
 
         if monHp >= 0 then
             local hpSystem = self:ResolveComponentSafe(targetEntity, "HPSystemComponent", "CurrentHP")
@@ -1220,6 +1329,45 @@ script MonsterSpawnComponent extends Component
                 end)
             end
         end
+    end
+
+    -- Mode rows support per-minute stat growth; normal rows use fixed mon_hp/mon_atk/mon_spd values.
+    method table ResolveMonsterStatValues(UserDataRow row, number elapsedSec)
+        local stats = {}
+        stats.MonHP = self:GetRowInteger(row, "mon_hp", -1)
+        stats.MonAtk = self:GetRowInteger(row, "mon_atk", -1)
+        stats.MonSpd = self:GetRowNumber(row, "mon_spd", -1)
+
+        if self:IsModeMonsterRow(row) ~= true then
+            return stats
+        end
+
+        local minute = math.max(0, elapsedSec) / 60
+
+        local baseHp = self:GetRowNumber(row, "mode_mon_hp", -1)
+        if baseHp >= 0 then
+            local hpUp = self:GetRowNumber(row, "mode_mon_hp_up", 0)
+            stats.MonHP = math.max(0, math.floor(baseHp + (hpUp * minute)))
+        end
+
+        local baseAtk = self:GetRowNumber(row, "mon_atk", -1)
+        if baseAtk >= 0 then
+            local atkUp = self:GetRowNumber(row, "mode_mon_atk_up", 0)
+            stats.MonAtk = math.max(0, math.floor(baseAtk + (atkUp * minute)))
+        end
+
+        local baseSpd = self:GetRowNumber(row, "mon_spd", -1)
+        if baseSpd >= 0 then
+            local spdUp = self:GetRowNumber(row, "mon_spd_up", 0)
+            stats.MonSpd = math.max(0, baseSpd + (spdUp * minute))
+        end
+
+        return stats
+    end
+
+    method boolean IsModeMonsterRow(UserDataRow row)
+        local monType = string.lower(self:GetRowString(row, "mon_type", ""))
+        return string.sub(monType, 1, 5) == "mode_"
     end
 
     -- Every spawned monster gets chase AI once so nearest-player pursuit works without model-side manual setup.
@@ -1279,11 +1427,49 @@ script MonsterSpawnComponent extends Component
                 if oldMeta ~= nil and oldMeta[entity] ~= nil then
                     newMeta[entity] = oldMeta[entity]
                 end
+            else
+                if oldMeta ~= nil and oldMeta[entity] ~= nil then
+                    self:HandleSpawnedMonsterRemovedServer(oldMeta[entity])
+                end
             end
         end
 
         self._T.SpawnedMonsters = newList
         self._T.SpawnMetaByEntity = newMeta
+    end
+
+    -- Removed-entity hook reports kill/clear events to InfiniteModeComponent without hard coupling.
+    @ExecSpace("ServerOnly")
+    method void HandleSpawnedMonsterRemovedServer(table spawnMeta)
+        if spawnMeta == nil then
+            return
+        end
+
+        local infiniteMode = self:ResolveComponentSafe(self.Entity, "InfiniteModeComponent", "CurrentScore")
+        if infiniteMode == nil then
+            return
+        end
+
+        local monsterId = ""
+        local creepScore = 0
+        if spawnMeta.Id ~= nil then
+            monsterId = tostring(spawnMeta.Id)
+        end
+        if spawnMeta.CreepScore ~= nil then
+            creepScore = math.max(0, math.floor(spawnMeta.CreepScore))
+        end
+
+        if monsterId ~= "" and infiniteMode.OnMonsterKilledServer ~= nil then
+            pcall(function()
+                infiniteMode:OnMonsterKilledServer(monsterId, creepScore)
+            end)
+        end
+
+        if spawnMeta.IsBoss == true and infiniteMode.OnBossKilledServer ~= nil then
+            pcall(function()
+                infiniteMode:OnBossKilledServer(monsterId)
+            end)
+        end
     end
 
     method integer GetSpawnedMonsterCount()

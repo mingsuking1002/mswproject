@@ -1,0 +1,778 @@
+﻿@Component
+script InfiniteModeComponent extends Component
+
+    @Sync
+    property boolean IsInfiniteActive = false
+    @Sync
+    property integer CurrentScore = 0
+
+    property integer SessionBestScore = 0
+    property number ResultDelaySeconds = 3.0
+    property string ModeMonsterDataTableName = "ModeMonsterData"
+
+    property string ScoreTextPath = "/ui/DefaultGroup/GRScoreText"
+    property string ResultPanelPath = "/ui/DefaultGroup/GRResultPanel"
+    property string ReentryPopupPath = "/ui/DefaultGroup/GRReentryPopup"
+    property string ReentryAcceptButtonPath = "/ui/DefaultGroup/GRReentryPopup/AcceptButton"
+    property string ReentryDeclineButtonPath = "/ui/DefaultGroup/GRReentryPopup/DeclineButton"
+
+    property boolean EnableDebugLogs = true
+
+    -- Server initializes score/mode runtime state.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self:EnsureGRUtil()
+
+        self.IsInfiniteActive = false
+        self.CurrentScore = 0
+        self.SessionBestScore = 0
+
+        self._T.BossClearedInNormal = false
+        self._T.AwaitingReentryChoice = false
+        self._T.InfiniteStartServerSec = 0
+        self._T.ResultTimerId = 0
+        self._T.ScoreCacheByTable = {}
+    end
+
+    -- Client binds optional popup buttons and initializes hidden score/result/reentry UI state.
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self:EnsureGRUtil()
+        self:BindReentryButtonsClient()
+
+        self:ApplyScoreUIClient()
+        self:ApplyReentryPopupClient(false, self.CurrentScore)
+        self:ApplyResultPanelClient(false, "", 0, 0, false, false)
+    end
+
+    -- Map transition can invalidate button entities, so binding is retried on enter.
+    @ExecSpace("ClientOnly")
+    method void OnMapEnter(Entity enteredMap)
+        self:BindReentryButtonsClient()
+        self:ApplyScoreUIClient()
+        self:ApplyReentryPopupClient(false, self.CurrentScore)
+    end
+
+    -- Sync-driven UI refresh keeps score widget in sync without extra polling.
+    @ExecSpace("ClientOnly")
+    method void OnSyncProperty(string propertyName, any value)
+        if propertyName == "CurrentScore" or propertyName == "IsInfiniteActive" then
+            self:ApplyScoreUIClient()
+        end
+    end
+
+    -- Keyboard fallback supports popup decision even before Maker button wiring is completed.
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        if self._T.ClientPopupVisible ~= true then
+            return
+        end
+
+        if event.key == KeyboardKey.Y then
+            self:RequestReentryDecisionServer(true)
+            return
+        end
+
+        if event.key == KeyboardKey.N then
+            self:RequestReentryDecisionServer(false)
+            return
+        end
+    end
+
+    -- Accept button callback routes to server-authoritative decision handler.
+    @ExecSpace("ClientOnly")
+    method void OnReentryAcceptClickedClient(ButtonClickEvent event)
+        self:RequestReentryDecisionServer(true)
+    end
+
+    -- Decline button callback routes to server-authoritative decision handler.
+    @ExecSpace("ClientOnly")
+    method void OnReentryDeclineClickedClient(ButtonClickEvent event)
+        self:RequestReentryDecisionServer(false)
+    end
+
+    -- Reentry decision is validated on server ownership and popup state.
+    @ExecSpace("Server")
+    method void RequestReentryDecisionServer(boolean acceptInfinite)
+        if self:IsOwnerRequest(senderUserId) == false then
+            return
+        end
+        if self._T.AwaitingReentryChoice ~= true then
+            return
+        end
+
+        self._T.AwaitingReentryChoice = false
+        self:ApplyReentryPopupClient(false, self.CurrentScore)
+
+        if acceptInfinite == true then
+            self:EnterInfiniteModeServer()
+            return
+        end
+
+        self:FinalizeNormalClearServer()
+    end
+
+    -- Run-start reset is called by LobbyFlow so every game starts from normal mode baseline.
+    @ExecSpace("ServerOnly")
+    method void ResetForNewRunServer()
+        if self._T.ResultTimerId ~= nil and self._T.ResultTimerId > 0 then
+            _TimerService:ClearTimer(self._T.ResultTimerId)
+            self._T.ResultTimerId = 0
+        end
+
+        self.IsInfiniteActive = false
+        self.CurrentScore = 0
+        self._T.BossClearedInNormal = false
+        self._T.AwaitingReentryChoice = false
+        self._T.InfiniteStartServerSec = 0
+
+        local monsterSpawn = self:ResolveComponentSafe(self.Entity, "MonsterSpawnComponent", "IsSpawnActive")
+        if monsterSpawn ~= nil and monsterSpawn.ActivateInfiniteModeServer ~= nil then
+            pcall(function()
+                monsterSpawn:ActivateInfiniteModeServer(false)
+            end)
+        end
+
+        self:ApplyReentryPopupClient(false, self.CurrentScore)
+        self:ApplyResultPanelClient(false, "", 0, 0, false, false)
+        self:ApplyScoreUIClient()
+    end
+
+    -- Kill callback accumulates creep_score and updates score UI.
+    @ExecSpace("ServerOnly")
+    method void OnMonsterKilledServer(string monsterId, integer scoreOverride)
+        if monsterId == nil or monsterId == "" then
+            return
+        end
+
+        local deltaScore = 0
+        if scoreOverride ~= nil then
+            deltaScore = math.max(0, math.floor(scoreOverride))
+        end
+        if deltaScore <= 0 then
+            deltaScore = self:ResolveScoreByMonsterIdServer(monsterId)
+        end
+        if deltaScore <= 0 then
+            return
+        end
+
+        self.CurrentScore = math.max(0, self.CurrentScore + deltaScore)
+        if self.CurrentScore > self.SessionBestScore then
+            self.SessionBestScore = self.CurrentScore
+        end
+
+        self:ApplyScoreUIClient()
+    end
+
+    -- Boss-kill callback opens one-time reentry decision popup in normal mode.
+    @ExecSpace("ServerOnly")
+    method void OnBossKilledServer(string bossId)
+        if self.IsInfiniteActive == true then
+            return
+        end
+        if self._T.BossClearedInNormal == true then
+            return
+        end
+
+        self._T.BossClearedInNormal = true
+        self._T.AwaitingReentryChoice = true
+        self:ApplyReentryPopupClient(true, self.CurrentScore)
+
+        if self.EnableDebugLogs == true then
+            log("[InfiniteModeComponent][DEBUG] Boss cleared. waiting reentry choice. bossId=", bossId, ", score=", self.CurrentScore)
+        end
+    end
+
+    -- HPSystem calls this method once at death to centralize result/ranking branching.
+    @ExecSpace("ServerOnly")
+    method boolean HandlePlayerDeathServer()
+        if self._T.ResultTimerId ~= nil and self._T.ResultTimerId > 0 then
+            return true
+        end
+
+        self._T.AwaitingReentryChoice = false
+        self:ApplyReentryPopupClient(false, self.CurrentScore)
+
+        if self.IsInfiniteActive == true then
+            local submitted = self:SubmitInfiniteScoreServer()
+            self:ShowResultAndReturnLobbyServer("INFINITE MODE END", self.CurrentScore, submitted, true)
+            return true
+        end
+
+        local submitted = false
+        local title = "NORMAL MODE FAILED"
+        if self._T.BossClearedInNormal == true then
+            title = "NORMAL MODE CLEAR"
+            submitted = self:SubmitNormalScoreServer()
+        end
+
+        self:ShowResultAndReturnLobbyServer(title, self.CurrentScore, submitted, false)
+        return true
+    end
+
+    -- Infinite-mode entry resets score and switches MonsterSpawn table source to ModeMonsterData.
+    @ExecSpace("ServerOnly")
+    method void EnterInfiniteModeServer()
+        self.IsInfiniteActive = true
+        self.CurrentScore = 0
+        self._T.InfiniteStartServerSec = self:GetServerNowSeconds()
+
+        local monsterSpawn = self:ResolveComponentSafe(self.Entity, "MonsterSpawnComponent", "IsSpawnActive")
+        if monsterSpawn ~= nil then
+            pcall(function()
+                monsterSpawn.ModeMonsterDataTableName = self.ModeMonsterDataTableName
+            end)
+            if monsterSpawn.ActivateInfiniteModeServer ~= nil then
+                pcall(function()
+                    monsterSpawn:ActivateInfiniteModeServer(true)
+                end)
+            end
+        end
+
+        self:ApplyReentryPopupClient(false, self.CurrentScore)
+        self:ApplyResultPanelClient(false, "", 0, 0, false, false)
+        self:ApplyScoreUIClient()
+
+        if self.EnableDebugLogs == true then
+            log("[InfiniteModeComponent][DEBUG] EnterInfiniteModeServer activated.")
+        end
+    end
+
+    -- Normal clear without infinite entry still submits to normal leaderboard and returns to lobby.
+    @ExecSpace("ServerOnly")
+    method void FinalizeNormalClearServer()
+        local submitted = self:SubmitNormalScoreServer()
+        self:ShowResultAndReturnLobbyServer("NORMAL MODE CLEAR", self.CurrentScore, submitted, false)
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean SubmitNormalScoreServer()
+        if self._T.BossClearedInNormal ~= true then
+            return false
+        end
+
+        local ranking = self:ResolveComponentSafe(self.Entity, "RankingComponent", "DisplayCount")
+        if ranking == nil or ranking.SubmitNormalRecordServer == nil then
+            return false
+        end
+
+        local submitOk, submitResult = pcall(function()
+            return ranking:SubmitNormalRecordServer(self.CurrentScore)
+        end)
+        if submitOk == true and submitResult == true then
+            return true
+        end
+        return false
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean SubmitInfiniteScoreServer()
+        local ranking = self:ResolveComponentSafe(self.Entity, "RankingComponent", "DisplayCount")
+        if ranking == nil or ranking.SubmitInfiniteRecordServer == nil then
+            return false
+        end
+
+        local submitOk, submitResult = pcall(function()
+            return ranking:SubmitInfiniteRecordServer(self.CurrentScore)
+        end)
+        if submitOk == true and submitResult == true then
+            return true
+        end
+        return false
+    end
+
+    -- Result UI is shown for a short delay, then lobby flow handles cleanup/return.
+    @ExecSpace("ServerOnly")
+    method void ShowResultAndReturnLobbyServer(string title, integer finalScore, boolean submitted, boolean isInfiniteResult)
+        if self._T.ResultTimerId ~= nil and self._T.ResultTimerId > 0 then
+            _TimerService:ClearTimer(self._T.ResultTimerId)
+            self._T.ResultTimerId = 0
+        end
+
+        local bestScore = math.max(0, self.SessionBestScore)
+        local ranking = self:ResolveComponentSafe(self.Entity, "RankingComponent", "DisplayCount")
+        if ranking ~= nil then
+            if isInfiniteResult == true then
+                local readOk, value = pcall(function()
+                    return ranking.InfiniteBestScore
+                end)
+                if readOk == true and value ~= nil then
+                    bestScore = math.max(bestScore, math.max(0, math.floor(value)))
+                end
+            else
+                local readOk, value = pcall(function()
+                    return ranking.NormalBestScore
+                end)
+                if readOk == true and value ~= nil then
+                    bestScore = math.max(bestScore, math.max(0, math.floor(value)))
+                end
+            end
+        end
+
+        self:ApplyResultPanelClient(true, title, finalScore, bestScore, submitted, isInfiniteResult)
+
+        local delay = self.ResultDelaySeconds
+        if delay < 0 then
+            delay = 0
+        end
+
+        if delay <= 0 then
+            self:FinishRunAndReturnLobbyServer()
+            return
+        end
+
+        local callback = function()
+            self._T.ResultTimerId = 0
+            self:FinishRunAndReturnLobbyServer()
+        end
+        self._T.ResultTimerId = _TimerService:SetTimerOnce(callback, delay)
+    end
+
+    -- Final cleanup always returns spawn source to normal mode and then routes through LobbyFlow.
+    @ExecSpace("ServerOnly")
+    method void FinishRunAndReturnLobbyServer()
+        local monsterSpawn = self:ResolveComponentSafe(self.Entity, "MonsterSpawnComponent", "IsSpawnActive")
+        if monsterSpawn ~= nil and monsterSpawn.ActivateInfiniteModeServer ~= nil then
+            pcall(function()
+                monsterSpawn:ActivateInfiniteModeServer(false)
+            end)
+        end
+
+        self.IsInfiniteActive = false
+        self.CurrentScore = 0
+        self._T.AwaitingReentryChoice = false
+        self._T.BossClearedInNormal = false
+        self._T.InfiniteStartServerSec = 0
+
+        self:ApplyReentryPopupClient(false, self.CurrentScore)
+        self:ApplyResultPanelClient(false, "", 0, 0, false, false)
+        self:ApplyScoreUIClient()
+
+        local lobbyFlow = self:ResolveComponentSafe(self.Entity, "LobbyFlowComponent", "IsLobbyActive")
+        if lobbyFlow ~= nil and lobbyFlow.HandleRunCompletedServer ~= nil then
+            pcall(function()
+                lobbyFlow:HandleRunCompletedServer(false)
+            end)
+            return
+        end
+    end
+
+    -- Infinite spawn scaling timer reference starts when infinite mode is activated.
+    @ExecSpace("ServerOnly")
+    method number GetInfiniteElapsedSecondsServer()
+        if self.IsInfiniteActive ~= true then
+            return 0
+        end
+
+        local startSec = self._T.InfiniteStartServerSec
+        if startSec == nil then
+            return 0
+        end
+
+        return math.max(0, self:GetServerNowSeconds() - startSec)
+    end
+
+    -- Score lookup prefers MonsterSpawn cache and falls back to table cache when needed.
+    @ExecSpace("ServerOnly")
+    method integer ResolveScoreByMonsterIdServer(string monsterId)
+        local monsterSpawn = self:ResolveComponentSafe(self.Entity, "MonsterSpawnComponent", "IsSpawnActive")
+        if monsterSpawn ~= nil and monsterSpawn.GetCreepScoreByMonsterIdServer ~= nil then
+            local readOk, readValue = pcall(function()
+                return monsterSpawn:GetCreepScoreByMonsterIdServer(monsterId)
+            end)
+            if readOk == true and readValue ~= nil then
+                return math.max(0, math.floor(readValue))
+            end
+        end
+
+        local tableName = "MonsterData"
+        if self.IsInfiniteActive == true then
+            tableName = self.ModeMonsterDataTableName
+        elseif monsterSpawn ~= nil then
+            local nameOk, nameValue = pcall(function()
+                return monsterSpawn.MonsterDataTableName
+            end)
+            if nameOk == true and nameValue ~= nil and nameValue ~= "" then
+                tableName = tostring(nameValue)
+            end
+        end
+
+        local cache = self:BuildScoreCacheForTableServer(tableName)
+        if cache == nil then
+            return 0
+        end
+
+        local cachedScore = cache[monsterId]
+        if cachedScore == nil then
+            return 0
+        end
+
+        return math.max(0, math.floor(cachedScore))
+    end
+
+    @ExecSpace("ServerOnly")
+    method table BuildScoreCacheForTableServer(string tableName)
+        if tableName == nil or tableName == "" then
+            return nil
+        end
+
+        if self._T.ScoreCacheByTable == nil then
+            self._T.ScoreCacheByTable = {}
+        end
+
+        local cached = self._T.ScoreCacheByTable[tableName]
+        if cached ~= nil then
+            return cached
+        end
+
+        local tableData = nil
+        local loadOk, loadResult = pcall(function()
+            return _DataService:GetTable(tableName)
+        end)
+        if loadOk == true then
+            tableData = loadResult
+        end
+        if tableData == nil then
+            return nil
+        end
+
+        local rows = nil
+        local rowsOk, rowsResult = pcall(function()
+            return tableData:GetAllRow()
+        end)
+        if rowsOk == true then
+            rows = rowsResult
+        end
+        if rows == nil then
+            return nil
+        end
+
+        local scoreMap = {}
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+
+            local rowId = ""
+            local scoreValue = 0
+            pcall(function()
+                rowId = tostring(row:GetItem("id"))
+            end)
+            if rowId == nil or rowId == "" then
+                continue
+            end
+
+            pcall(function()
+                local raw = tonumber(row:GetItem("creep_score"))
+                if raw ~= nil then
+                    scoreValue = math.max(0, math.floor(raw))
+                end
+            end)
+
+            scoreMap[rowId] = scoreValue
+        end
+
+        self._T.ScoreCacheByTable[tableName] = scoreMap
+        return scoreMap
+    end
+
+    method number GetServerNowSeconds()
+        local nowSeconds = 0
+        local readOk, readValue = pcall(function()
+            return _UtilLogic.ServerElapsedSeconds
+        end)
+        if readOk == true and readValue ~= nil then
+            nowSeconds = readValue
+        end
+        return nowSeconds
+    end
+
+    -- Runtime score text is shown during gameplay and hidden while in lobby.
+    @ExecSpace("Client")
+    method void ApplyScoreUIClient()
+        local scoreEntity = self:ResolveUIEntity(self.ScoreTextPath)
+        if scoreEntity == nil or isvalid(scoreEntity) == false then
+            return
+        end
+
+        local visible = true
+        local lobbyFlow = self:ResolveComponentSafe(self.Entity, "LobbyFlowComponent", "IsLobbyActive")
+        if lobbyFlow ~= nil then
+            local lobbyOk, isLobby = pcall(function()
+                return lobbyFlow.IsLobbyActive
+            end)
+            if lobbyOk == true and isLobby == true then
+                visible = false
+            end
+        end
+
+        local textComponent = scoreEntity.TextComponent
+        if textComponent ~= nil and isvalid(textComponent) == true then
+            pcall(function()
+                textComponent.Text = "SCORE: " .. tostring(math.max(0, self.CurrentScore))
+            end)
+        end
+
+        pcall(function()
+            scoreEntity.Enable = visible
+            scoreEntity.Visible = visible
+        end)
+    end
+
+    -- Reentry popup toggles with current score and keyboard hint fallback.
+    @ExecSpace("Client")
+    method void ApplyReentryPopupClient(boolean visible, integer score)
+        self._T.ClientPopupVisible = visible
+
+        local popupEntity = self:ResolveUIEntity(self.ReentryPopupPath)
+        if popupEntity == nil or isvalid(popupEntity) == false then
+            return
+        end
+
+        local textComponent = popupEntity.TextComponent
+        if textComponent ~= nil and isvalid(textComponent) == true then
+            local popupScore = math.max(0, math.floor(score))
+            local lines = {}
+            table.insert(lines, "Boss Cleared")
+            table.insert(lines, "Enter Infinite Mode?")
+            table.insert(lines, "Current Score: " .. tostring(popupScore))
+            table.insert(lines, "Y: Accept / N: Decline")
+            pcall(function()
+                textComponent.Text = table.concat(lines, "\n")
+            end)
+        end
+
+        pcall(function()
+            popupEntity.Enable = visible
+            popupEntity.Visible = visible
+        end)
+    end
+
+    -- Result panel shows mode, score, best, and ranking-submit outcome before lobby return.
+    @ExecSpace("Client")
+    method void ApplyResultPanelClient(boolean visible, string title, integer score, integer bestScore, boolean submitted, boolean isInfiniteResult)
+        local resultEntity = self:ResolveUIEntity(self.ResultPanelPath)
+        if resultEntity == nil or isvalid(resultEntity) == false then
+            return
+        end
+
+        local textComponent = resultEntity.TextComponent
+        if textComponent ~= nil and isvalid(textComponent) == true then
+            local lines = {}
+            if title == nil or title == "" then
+                title = "Result"
+            end
+            table.insert(lines, title)
+            table.insert(lines, "Score: " .. tostring(math.max(0, math.floor(score))))
+            table.insert(lines, "Best: " .. tostring(math.max(0, math.floor(bestScore))))
+            if submitted == true then
+                table.insert(lines, "Ranking Submitted")
+            else
+                table.insert(lines, "Ranking Not Submitted")
+            end
+            pcall(function()
+                textComponent.Text = table.concat(lines, "\n")
+            end)
+        end
+
+        pcall(function()
+            resultEntity.Enable = visible
+            resultEntity.Visible = visible
+        end)
+    end
+
+    -- Optional Maker buttons are connected when paths are valid; missing buttons are tolerated.
+    @ExecSpace("ClientOnly")
+    method void BindReentryButtonsClient()
+        if self._T.ReentryAcceptHandler == nil then
+            local acceptEntity = self:ResolveUIEntity(self.ReentryAcceptButtonPath)
+            if acceptEntity ~= nil and isvalid(acceptEntity) == true then
+                if acceptEntity.ButtonComponent == nil then
+                    pcall(function()
+                        acceptEntity:AddComponent("MOD.Core.ButtonComponent")
+                    end)
+                end
+
+                if acceptEntity.ButtonComponent ~= nil then
+                    local callback = function(event)
+                        self:OnReentryAcceptClickedClient(event)
+                    end
+                    local bindOk, bindHandler = pcall(function()
+                        return acceptEntity:ConnectEvent(ButtonClickEvent, callback)
+                    end)
+                    if bindOk == true then
+                        self._T.ReentryAcceptEntity = acceptEntity
+                        self._T.ReentryAcceptHandler = bindHandler
+                    end
+                end
+            end
+        end
+
+        if self._T.ReentryDeclineHandler == nil then
+            local declineEntity = self:ResolveUIEntity(self.ReentryDeclineButtonPath)
+            if declineEntity ~= nil and isvalid(declineEntity) == true then
+                if declineEntity.ButtonComponent == nil then
+                    pcall(function()
+                        declineEntity:AddComponent("MOD.Core.ButtonComponent")
+                    end)
+                end
+
+                if declineEntity.ButtonComponent ~= nil then
+                    local callback = function(event)
+                        self:OnReentryDeclineClickedClient(event)
+                    end
+                    local bindOk, bindHandler = pcall(function()
+                        return declineEntity:ConnectEvent(ButtonClickEvent, callback)
+                    end)
+                    if bindOk == true then
+                        self._T.ReentryDeclineEntity = declineEntity
+                        self._T.ReentryDeclineHandler = bindHandler
+                    end
+                end
+            end
+        end
+    end
+
+    method Entity ResolveUIEntity(string path)
+        if path == nil or path == "" then
+            return nil
+        end
+
+        local entity = nil
+        local readOk, readResult = pcall(function()
+            return _EntityService:GetEntityByPath(path)
+        end)
+        if readOk == true then
+            entity = readResult
+        end
+
+        if entity == nil or isvalid(entity) == false then
+            return nil
+        end
+        return entity
+    end
+
+    method void OnEndPlay()
+        if self._T.ResultTimerId ~= nil and self._T.ResultTimerId > 0 then
+            _TimerService:ClearTimer(self._T.ResultTimerId)
+            self._T.ResultTimerId = 0
+        end
+
+        if self._T.ReentryAcceptEntity ~= nil and self._T.ReentryAcceptHandler ~= nil then
+            pcall(function()
+                self._T.ReentryAcceptEntity:DisconnectEvent(ButtonClickEvent, self._T.ReentryAcceptHandler)
+            end)
+        end
+        self._T.ReentryAcceptEntity = nil
+        self._T.ReentryAcceptHandler = nil
+
+        if self._T.ReentryDeclineEntity ~= nil and self._T.ReentryDeclineHandler ~= nil then
+            pcall(function()
+                self._T.ReentryDeclineEntity:DisconnectEvent(ButtonClickEvent, self._T.ReentryDeclineHandler)
+            end)
+        end
+        self._T.ReentryDeclineEntity = nil
+        self._T.ReentryDeclineHandler = nil
+
+        self._T.ClientPopupVisible = false
+    end
+
+    -- Utility bootstrap first; fallback local lookup remains for partial map setup.
+    method void EnsureGRUtil()
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, utilApi = pcall(function()
+                return utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and utilApi ~= nil then
+                self._T.GRUtil = utilApi
+            end
+            if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+
+    method boolean IsOwnerRequest(string requestUserId)
+        if self._T.GRUtil ~= nil and self._T.GRUtil.IsOwner ~= nil then
+            return self._T.GRUtil.IsOwner(self.Entity, requestUserId)
+        end
+
+        local playerComponent = self.Entity.PlayerComponent
+        if playerComponent == nil then
+            return true
+        end
+
+        if requestUserId == nil or requestUserId == "" then
+            return true
+        end
+
+        return requestUserId == playerComponent.UserId
+    end
+end

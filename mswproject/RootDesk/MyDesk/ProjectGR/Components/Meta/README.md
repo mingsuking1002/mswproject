@@ -6,8 +6,9 @@ Meta and session systems layered over core combat flow.
 ## Components
 - WeaponSwapComponent
 - TagManagerComponent
-- SpeedrunTimerComponent
+- GameTimerComponent
 - RankingComponent
+- InfiniteModeComponent
 
 ## Dependency rule
 - Can depend on Core + Combat.

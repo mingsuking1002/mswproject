@@ -1,75 +1,68 @@
 ﻿@Component
 script RankingComponent extends Component
 
-    property number TimeAttackBestTime = -1
-    property integer InfiniteModeBestKills = 0
+    property integer NormalBestScore = 0
+    property integer InfiniteBestScore = 0
 
     property integer DisplayCount = 100
     property integer MaxRankScanCount = 2000
-    property number MinimumValidClearTime = 5.0
-    property number MaximumValidClearTime = 7200.0
-    property integer MaximumValidKills = 1000000
+    property integer MaximumValidScore = 1000000
 
-    property string TimeAttackStorageName = "GR_TimeAttack"
+    property string NormalStorageName = "GR_NormalScore"
     property string InfiniteStorageName = "GR_Infinite"
-    property string TimeAttackLocalKey = "Ranking_TimeAttackBest"
+    property string NormalLocalKey = "Ranking_NormalBest"
     property string InfiniteLocalKey = "Ranking_InfiniteBest"
 
-    -- Server initializes local best records from storage so result-screen comparison is deterministic.
+    -- Server loads local PB cache so result comparison is deterministic across reconnects.
     @ExecSpace("ServerOnly")
     method void OnInitialize()
         self:EnsureGRUtil()
         self:LoadLocalBestRecordsServer()
     end
 
-    -- Client utility bootstrap allows ranking UI requests to share the same safe component resolution logic.
+    -- Client bootstrap keeps resolver behavior consistent with other components.
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         self:EnsureGRUtil()
     end
 
-    -- TimeAttack submit validates record server-side and uploads only when local PB improves.
+    -- Normal-mode score submit updates PB/storage only when record improves.
     @ExecSpace("ServerOnly")
-    method boolean SubmitTimeAttackRecordServer(number elapsedTime)
-        if self:IsValidTimeAttackRecord(elapsedTime) == false then
+    method boolean SubmitNormalRecordServer(integer score)
+        if self:IsValidScore(score) == false then
             return false
         end
 
-        local isNewRecord = false
-        if self.TimeAttackBestTime < 0 then
-            isNewRecord = true
-        elseif elapsedTime < self.TimeAttackBestTime then
-            isNewRecord = true
-        end
-        if isNewRecord == false then
+        local safeScore = math.max(0, math.floor(score))
+        if safeScore <= self.NormalBestScore then
             return false
         end
 
-        self.TimeAttackBestTime = elapsedTime
-        self:SaveLocalBestRecordServer(1, elapsedTime)
-        self:UploadTimeAttackRecordServer(elapsedTime)
+        self.NormalBestScore = safeScore
+        self:SaveLocalBestRecordServer(1, safeScore)
+        self:UploadNormalRecordServer(safeScore)
         return true
     end
 
-    -- Infinite-mode submit follows same PB-only policy to reduce unnecessary storage writes.
+    -- Infinite-mode score submit mirrors normal-mode PB policy.
     @ExecSpace("ServerOnly")
-    method boolean SubmitInfiniteRecordServer(integer killCount)
-        if self:IsValidInfiniteRecord(killCount) == false then
+    method boolean SubmitInfiniteRecordServer(integer score)
+        if self:IsValidScore(score) == false then
             return false
         end
 
-        local isNewRecord = (killCount > self.InfiniteModeBestKills)
-        if isNewRecord == false then
+        local safeScore = math.max(0, math.floor(score))
+        if safeScore <= self.InfiniteBestScore then
             return false
         end
 
-        self.InfiniteModeBestKills = killCount
-        self:SaveLocalBestRecordServer(2, killCount)
-        self:UploadInfiniteRecordServer(killCount)
+        self.InfiniteBestScore = safeScore
+        self:SaveLocalBestRecordServer(2, safeScore)
+        self:UploadInfiniteRecordServer(safeScore)
         return true
     end
 
-    -- Ranking snapshot request is server-routed so top/my-rank calculations are protected from client spoofing.
+    -- Ranking snapshot stays server-routed so sort/rank logic remains authoritative.
     @ExecSpace("Server")
     method void RequestRankingSnapshotServer(integer mode)
         if self:IsOwnerRequest(senderUserId) == false then
@@ -82,7 +75,7 @@ script RankingComponent extends Component
         self:ReceiveRankingSnapshotClient(finalMode, topRanks, myRank)
     end
 
-    -- Lobby flow compatibility wrapper: applies display count then forwards to snapshot API.
+    -- Backward-compatible wrapper preserves existing LobbyFlow integration points.
     @ExecSpace("Server")
     method void RequestRankingDataServer(integer mode, integer displayCount)
         if self:IsOwnerRequest(senderUserId) == false then
@@ -95,7 +88,7 @@ script RankingComponent extends Component
         self:RequestRankingSnapshotServer(mode)
     end
 
-    -- Client snapshot receiver caches latest ranking payload for UI components.
+    -- Client cache is consumed by RankingUIComponent render path.
     @ExecSpace("Client")
     method void ReceiveRankingSnapshotClient(integer mode, table topRanks, table myRank)
         self._T.LastSnapshotMode = mode
@@ -103,7 +96,7 @@ script RankingComponent extends Component
         self._T.LastMyRank = myRank
     end
 
-    -- Returns top-N ranking rows from sortable storage using mode-specific sort direction.
+    -- Top-N rows are always sorted descending because higher score is better in both modes.
     @ExecSpace("ServerOnly")
     method table GetTopRanksServer(integer mode, integer count)
         local finalMode = self:NormalizeMode(mode)
@@ -114,13 +107,8 @@ script RankingComponent extends Component
             return rows
         end
 
-        local sortDirection = SortDirection.Ascending
-        if finalMode == 2 then
-            sortDirection = SortDirection.Descending
-        end
-
         local readOk, errorCode, pages = pcall(function()
-            return storage:GetSortedAndWait(sortDirection, 0, displayCount - 1)
+            return storage:GetSortedAndWait(SortDirection.Descending, 0, displayCount - 1)
         end)
         if readOk == false or errorCode ~= 0 or pages == nil then
             return rows
@@ -136,26 +124,24 @@ script RankingComponent extends Component
                     end
 
                     rankIndex += 1
+
                     local userId = ""
-                    local userOk, _ = pcall(function()
+                    pcall(function()
                         if item.KeyInfo ~= nil and item.KeyInfo.Key ~= nil then
                             userId = tostring(item.KeyInfo.Key)
                         end
                     end)
-                    if userOk == false or userId == "" then
+                    if userId == "" then
                         userId = "Unknown"
                     end
 
                     local score = 0
-                    local scoreOk, _ = pcall(function()
+                    pcall(function()
                         local raw = tonumber(item.Value)
                         if raw ~= nil then
                             score = math.max(0, math.floor(raw))
                         end
                     end)
-                    if scoreOk == false then
-                        score = 0
-                    end
 
                     local row = {}
                     row.Mode = finalMode
@@ -188,11 +174,12 @@ script RankingComponent extends Component
         return rows
     end
 
-    -- My-rank lookup scans sorted pages safely with upper bound to avoid heavy loops on large boards.
+    -- My-rank scan is bounded to keep large leaderboard queries safe.
     @ExecSpace("ServerOnly")
     method table GetMyRankServer(integer mode)
         local finalMode = self:NormalizeMode(mode)
         local userId = self:GetOwnerUserId()
+
         local result = {}
         result.Mode = finalMode
         result.Rank = -1
@@ -210,13 +197,8 @@ script RankingComponent extends Component
             return result
         end
 
-        local sortDirection = SortDirection.Ascending
-        if finalMode == 2 then
-            sortDirection = SortDirection.Descending
-        end
-
         local readOk, errorCode, pages = pcall(function()
-            return storage:GetSortedAndWait(sortDirection, 0, math.max(self.DisplayCount, 100) - 1)
+            return storage:GetSortedAndWait(SortDirection.Descending, 0, math.max(self.DisplayCount, 100) - 1)
         end)
         if readOk == false or errorCode ~= 0 or pages == nil then
             return result
@@ -235,22 +217,20 @@ script RankingComponent extends Component
 
                     rankIndex += 1
                     local itemUserId = ""
-                    local itemUserOk, _ = pcall(function()
+                    pcall(function()
                         if item.KeyInfo ~= nil and item.KeyInfo.Key ~= nil then
                             itemUserId = tostring(item.KeyInfo.Key)
                         end
                     end)
-                    if itemUserOk == true and itemUserId == userId then
+
+                    if itemUserId == userId then
                         local score = 0
-                        local scoreOk, _ = pcall(function()
+                        pcall(function()
                             local raw = tonumber(item.Value)
                             if raw ~= nil then
                                 score = math.max(0, math.floor(raw))
                             end
                         end)
-                        if scoreOk == false then
-                            score = 0
-                        end
 
                         result.Rank = rankIndex
                         result.Score = score
@@ -292,7 +272,7 @@ script RankingComponent extends Component
         return result
     end
 
-    -- Loads local PB from UserDataStorage to preserve per-user ranking baseline.
+    -- Local PB cache is persisted in user storage for quick comparison in result flow.
     @ExecSpace("ServerOnly")
     method void LoadLocalBestRecordsServer()
         local userId = self:GetOwnerUserId()
@@ -305,30 +285,30 @@ script RankingComponent extends Component
             return
         end
 
-        local timeOk, timeCode, timeValue = pcall(function()
-            return userStorage:GetAndWait(self.TimeAttackLocalKey)
+        local normalOk, normalCode, normalValue = pcall(function()
+            return userStorage:GetAndWait(self.NormalLocalKey)
         end)
-        if timeOk == true and timeCode == 0 and timeValue ~= nil and timeValue ~= "" then
-            local parsed = tonumber(timeValue)
+        if normalOk == true and normalCode == 0 and normalValue ~= nil and normalValue ~= "" then
+            local parsed = tonumber(normalValue)
             if parsed ~= nil then
-                self.TimeAttackBestTime = parsed
+                self.NormalBestScore = math.max(0, math.floor(parsed))
             end
         end
 
-        local killOk, killCode, killValue = pcall(function()
+        local infiniteOk, infiniteCode, infiniteValue = pcall(function()
             return userStorage:GetAndWait(self.InfiniteLocalKey)
         end)
-        if killOk == true and killCode == 0 and killValue ~= nil and killValue ~= "" then
-            local parsedKill = tonumber(killValue)
-            if parsedKill ~= nil then
-                self.InfiniteModeBestKills = math.max(0, math.floor(parsedKill))
+        if infiniteOk == true and infiniteCode == 0 and infiniteValue ~= nil and infiniteValue ~= "" then
+            local parsed = tonumber(infiniteValue)
+            if parsed ~= nil then
+                self.InfiniteBestScore = math.max(0, math.floor(parsed))
             end
         end
     end
 
-    -- Saves PB locally only after record update to minimize storage writes.
+    -- Local save is PB-only and mode-specific.
     @ExecSpace("ServerOnly")
-    method void SaveLocalBestRecordServer(integer mode, number value)
+    method void SaveLocalBestRecordServer(integer mode, integer value)
         local userId = self:GetOwnerUserId()
         if userId == nil or userId == "" then
             return
@@ -339,22 +319,23 @@ script RankingComponent extends Component
             return
         end
 
+        local safeValue = math.max(0, math.floor(value))
         local finalMode = self:NormalizeMode(mode)
         if finalMode == 1 then
             pcall(function()
-                userStorage:SetAndWait(self.TimeAttackLocalKey, tostring(value))
+                userStorage:SetAndWait(self.NormalLocalKey, tostring(safeValue))
             end)
             return
         end
 
         pcall(function()
-            userStorage:SetAndWait(self.InfiniteLocalKey, tostring(math.floor(value)))
+            userStorage:SetAndWait(self.InfiniteLocalKey, tostring(safeValue))
         end)
     end
 
-    -- TimeAttack upload stores milliseconds so ascending sort yields faster-time-first ranking.
+    -- Normal leaderboard upload.
     @ExecSpace("ServerOnly")
-    method void UploadTimeAttackRecordServer(number elapsedTime)
+    method void UploadNormalRecordServer(integer score)
         local storage = self:GetSortableStorageByMode(1)
         if storage == nil then
             return
@@ -365,15 +346,15 @@ script RankingComponent extends Component
             return
         end
 
-        local milliSeconds = math.max(1, math.floor(elapsedTime * 1000))
+        local safeScore = math.max(0, math.floor(score))
         pcall(function()
-            storage:SetAndWait(userId, milliSeconds)
+            storage:SetAndWait(userId, safeScore)
         end)
     end
 
-    -- Infinite upload stores kill count directly so descending sort yields higher-kill-first ranking.
+    -- Infinite leaderboard upload.
     @ExecSpace("ServerOnly")
-    method void UploadInfiniteRecordServer(integer killCount)
+    method void UploadInfiniteRecordServer(integer score)
         local storage = self:GetSortableStorageByMode(2)
         if storage == nil then
             return
@@ -384,35 +365,25 @@ script RankingComponent extends Component
             return
         end
 
-        local clampedKill = math.max(0, math.floor(killCount))
+        local safeScore = math.max(0, math.floor(score))
         pcall(function()
-            storage:SetAndWait(userId, clampedKill)
+            storage:SetAndWait(userId, safeScore)
         end)
     end
 
     method SortableDataStorage GetSortableStorageByMode(integer mode)
         local finalMode = self:NormalizeMode(mode)
         if finalMode == 1 then
-            return _DataStorageService:GetSortableDataStorage(self.TimeAttackStorageName)
+            return _DataStorageService:GetSortableDataStorage(self.NormalStorageName)
         end
         return _DataStorageService:GetSortableDataStorage(self.InfiniteStorageName)
     end
 
-    method boolean IsValidTimeAttackRecord(number elapsedTime)
-        if elapsedTime < self.MinimumValidClearTime then
+    method boolean IsValidScore(integer score)
+        if score < 0 then
             return false
         end
-        if elapsedTime > self.MaximumValidClearTime then
-            return false
-        end
-        return true
-    end
-
-    method boolean IsValidInfiniteRecord(integer killCount)
-        if killCount < 0 then
-            return false
-        end
-        if killCount > self.MaximumValidKills then
+        if score > self.MaximumValidScore then
             return false
         end
         return true
@@ -425,31 +396,22 @@ script RankingComponent extends Component
         return 1
     end
 
-    -- Converts stored integer score to mode-specific UI text format.
+    -- Score formatting is unified to plain integer text for both tabs.
     method string FormatScoreForDisplay(integer mode, any scoreValue)
-        local finalMode = self:NormalizeMode(mode)
         local parsed = tonumber(scoreValue)
         if parsed == nil then
             parsed = 0
         end
-        local safeScore = math.max(0, math.floor(parsed))
 
-        if finalMode == 1 then
-            local total = safeScore
-            local minute = math.floor(total / 60000)
-            local second = math.floor((total % 60000) / 1000)
-            local centisecond = math.floor((total % 1000) / 10)
-            return string.format("%02d:%02d.%02d", minute, second, centisecond)
-        end
-
-        return tostring(safeScore)
+        return tostring(math.max(0, math.floor(parsed)))
     end
 
-    -- Nickname resolver prefers user service cache and falls back to userId for offline entries.
+    -- Nickname resolver prefers user cache and falls back to raw user id.
     method string ResolveNicknameByUserId(any userIdValue)
         if userIdValue == nil then
             return "Unknown"
         end
+
         local userId = tostring(userIdValue)
         if userId == "" then
             return "Unknown"
@@ -473,7 +435,7 @@ script RankingComponent extends Component
         return userId
     end
 
-    -- User id resolver is shared by ranking storage and local PB storage paths.
+    -- Owner user id resolver is shared by storage/upload paths.
     method string GetOwnerUserId()
         local userId = ""
 
@@ -504,7 +466,7 @@ script RankingComponent extends Component
         return ""
     end
 
-    -- Utility bootstrap first; fallback local lookup is retained if global utility registration fails.
+    -- Utility bootstrap first; fallback local lookup remains for partial runtime states.
     method void EnsureGRUtil()
         if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
             return

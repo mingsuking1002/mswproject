@@ -1,1 +1,14 @@
-﻿id
+﻿id,name,fire_type,projectile_id,fire_rate,duration,cooldown,start_level,max_level,turret_model,sprite_ruid,-copy11,-copy12,-copy13,-copy14,-copy15
+a_turret,포탑 - 미니건,projectile,minigun_bullet,0.25,8,6,1,10,,,,SummonData 자료형 정의,,,
+b_turret,포탑 - 저격탑,projectile,sniper_bullet,1,15,10,1,10,,,,컬럼명,역할,자료형,설명
+,,,,,,,,,,,,id,무기 테이블 ID,STRING,
+,,,,,,,,,,,,name,무기 이름,STRING,
+,,,,,,,,,,,,fire_type,공격 타입,ERUM,
+,,,,,,,,,,,,projectile_id,프로젝트타일 ID,FLOAT,
+,,,,,,,,,,,,fire_rate,발사 후 딜레이 (초),FLOAT,
+,,,,,,,,,,,,duration,사거리,FLOAT,
+,,,,,,,,,,,,cooldown,지속시간 (초),FLOAT,
+,,,,,,,,,,,,start_level,시작 레벨,INT,
+,,,,,,,,,,,,max_level,최대 레벨,INT,
+,,,,,,,,,,,,turret_model,터렛 모델,ERUM,
+,,,,,,,,,,,,sprite_ruid,터렛 스프라이트 RUID,FLOAT,

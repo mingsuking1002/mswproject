@@ -1,45 +1,39 @@
 ﻿@Component
-script SpeedrunTimerComponent extends Component
+script GameTimerComponent extends Component
 
     @Sync
     property number ElapsedTime = 0.0
     @Sync
     property boolean IsRunning = false
-    property integer CurrentStageId = 1
     @Sync
-    property number BestTime = -1
+    property boolean IsPaused = false
 
+    property integer CurrentStageId = 1
     property number CountdownSeconds = 3.0
     property number TextUpdateInterval = 0.05
-    property boolean AutoPauseBySwap = true
     property boolean EnableDebugLogs = true
     property number DebugTickLogInterval = 1.0
 
     property Entity TimerTextEntity = nil
-    property string TimerStoragePrefix = "Stage_"
-    property string TimerStorageSuffix = "_BestTime"
 
-    -- Server initializes timer state and loads best record so run start is deterministic.
+    -- Server initializes timer runtime state so start/pause transitions are deterministic.
     @ExecSpace("ServerOnly")
     method void OnInitialize()
         self:EnsureGRUtil()
         self.ElapsedTime = 0
         self.IsRunning = false
+        self.IsPaused = false
 
         self._T.CountdownTimerId = 0
-        self._T.PauseSources = {}
         self._T.ClientTextTimerId = 0
-        self._T.LastPauseState = false
-        self._T.LastPauseReason = ""
         self._T.LastTickLogAt = -9999
 
-        self:LoadBestTimeFromStorageServer()
         if self.EnableDebugLogs == true then
-            log("[SpeedrunTimerComponent][DEBUG] OnInitialize stage=", self.CurrentStageId, ", countdown=", self.CountdownSeconds)
+            log("[GameTimerComponent][DEBUG] OnInitialize stage=", self.CurrentStageId, ", countdown=", self.CountdownSeconds)
         end
     end
 
-    -- Client starts timer text loop and utility bootstrap for UI-only updates.
+    -- Client bootstraps UI-only timer text update loop.
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         self:EnsureGRUtil()
@@ -47,14 +41,15 @@ script SpeedrunTimerComponent extends Component
         self:UpdateTimerTextClient(self.ElapsedTime, self.IsRunning)
     end
 
-    -- Server accumulates authoritative elapsed time to keep speedrun record cheat-resistant.
+    -- Server-only elapsed time accumulation.
     @ExecSpace("ServerOnly")
     method void OnUpdate(number delta)
         if self.IsRunning == false then
             self:TraceTickServer("NotRunning")
             return
         end
-        if self:IsPausedServer() == true then
+
+        if self.IsPaused == true then
             self:TraceTickServer("Paused")
             return
         end
@@ -63,7 +58,7 @@ script SpeedrunTimerComponent extends Component
         self:TraceTickServer("Running")
     end
 
-    -- Countdown start method is used by bootstrap/lobby flow and resets state before run begins.
+    -- Countdown entry keeps lobby/start callers compatible.
     @ExecSpace("ServerOnly")
     method void StartRunWithCountdown()
         self:ResetRun()
@@ -75,9 +70,6 @@ script SpeedrunTimerComponent extends Component
 
         local countdown = math.max(self.CountdownSeconds, 0)
         if countdown <= 0 then
-            if self.EnableDebugLogs == true then
-                log("[SpeedrunTimerComponent][DEBUG] StartRunWithCountdown skipped countdown; starting immediately.")
-            end
             self:StartRunNow()
             return
         end
@@ -89,22 +81,29 @@ script SpeedrunTimerComponent extends Component
 
         self._T.CountdownTimerId = _TimerService:SetTimerOnce(runStart, countdown)
         if self.EnableDebugLogs == true then
-            log("[SpeedrunTimerComponent][DEBUG] Countdown started. seconds=", countdown, ", timerId=", self._T.CountdownTimerId)
+            log("[GameTimerComponent][DEBUG] Countdown started. seconds=", countdown, ", timerId=", self._T.CountdownTimerId)
         end
     end
 
-    -- Immediate run start is separated so other systems can skip countdown while preserving same init flow.
+    -- Immediate start resets elapsed and releases pause state.
     @ExecSpace("ServerOnly")
     method void StartRunNow()
+        if self._T.CountdownTimerId ~= nil and self._T.CountdownTimerId > 0 then
+            _TimerService:ClearTimer(self._T.CountdownTimerId)
+            self._T.CountdownTimerId = 0
+        end
+
         self.ElapsedTime = 0
+        self.IsPaused = false
         self.IsRunning = true
+
         self:TrySetTimerTextVisibleClient(true)
         if self.EnableDebugLogs == true then
-            log("[SpeedrunTimerComponent][DEBUG] StartRunNow. isRunning=", self.IsRunning, ", stage=", self.CurrentStageId)
+            log("[GameTimerComponent][DEBUG] StartRunNow. stage=", self.CurrentStageId)
         end
     end
 
-    -- Completion finalizes run state once, evaluates best time, and forwards record to ranking.
+    -- Completion keeps timer-only responsibility; ranking submission is owned by dedicated systems.
     @ExecSpace("ServerOnly")
     method void CompleteRun()
         if self.IsRunning == false and self.ElapsedTime <= 0 then
@@ -112,194 +111,62 @@ script SpeedrunTimerComponent extends Component
         end
 
         self.IsRunning = false
-        self:EvaluateBestTimeServer()
-        self:NotifyRankingServer()
+        self.IsPaused = false
         self:TrySetTimerTextVisibleClient(false)
+
         if self.EnableDebugLogs == true then
-            log("[SpeedrunTimerComponent][DEBUG] CompleteRun. finalElapsed=", self.ElapsedTime, ", best=", self.BestTime)
+            log("[GameTimerComponent][DEBUG] CompleteRun. elapsed=", self.ElapsedTime)
         end
     end
 
-    -- Reset keeps timer in standby mode for retry flow and clears pending countdown callbacks.
+    -- Reset clears countdown and puts timer in standby state.
     @ExecSpace("ServerOnly")
     method void ResetRun()
         self.IsRunning = false
+        self.IsPaused = false
         self.ElapsedTime = 0
 
         if self._T.CountdownTimerId ~= nil and self._T.CountdownTimerId > 0 then
             _TimerService:ClearTimer(self._T.CountdownTimerId)
             self._T.CountdownTimerId = 0
         end
+
+        self:TrySetTimerTextVisibleClient(false)
+    end
+
+    -- Pause API is explicit so callers can gate all sub-timer systems through one contract.
+    @ExecSpace("ServerOnly")
+    method void PauseGame()
+        if self.IsRunning == false then
+            return
+        end
+        if self.IsPaused == true then
+            return
+        end
+
+        self.IsPaused = true
         if self.EnableDebugLogs == true then
-            log("[SpeedrunTimerComponent][DEBUG] ResetRun completed.")
+            log("[GameTimerComponent][DEBUG] PauseGame. elapsed=", self.ElapsedTime)
         end
     end
 
-    -- Pause source API allows swap/menu/shop systems to pause timer without directly mutating IsRunning.
+    -- Resume API mirrors PauseGame for deterministic lock/release flow.
     @ExecSpace("ServerOnly")
-    method void SetPauseSource(string sourceKey, boolean shouldPause)
-        if sourceKey == nil or sourceKey == "" then
+    method void ResumeGame()
+        if self.IsRunning == false then
+            return
+        end
+        if self.IsPaused == false then
             return
         end
 
-        if self._T.PauseSources == nil then
-            self._T.PauseSources = {}
-        end
-        self._T.PauseSources[sourceKey] = shouldPause
+        self.IsPaused = false
         if self.EnableDebugLogs == true then
-            log("[SpeedrunTimerComponent][DEBUG] SetPauseSource key=", sourceKey, ", value=", shouldPause)
+            log("[GameTimerComponent][DEBUG] ResumeGame. elapsed=", self.ElapsedTime)
         end
     end
 
-    -- Explicit clear API is provided so external systems can release one pause source safely.
-    @ExecSpace("ServerOnly")
-    method void ClearPauseSource(string sourceKey)
-        if sourceKey == nil or sourceKey == "" then
-            return
-        end
-        if self._T.PauseSources == nil then
-            return
-        end
-
-        self._T.PauseSources[sourceKey] = false
-        if self.EnableDebugLogs == true then
-            log("[SpeedrunTimerComponent][DEBUG] ClearPauseSource key=", sourceKey)
-        end
-    end
-
-    -- Server pause decision merges explicit pause sources and linked component state checks.
-    @ExecSpace("ServerOnly")
-    method boolean IsPausedServer()
-        if self._T.PauseSources ~= nil then
-            for sourceKey, isPaused in pairs(self._T.PauseSources) do
-                if isPaused == true then
-                    self:TracePauseReasonServer(true, "PauseSource:" .. tostring(sourceKey))
-                    return true
-                end
-            end
-        end
-
-        if self.AutoPauseBySwap == true then
-            local swapComponent = self:ResolveComponentSafe(self.Entity, "WeaponSwapComponent", "IsSwapMenuOpen")
-            if swapComponent ~= nil then
-                local swapOk, menuOpen = pcall(function()
-                    return swapComponent.IsSwapMenuOpen
-                end)
-                if swapOk == true and menuOpen == true then
-                    self:TracePauseReasonServer(true, "WeaponSwapMenuOpen")
-                    return true
-                end
-            end
-        end
-
-        local lobbyFlow = self:ResolveComponentSafe(self.Entity, "LobbyFlowComponent", "IsLobbyActive")
-        if lobbyFlow ~= nil then
-            local lobbyOk, isLobby = pcall(function()
-                return lobbyFlow["IsLobbyActive"]
-            end)
-            if lobbyOk == true and isLobby == true then
-                self:TracePauseReasonServer(true, "LobbyActive")
-                return true
-            end
-        end
-
-        self:TracePauseReasonServer(false, "None")
-        return false
-    end
-
-    -- Best-time evaluation is server-only and writes storage only when record improves.
-    @ExecSpace("ServerOnly")
-    method void EvaluateBestTimeServer()
-        local finalTime = self.ElapsedTime
-        if finalTime <= 0 then
-            return
-        end
-
-        local isNewRecord = false
-        if self.BestTime < 0 then
-            isNewRecord = true
-        elseif finalTime < self.BestTime then
-            isNewRecord = true
-        end
-
-        if isNewRecord == false then
-            return
-        end
-
-        self.BestTime = finalTime
-        self:SaveBestTimeToStorageServer(finalTime)
-        self:PlayNewRecordEffectClient()
-    end
-
-    -- Ranking forwarder keeps timer independent from ranking implementation details.
-    @ExecSpace("ServerOnly")
-    method void NotifyRankingServer()
-        local rankingComponent = self:ResolveComponentSafe(self.Entity, "RankingComponent", nil)
-        if rankingComponent ~= nil and rankingComponent.SubmitTimeAttackRecordServer ~= nil then
-            pcall(function()
-                rankingComponent:SubmitTimeAttackRecordServer(self.ElapsedTime)
-            end)
-        end
-    end
-
-    -- Storage key is derived from stage id to keep per-stage best records separated.
-    method string GetBestTimeStorageKey()
-        return self.TimerStoragePrefix .. tostring(self.CurrentStageId) .. self.TimerStorageSuffix
-    end
-
-    -- Best-time loading reads user storage on server and falls back safely if unavailable.
-    @ExecSpace("ServerOnly")
-    method void LoadBestTimeFromStorageServer()
-        local userId = self:GetOwnerUserId()
-        if userId == nil or userId == "" then
-            return
-        end
-
-        local userStorage = _DataStorageService:GetUserDataStorage(userId)
-        if userStorage == nil then
-            return
-        end
-
-        local key = self:GetBestTimeStorageKey()
-        local readOk, errorCode, value = pcall(function()
-            return userStorage:GetAndWait(key)
-        end)
-        if readOk == false then
-            return
-        end
-        if errorCode ~= 0 then
-            return
-        end
-        if value == nil or value == "" then
-            return
-        end
-
-        local parsed = tonumber(value)
-        if parsed ~= nil then
-            self.BestTime = parsed
-        end
-    end
-
-    -- Record save stores float seconds as string for consistent parsing across runs.
-    @ExecSpace("ServerOnly")
-    method void SaveBestTimeToStorageServer(number bestTime)
-        local userId = self:GetOwnerUserId()
-        if userId == nil or userId == "" then
-            return
-        end
-
-        local userStorage = _DataStorageService:GetUserDataStorage(userId)
-        if userStorage == nil then
-            return
-        end
-
-        local key = self:GetBestTimeStorageKey()
-        pcall(function()
-            userStorage:SetAndWait(key, tostring(bestTime))
-        end)
-    end
-
-    -- Client timer loop updates text at fixed interval without requiring per-frame heavy UI work.
+    -- Client timer loop updates text at fixed interval without per-frame UI work.
     @ExecSpace("ClientOnly")
     method void StartClientTimerTextLoop()
         if self._T.ClientTextTimerId ~= nil and self._T.ClientTextTimerId > 0 then
@@ -318,7 +185,7 @@ script SpeedrunTimerComponent extends Component
         self._T.ClientTextTimerId = _TimerService:SetTimerRepeat(updateText, interval, 0)
     end
 
-    -- Visibility helper respects lobby guard and keeps lobby/in-game UI policy centralized.
+    -- Visibility helper keeps lobby/in-game timer policy centralized.
     @ExecSpace("Client")
     method void TrySetTimerTextVisibleClient(boolean visible)
         local finalVisible = visible
@@ -346,7 +213,7 @@ script SpeedrunTimerComponent extends Component
         end)
     end
 
-    -- Text update formats MM:SS.ms and is client-only to keep display concerns out of server flow.
+    -- Client text render converts elapsed seconds to MM:SS.ms format.
     @ExecSpace("ClientOnly")
     method void UpdateTimerTextClient(number elapsedTime, boolean isRunning)
         local textComponent = self:ResolveTimerTextComponentClient()
@@ -364,32 +231,18 @@ script SpeedrunTimerComponent extends Component
         end
     end
 
-    -- New-record client hook is isolated for future VFX/SFX expansion.
-    @ExecSpace("Client")
-    method void PlayNewRecordEffectClient()
-        log("[SpeedrunTimerComponent] New Record!")
-    end
-
-    -- Sync callback refreshes timer text immediately when synced values change.
+    -- Sync callback refreshes UI immediately when elapsed/running/pause state changes.
     @ExecSpace("ClientOnly")
     method void OnSyncProperty(string propertyName, any value)
-        if propertyName == "ElapsedTime" then
-            self:UpdateTimerTextClient(self.ElapsedTime, self.IsRunning)
-            return
-        end
-        if propertyName == "IsRunning" then
+        if propertyName == "ElapsedTime" or propertyName == "IsRunning" or propertyName == "IsPaused" then
             self:UpdateTimerTextClient(self.ElapsedTime, self.IsRunning)
             if self.IsRunning == false then
                 self:TrySetTimerTextVisibleClient(false)
             end
-            return
-        end
-        if propertyName == "BestTime" then
-            self:UpdateTimerTextClient(self.ElapsedTime, self.IsRunning)
         end
     end
 
-    -- Map enter reapplies visibility policy because UI entities can be reloaded on map transitions.
+    -- Map transitions can recreate UI entities, so timer text is re-applied on enter.
     @ExecSpace("ClientOnly")
     method void OnMapEnter(Entity enteredMap)
         self:UpdateTimerTextClient(self.ElapsedTime, self.IsRunning)
@@ -419,23 +272,7 @@ script SpeedrunTimerComponent extends Component
         return string.format("%02d:%02d.%02d", minute, second, centisecond)
     end
 
-    -- Pause-trace logs only state transitions so pause reason debugging stays readable during frame updates.
-    @ExecSpace("ServerOnly")
-    method void TracePauseReasonServer(boolean paused, string reason)
-        if self.EnableDebugLogs ~= true then
-            return
-        end
-
-        if self._T.LastPauseState == paused and self._T.LastPauseReason == reason then
-            return
-        end
-
-        self._T.LastPauseState = paused
-        self._T.LastPauseReason = reason
-        log("[SpeedrunTimerComponent][DEBUG] Pause state changed. paused=", paused, ", reason=", reason, ", elapsed=", self.ElapsedTime, ", isRunning=", self.IsRunning)
-    end
-
-    -- Tick-trace is throttled to avoid per-frame spam while still proving timer progression in play tests.
+    -- Tick trace is throttled so debug mode does not spam every frame.
     @ExecSpace("ServerOnly")
     method void TraceTickServer(string stateLabel)
         if self.EnableDebugLogs ~= true then
@@ -457,10 +294,9 @@ script SpeedrunTimerComponent extends Component
         end
 
         self._T.LastTickLogAt = nowSeconds
-        log("[SpeedrunTimerComponent][DEBUG] Tick state=", stateLabel, ", elapsed=", self.ElapsedTime, ", isRunning=", self.IsRunning, ", stage=", self.CurrentStageId)
+        log("[GameTimerComponent][DEBUG] Tick state=", stateLabel, ", elapsed=", self.ElapsedTime, ", paused=", self.IsPaused, ", stage=", self.CurrentStageId)
     end
 
-    -- Server elapsed time helper is isolated to keep debug throttle stable when util access fails.
     method number GetServerNowSeconds()
         local nowSeconds = 0
         local readOk, readValue = pcall(function()
@@ -472,7 +308,7 @@ script SpeedrunTimerComponent extends Component
         return nowSeconds
     end
 
-    -- Timer text resolve uses explicit entity reference first to avoid path-dependent runtime failures.
+    -- Timer text resolver uses explicit entity property to avoid path-based runtime failures.
     @ExecSpace("ClientOnly")
     method TextComponent ResolveTimerTextComponentClient()
         if self.TimerTextEntity == nil or isvalid(self.TimerTextEntity) == false then
@@ -487,38 +323,7 @@ script SpeedrunTimerComponent extends Component
         return textComponent
     end
 
-    -- User id resolver is shared by storage read/write methods.
-    method string GetOwnerUserId()
-        local userId = ""
-
-        local playerComponent = self.Entity.PlayerComponent
-        if playerComponent ~= nil then
-            local playerOk, playerUserId = pcall(function()
-                return playerComponent.UserId
-            end)
-            if playerOk == true and playerUserId ~= nil and playerUserId ~= "" then
-                userId = playerUserId
-            end
-        end
-
-        if userId ~= "" then
-            return userId
-        end
-
-        local localPlayer = _UserService.LocalPlayer
-        if localPlayer ~= nil and isvalid(localPlayer) == true then
-            local localOk, localUserId = pcall(function()
-                return localPlayer.PlayerComponent.UserId
-            end)
-            if localOk == true and localUserId ~= nil then
-                return localUserId
-            end
-        end
-
-        return ""
-    end
-
-    -- EndPlay clears all active timers to prevent stale callbacks after entity destruction.
+    -- EndPlay clears active timers to prevent stale callbacks after destruction.
     method void OnEndPlay()
         if self._T.CountdownTimerId ~= nil and self._T.CountdownTimerId > 0 then
             _TimerService:ClearTimer(self._T.CountdownTimerId)

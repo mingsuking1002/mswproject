@@ -731,3 +731,112 @@
 | Function | Change |
 |---|---|
 | `ConfigurePlayer` | Sets player `HPSystemComponent.InvincibleDuration` to `PlayerInvincibleDuration` |
+
+## 2026-02-24 Timer/Infinite Release Update
+- **수정일:** `2026-02-24`
+- **범위:** `GameTimerComponent 신규`, `InfiniteModeComponent 신규`, `Ranking/Spawn/HP/Bootstrap 연동 갱신`
+
+### GameTimerComponent
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/GameTimerComponent.mlua`
+- **동기화 파일:** `RootDesk/MyDesk/ProjectGR/Components/Meta/GameTimerComponent.codeblock`
+
+#### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `ElapsedTime` | number | 게임 경과 시간(초, Sync) |
+| `IsRunning` | boolean | 타이머 실행 상태(Sync) |
+| `IsPaused` | boolean | 타이머 일시정지 상태(Sync) |
+| `CurrentStageId` | integer | 현재 스테이지 ID |
+| `CountdownSeconds` | number | 시작 카운트다운 |
+
+#### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `StartRunWithCountdown` | void | void | 카운트다운 후 런 시작 |
+| `StartRunNow` | void | void | 즉시 런 시작 |
+| `PauseGame` | void | void | 서버 권위 일시정지 |
+| `ResumeGame` | void | void | 서버 권위 재개 |
+| `CompleteRun` | void | void | 런 종료 (타이머 역할만 수행) |
+
+### InfiniteModeComponent
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/InfiniteModeComponent.mlua`
+- **동기화 파일:** `RootDesk/MyDesk/ProjectGR/Components/Meta/InfiniteModeComponent.codeblock`
+
+#### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `IsInfiniteActive` | boolean | 무한모드 활성 상태(Sync) |
+| `CurrentScore` | integer | 현재 누적 점수(Sync) |
+| `SessionBestScore` | integer | 세션 내 최고 점수 |
+| `ModeMonsterDataTableName` | string | 무한모드 몬스터 데이터 테이블명 |
+| `ResultDelaySeconds` | number | 결과 표시 후 로비 복귀 지연 |
+
+#### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `ResetForNewRunServer` | void | void | 런 시작 시 점수/모드 상태 초기화 |
+| `OnMonsterKilledServer` | `monsterId, scoreOverride` | void | 처치 점수 누적 |
+| `OnBossKilledServer` | `bossId` | void | 보스 클리어 팝업 트리거 |
+| `RequestReentryDecisionServer` | `acceptInfinite` | void | 재돌입 수락/거부 처리 |
+| `HandlePlayerDeathServer` | void | boolean | 일반/무한 사망 분기 + 랭킹 제출 |
+| `EnterInfiniteModeServer` | void | void | ModeMonsterData 전환 + 점수 리셋 |
+| `GetInfiniteElapsedSecondsServer` | void | number | 무한모드 경과 시간 반환 |
+
+### RankingComponent (Updated)
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/RankingComponent.mlua`
+- **변경 핵심:** TimeAttack 제거, 일반/무한 점수 2트랙 내림차순 정렬 통합
+
+#### Added/Changed API
+| 항목 | 변경 |
+|---|---|
+| Property | `NormalBestScore`, `InfiniteBestScore`, `NormalStorageName`, `NormalLocalKey`, `MaximumValidScore` |
+| Method | `SubmitNormalRecordServer(score)` 추가 |
+| Method | `SubmitInfiniteRecordServer(score)` 의미를 점수 기준으로 정리 |
+| Logic | `GetTopRanksServer`/`GetMyRankServer` 모두 `SortDirection.Descending` |
+| Logic | `FormatScoreForDisplay` 시간 포맷 제거, 정수 점수 문자열 통일 |
+
+### RankingUIComponent (Updated)
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/UI/RankingUIComponent.mlua`
+- **변경 핵심:** 탭 헤더를 점수 모드 기준으로 변경
+
+| 함수명 | 변경 |
+|---|---|
+| `RenderRankingTextClient` | 탭 1 헤더를 `일반 모드`, 탭 2를 `무한 모드`로 표시 |
+
+### MonsterSpawnComponent (Updated)
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.mlua`
+- **변경 핵심:** GameTimer 연동 + InfiniteMode 연동 + 처치 점수 콜백
+
+#### Added/Changed Points
+| 함수/항목 | 변경 |
+|---|---|
+| Property | `ModeMonsterDataTableName` 추가 |
+| `CanSpawnNowServer` | `GameTimerComponent.IsPaused`일 때 스폰 차단 |
+| `ResolveCurrentSpawnContext` | 무한모드 활성 시 `GetInfiniteElapsedSecondsServer()` 기준 컨텍스트 사용 |
+| `ResolveMonsterDataTableName` | 무한모드 시 `ModeMonsterData` 선택 |
+| `ActivateInfiniteModeServer` | 일반/무한 데이터 소스 전환 API 추가 |
+| `BuildSpawnMetaFromRow` | `CreepScore` 메타 필드 추가 |
+| `PruneSpawnedMonsters` | 제거 엔티티를 `InfiniteModeComponent.OnMonsterKilledServer`/`OnBossKilledServer`로 통지 |
+| `ApplyMonsterStatsIfAvailable` | mode_* 컬럼 기반 분당 스탯 스케일링 반영 |
+
+### HPSystemComponent (Updated)
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.mlua`
+
+| 함수명 | 변경 |
+|---|---|
+| `NotifyGameOver` | `InfiniteModeComponent.HandlePlayerDeathServer()` 우선 호출로 결과/랭킹 분기 일원화 |
+| `NotifyGameOver` fallback | 타이머 참조를 `GameTimerComponent`로 교체 |
+
+### LobbyFlowComponent / Bootstrap / Shop / WeaponSwap (Updated)
+- **파일명:**
+`RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.mlua`
+`RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
+`RootDesk/MyDesk/ProjectGR/Components/Meta/ShopManagerComponent.mlua`
+`RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua`
+
+| 컴포넌트 | 변경 |
+|---|---|
+| `LobbyFlowComponent` | 런 시작 시 `InfiniteModeComponent.ResetForNewRunServer()` 호출 + `GameTimerComponent` 시작 참조 |
+| `Map01BootstrapComponent` | 필수 부착 목록을 `GameTimerComponent` + `InfiniteModeComponent` 기준으로 갱신 |
+| `ShopManagerComponent` | 상점 잠금 시 `PauseGame()` / 해제 시 `ResumeGame()` 사용 |
+| `WeaponSwapComponent` | 무기교체 잠금 시 `PauseGame()` / 해제 시 `ResumeGame()` 사용 |

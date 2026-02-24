@@ -114,9 +114,9 @@ script RankingUIComponent extends Component
 
         local header = "[TOP " .. tostring(self.DisplayCount) .. "] "
         if self.CurrentTab == 1 then
-            header = header .. "TIME ATTACK"
+            header = header .. "일반 모드"
         else
-            header = header .. "INFINITE"
+            header = header .. "무한 모드"
         end
 
         local lines = {}

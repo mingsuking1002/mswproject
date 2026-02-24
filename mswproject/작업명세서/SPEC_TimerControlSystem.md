@@ -1,4 +1,4 @@
-# 🟡 대기중
+# 🔵 진행중
 # SPEC_TimerControlSystem — v1.2 메인 및 하위 타이머 제어 시스템
 
 ## 1. 개요
@@ -277,16 +277,16 @@ ElapsedTime += delta
 
 ## 10. Codex 구현 체크리스트
 
-- [ ] `GameTimerComponent.mlua` 신규 작성 (Meta 레이어)
-- [ ] `SpeedrunTimerComponent.mlua` + `.codeblock` 삭제
-- [ ] `SPEC_SpeedrunTimer.md` → `🔴 폐기` 상태 변경
-- [ ] `WeaponSwapComponent.mlua` 수정 (§6-1)
-- [ ] `ShopManagerComponent.mlua` 수정 (§6-2)
-- [ ] `MonsterSpawnComponent.mlua` 수정 (§6-3)
-- [ ] `HPSystemComponent.mlua` 수정 (§6-4)
-- [ ] `Map01BootstrapComponent.mlua` 수정 (§6-5)
-- [ ] `LobbyFlowComponent.mlua` 수정 (§6-6)
-- [ ] `기획서/4.부록/Code_Documentation.md` 업데이트
+- [x] `GameTimerComponent.mlua` 신규 작성 (Meta 레이어)
+- [x] `SpeedrunTimerComponent.mlua` + `.codeblock` 삭제
+- [x] `SPEC_SpeedrunTimer.md` → `🔴 폐기` 상태 변경
+- [x] `WeaponSwapComponent.mlua` 수정 (§6-1)
+- [x] `ShopManagerComponent.mlua` 수정 (§6-2)
+- [x] `MonsterSpawnComponent.mlua` 수정 (§6-3)
+- [x] `HPSystemComponent.mlua` 수정 (§6-4)
+- [x] `Map01BootstrapComponent.mlua` 수정 (§6-5)
+- [x] `LobbyFlowComponent.mlua` 수정 (§6-6)
+- [x] `기획서/4.부록/Code_Documentation.md` 업데이트
 - [ ] 완료 후 상태 `🟢 완료`로 변경
 
 ---
@@ -298,4 +298,4 @@ ElapsedTime += delta
 | **작성자** | Antigravity (TD) |
 | **담당자** | Codex |
 | **작성일** | 2026-02-24 |
-| **상태** | 🟡 대기중 |
+| **상태** | 🔵 진행중 |
