@@ -8,7 +8,7 @@ script LobbyFlowComponent extends Component
     property string LobbyMapName = "games"
     property string InGameMapName = "games"
 
-    property boolean AutoOpenRankingOnLobby = true
+    property boolean AutoOpenRankingOnLobby = false
     property integer LobbyRankingTab = 1
 
     property string StartButtonPath = "/ui/DefaultGroup/GRStartButton"
@@ -21,6 +21,8 @@ script LobbyFlowComponent extends Component
     @ExecSpace("ServerOnly")
     method void OnInitialize()
         self:EnsureGRUtil()
+        -- Lobby first-landing UX is fixed to logo/start/ranking-open buttons, so ranking auto-open is disabled.
+        self.AutoOpenRankingOnLobby = false
         self._T.StartButtonHandler = nil
         self._T.StartButtonDebounce = false
         self._T.StartButtonDebounceTimerId = 0
@@ -289,6 +291,23 @@ script LobbyFlowComponent extends Component
             end)
         end
 
+        local rankingUI = self:ResolveComponentSafe(self.Entity, "RankingUIComponent", nil)
+        if rankingUI ~= nil then
+            if rankingUI.ApplyLobbyStateClient ~= nil then
+                pcall(function()
+                    rankingUI:ApplyLobbyStateClient(isLobby)
+                end)
+                return
+            end
+
+            if rankingUI.ApplyVisibilityClient ~= nil then
+                pcall(function()
+                    rankingUI:ApplyVisibilityClient(isLobby)
+                end)
+                return
+            end
+        end
+
         local rankingText = self:ResolveUIEntity(self.RankingTextPath)
         if rankingText ~= nil and isvalid(rankingText) == true then
             pcall(function()
@@ -302,13 +321,6 @@ script LobbyFlowComponent extends Component
             pcall(function()
                 myRankText.Enable = isLobby
                 myRankText.Visible = isLobby
-            end)
-        end
-
-        local rankingUI = self:ResolveComponentSafe(self.Entity, "RankingUIComponent", nil)
-        if rankingUI ~= nil and rankingUI.ApplyVisibilityClient ~= nil then
-            pcall(function()
-                rankingUI:ApplyVisibilityClient(isLobby)
             end)
         end
     end

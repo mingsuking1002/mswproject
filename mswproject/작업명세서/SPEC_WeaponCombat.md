@@ -6,7 +6,7 @@
 | 항목 | 내용 |
 |---|---|
 | **수정 컴포넌트** | `FireSystemComponent` (Combat), `WeaponSwapComponent` (Meta) |
-| **신규 의존** | `WeaponData`, `ProjectileData`, `SummonData` CSV 테이블 |
+| **신규 의존** | `PlayerData`, `WeaponData`, `ProjectileData`, `SummonData` CSV 테이블 |
 | **Execution Space** | `[Server Only]` 발사/소환/데미지, `[Client Only]` 이펙트/사운드 |
 | **기획서** | `[콘텐츠] v1.1 무기 콘텐츠 기획-1`, `[콘텐츠] v.2.0 무기 콘텐츠 기획-2` |
 
@@ -106,9 +106,20 @@ SummonTurretServer(targetPosition):
 
 ## 6. WeaponSwapComponent 변경
 
-슬롯 전환 시 `fire_type`, `projectile_type`, `splash_size` 등을 `WeaponData`/`ProjectileData`에서 로드하여 `FireSystemComponent`에 적용.
+### 6-1. 초기화: PlayerData에서 슬롯 매핑 로드
 
-### NormalizeSlotData 확장
+`OnBeginPlay`에서 현재 캐릭터의 `PlayerData` 조회 → `weaponslot1~4`로 각 슬롯의 `WeaponId` 초기화.
+
+```
+InitSlotsFromPlayerData(characterId):
+  row = PlayerData[characterId]  -- player_a 또는 player_b
+  Weapon1_Data.WeaponId = row.weaponslot1  -- "bow"
+  Weapon2_Data.WeaponId = row.weaponslot2  -- "cannon"
+  ...
+  각 WeaponId로 WeaponData/ProjectileData 조회 → 슬롯 데이터 세팅
+```
+
+### 6-2. NormalizeSlotData 확장
 
 기존 필드에 추가:
 | 필드 | 타입 | 설명 |
@@ -120,13 +131,15 @@ SummonTurretServer(targetPosition):
 | `SummonId` | `string` | 포탑 ID (SummonData 키) |
 | `SplashSize` | `number` | 광역 반경 |
 
-### ApplySlotDataToCombat 확장
+### 6-3. ApplySlotDataToCombat 확장
 
 ```
 FireSystemComponent.CurrentFireType = data.FireType
 FireSystemComponent.CurrentProjectileType = data.ProjectileType
 FireSystemComponent.SplashSize = data.SplashSize
 FireSystemComponent.FireCooldown = data.FireCooldown  -- WeaponData.fire_rate
+ReloadComponent.MaxAmmo = data.MaxAmmo  -- WeaponData.max_basic_resource
+ReloadComponent.ReloadTime = data.ReloadTime  -- WeaponData.reload_time
 ```
 
 ---
@@ -143,36 +156,34 @@ FireSystemComponent.FireCooldown = data.FireCooldown  -- WeaponData.fire_rate
 
 ---
 
-## 8. 데이터 테이블 요약
+## 8. 데이터 테이블 연동 (전체 흐름)
 
-### WeaponData 핵심 컬럼
+```
+PlayerData[player_a]
+  ├─ player_atk = 100  (데미지 기준값)
+  ├─ weaponslot1 = "bow"  → WeaponData[bow]
+  │     ├─ fire_type = "projectile"
+  │     ├─ projectile_id = "arrow"  → ProjectileData[arrow]
+  │     │     ├─ projectile_type = "single_projectile"
+  │     │     ├─ projectile_atk = player_atk * dmg_raito * level_multiplier
+  │     │     └─ bulletspeed = 20
+  │     ├─ fire_rate = 0.4
+  │     └─ required_exp = 245
+  ├─ weaponslot3 = "turret_minigun"  → WeaponData[turret_minigun]
+  │     ├─ fire_type = "summon"
+  │     └─ summon_id = "a_turret"  → SummonData[a_turret]
+  │           ├─ fire_rate = 0.25
+  │           ├─ duration = 8s
+  │           └─ projectile_id = "minigun_bullet"
+  └─ ...
+```
 
-| 컬럼 | 설명 |
-|---|---|
-| `fire_type` | `projectile` / `summon` |
-| `projectile_id` | 투사체 ID → ProjectileData 키 |
-| `summon_id` | 포탑 ID → SummonData 키 |
-| `fire_rate` | 발사 딜레이 (초) |
-| `reload_time` | 장전 시간 (초) |
-| `max_basic_resource` | 최대 탄약 |
+### 핵심 데미지 공식
 
-### ProjectileData 핵심 컬럼
-
-| 컬럼 | 설명 |
-|---|---|
-| `projectile_type` | `single_projectile` / `area_projectile` / `smite` |
-| `projectile_atk` | 데미지 공식 (e.g. `player_atk*bow`) |
-| `bulletspeed` | 탄속 |
-| `splash_size` | 광역 반경 (없으면 0) |
-
-### SummonData 핵심 컬럼
-
-| 컬럼 | 설명 |
-|---|---|
-| `fire_rate` | 포탑 발사 간격 |
-| `duration` | 포탑 지속 시간 |
-| `cooldown` | 재설치 쿨다운 |
-| `projectile_id` | 포탑 투사체 (minigun_bullet, sniper_bullet) |
+`최종 공격력 = PlayerData.player_atk × WeaponLevelData[weaponId].level_N`
+- 예: 활 Lv.5 = `100 × 1.4 = 140`
+- 예: 데스페라도 Lv.1 = `100 × 2.0 = 200`
+- 예: 저격탑 Lv.10 = `100 × 4.9 = 490`
 
 ---
 

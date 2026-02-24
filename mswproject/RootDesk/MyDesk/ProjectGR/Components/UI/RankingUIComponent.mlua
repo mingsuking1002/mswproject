@@ -12,6 +12,23 @@ script RankingUIComponent extends Component
     property string RankingTextFallbackPath = ""
     property string MyRankTextFallbackPath = ""
 
+    property string LobbyPanelPath = "/ui/DefaultGroup/GRLobbyPanel"
+    property string RankingPanelPath = "/ui/DefaultGroup/GRRankingPanel"
+    property string RankingOpenButtonPath = "/ui/DefaultGroup/GRLobbyPanel/GRRankingOpenButton"
+    property string RankingBackButtonPath = "/ui/DefaultGroup/GRRankingPanel/GRBackButton"
+    property string NormalTabButtonPath = "/ui/DefaultGroup/GRRankingPanel/GRTabNormalButton"
+    property string InfiniteTabButtonPath = "/ui/DefaultGroup/GRRankingPanel/GRTabInfiniteButton"
+    property string RankingGridPath = "/ui/DefaultGroup/GRRankingPanel/GRRankingGrid"
+    property string RankingRowTemplatePath = "/ui/DefaultGroup/GRRankingPanel/GRRankingRowTemplate"
+
+    property string FirstRankIconRuid = ""
+    property string SecondRankIconRuid = ""
+    property string ThirdRankIconRuid = ""
+
+    property string DatePlaceholderText = "-"
+    property boolean EnableTransitionAnimation = true
+    property number TransitionDuration = 0.15
+
     property number RefreshInterval = 2.0
     property boolean AutoRefreshInLobbyOnly = true
 
@@ -20,7 +37,18 @@ script RankingUIComponent extends Component
     method void OnBeginPlay()
         self:EnsureGRUtil()
         self.CurrentTab = self:NormalizeTab(self.CurrentTab)
+        self._T.IsLobbyState = true
+        self._T.IsRankingPanelOpen = false
+        self._T.CachedTopRows = {}
+        self._T.CachedMyRow = nil
+        self._T.ButtonBindingByKey = {}
+        self._T.PanelTimerIds = {}
+        self._T.GridNeedsResetPosition = true
         self:ResolveTextEntitiesClient()
+        self:ResolvePanelEntitiesClient()
+        self:BindPanelButtonsClient()
+        self:PrepareRankingGridClient()
+        self:ApplyLobbyStateClient(true)
         self:StartRefreshLoopClient()
         self:RefreshRankingUIClient()
     end
@@ -29,12 +57,31 @@ script RankingUIComponent extends Component
     @ExecSpace("ClientOnly")
     method void OnMapEnter(Entity enteredMap)
         self:ResolveTextEntitiesClient()
+        self:ResolvePanelEntitiesClient()
+        self:BindPanelButtonsClient()
+        self:PrepareRankingGridClient()
+
+        local isLobby = true
+        local lobbyFlow = self:ResolveComponentSafe(self.Entity, "LobbyFlowComponent", "IsLobbyActive")
+        if lobbyFlow ~= nil then
+            local lobbyOk, lobbyValue = pcall(function()
+                return lobbyFlow.IsLobbyActive
+            end)
+            if lobbyOk == true then
+                isLobby = lobbyValue
+            end
+        end
+
+        self:ApplyLobbyStateClient(isLobby)
         self:RefreshRankingUIClient()
     end
 
     -- Optional tab toggle key for quick mode switch while testing ranking layout.
     @EventSender("Service", "InputService")
     handler HandleKeyDownEvent(KeyDownEvent event)
+        if event == nil then
+            return
+        end
         if event.key ~= KeyboardKey.Tab then
             return
         end
@@ -43,6 +90,12 @@ script RankingUIComponent extends Component
         if self.CurrentTab == 2 then
             nextTab = 1
         end
+
+        if self._T.IsLobbyState == true and self._T.IsRankingPanelOpen == true then
+            self:OpenRankingPanelClient(nextTab)
+            return
+        end
+
         self:SetCurrentTabClient(nextTab)
     end
 
@@ -51,12 +104,253 @@ script RankingUIComponent extends Component
     method void SetCurrentTabClient(integer tab)
         self.CurrentTab = self:NormalizeTab(tab)
         self:RequestRankingSnapshotClient()
+        self:RefreshRankingUIClient()
     end
 
-    -- Lobby flow uses this alias to open default tab without coupling to internal setter naming.
+    -- Lobby flow opens ranking panel through this alias.
     @ExecSpace("Client")
     method void OpenTab(integer tab)
-        self:SetCurrentTabClient(tab)
+        self:OpenRankingPanelClient(tab)
+    end
+
+    -- LobbyFlow delegates panel state authority to this method.
+    @ExecSpace("Client")
+    method void ApplyLobbyStateClient(boolean isLobby)
+        self._T.IsLobbyState = isLobby
+        if isLobby ~= true then
+            self._T.IsRankingPanelOpen = false
+        end
+
+        local hasOverlayPanels = self:HasOverlayPanelsClient()
+        if isLobby == true then
+            if self._T.IsRankingPanelOpen == true then
+                self:ApplyPanelVisibilityClient(false, true)
+            else
+                if hasOverlayPanels == true then
+                    self:ApplyPanelVisibilityClient(true, false)
+                else
+                    self:ApplyPanelVisibilityClient(false, false)
+                end
+            end
+        else
+            self:ApplyPanelVisibilityClient(false, false)
+        end
+
+        local fallbackVisible = false
+        if isLobby == true then
+            if hasOverlayPanels == true then
+                fallbackVisible = (self._T.IsRankingPanelOpen == true)
+            else
+                fallbackVisible = true
+            end
+        end
+
+        self:ApplyVisibilityClient(fallbackVisible)
+    end
+
+    -- Opens ranking overlay in lobby.
+    @ExecSpace("Client")
+    method void OpenRankingPanelClient(integer tab)
+        if tab ~= nil then
+            self.CurrentTab = self:NormalizeTab(tab)
+        end
+        if self._T.IsLobbyState ~= true then
+            return
+        end
+
+        self._T.IsRankingPanelOpen = true
+        self._T.GridNeedsResetPosition = true
+        self:ResolvePanelEntitiesClient()
+        self:BindPanelButtonsClient()
+        self:PrepareRankingGridClient()
+        self:ApplyLobbyStateClient(true)
+        self:RequestRankingSnapshotClient()
+        self:RefreshRankingUIClient()
+    end
+
+    -- Closes ranking overlay and returns to lobby panel.
+    @ExecSpace("Client")
+    method void CloseRankingPanelClient()
+        self._T.IsRankingPanelOpen = false
+        self:ApplyLobbyStateClient(self._T.IsLobbyState == true)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnRankingOpenButtonClickedClient(ButtonClickEvent event)
+        self:OpenRankingPanelClient(self.CurrentTab)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnRankingBackButtonClickedClient(ButtonClickEvent event)
+        self:CloseRankingPanelClient()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnNormalTabButtonClickedClient(ButtonClickEvent event)
+        self:OpenRankingPanelClient(1)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnInfiniteTabButtonClickedClient(ButtonClickEvent event)
+        self:OpenRankingPanelClient(2)
+    end
+
+    -- Binds optional lobby/ranking buttons if entities are present.
+    @ExecSpace("ClientOnly")
+    method void BindPanelButtonsClient()
+        local openCallback = function(event)
+            self:OnRankingOpenButtonClickedClient(event)
+        end
+        self:BindButtonByPathClient("RankingOpen", self.RankingOpenButtonPath, openCallback)
+
+        local backCallback = function(event)
+            self:OnRankingBackButtonClickedClient(event)
+        end
+        self:BindButtonByPathClient("RankingBack", self.RankingBackButtonPath, backCallback)
+
+        local normalTabCallback = function(event)
+            self:OnNormalTabButtonClickedClient(event)
+        end
+        self:BindButtonByPathClient("TabNormal", self.NormalTabButtonPath, normalTabCallback)
+
+        local infiniteTabCallback = function(event)
+            self:OnInfiniteTabButtonClickedClient(event)
+        end
+        self:BindButtonByPathClient("TabInfinite", self.InfiniteTabButtonPath, infiniteTabCallback)
+    end
+
+    -- Generic button binder handles add/connect/rebind safely.
+    @ExecSpace("ClientOnly")
+    method void BindButtonByPathClient(string bindingKey, string path, any callback)
+        if bindingKey == nil or bindingKey == "" then
+            return
+        end
+        if path == nil or path == "" then
+            return
+        end
+        if callback == nil then
+            return
+        end
+
+        if self._T.ButtonBindingByKey == nil then
+            self._T.ButtonBindingByKey = {}
+        end
+
+        local existing = self._T.ButtonBindingByKey[bindingKey]
+        if existing ~= nil then
+            local oldEntity = existing.Entity
+            local oldHandler = existing.Handler
+            if oldEntity ~= nil and isvalid(oldEntity) == true and oldHandler ~= nil then
+                return
+            end
+            self:DisconnectButtonBindingClient(bindingKey)
+        end
+
+        local buttonEntity = self:ResolveUIEntity(path)
+        if buttonEntity == nil or isvalid(buttonEntity) == false then
+            return
+        end
+
+        if buttonEntity.ButtonComponent == nil then
+            pcall(function()
+                buttonEntity:AddComponent("MOD.Core.ButtonComponent")
+            end)
+        end
+        if buttonEntity.ButtonComponent == nil then
+            return
+        end
+
+        local bindOk, bindHandler = pcall(function()
+            return buttonEntity:ConnectEvent(ButtonClickEvent, callback)
+        end)
+        if bindOk ~= true then
+            return
+        end
+
+        local binding = {}
+        binding.Entity = buttonEntity
+        binding.Handler = bindHandler
+        self._T.ButtonBindingByKey[bindingKey] = binding
+    end
+
+    -- Disconnects one button binding safely.
+    @ExecSpace("ClientOnly")
+    method void DisconnectButtonBindingClient(string bindingKey)
+        if self._T.ButtonBindingByKey == nil then
+            return
+        end
+
+        local binding = self._T.ButtonBindingByKey[bindingKey]
+        if binding == nil then
+            return
+        end
+
+        local buttonEntity = binding.Entity
+        local handler = binding.Handler
+        if buttonEntity ~= nil and isvalid(buttonEntity) == true and handler ~= nil then
+            pcall(function()
+                buttonEntity:DisconnectEvent(ButtonClickEvent, handler)
+            end)
+        end
+
+        self._T.ButtonBindingByKey[bindingKey] = nil
+    end
+
+    -- Disconnects all registered button bindings.
+    @ExecSpace("ClientOnly")
+    method void DisconnectAllButtonBindingsClient()
+        if self._T.ButtonBindingByKey == nil then
+            return
+        end
+
+        for key, _ in pairs(self._T.ButtonBindingByKey) do
+            self:DisconnectButtonBindingClient(key)
+        end
+    end
+
+    -- Sets GridView callbacks so each row is rendered by index.
+    @ExecSpace("ClientOnly")
+    method void PrepareRankingGridClient()
+        local gridView = self:ResolveRankingGridViewClient()
+        if gridView == nil then
+            return
+        end
+
+        local templateEntity = self:ResolveUIEntity(self.RankingRowTemplatePath)
+        if templateEntity ~= nil and isvalid(templateEntity) == true then
+            pcall(function()
+                templateEntity.Enable = false
+                templateEntity.Visible = false
+            end)
+            pcall(function()
+                gridView.ItemEntity = templateEntity
+            end)
+        end
+
+        gridView.OnRefresh = function(index, rowEntity)
+            self:OnRankingRowRefreshClient(index, rowEntity)
+        end
+        gridView.OnClear = function(index, rowEntity)
+            self:OnRankingRowClearClient(index, rowEntity)
+        end
+
+        local initialCount = self.DisplayCount
+        if initialCount <= 0 then
+            initialCount = 1
+        end
+        pcall(function()
+            gridView.TotalCount = initialCount
+        end)
+    end
+
+    -- Resolves GridView component by configured path.
+    @ExecSpace("ClientOnly")
+    method any ResolveRankingGridViewClient()
+        local gridEntity = self:ResolveUIEntity(self.RankingGridPath)
+        if gridEntity == nil or isvalid(gridEntity) == false then
+            return nil
+        end
+        return gridEntity.GridViewComponent
     end
 
     -- Client requests snapshot from server-side RankingComponent and then renders latest cached payload.
@@ -100,8 +394,232 @@ script RankingUIComponent extends Component
             end
         end
 
+        topRows = self:NormalizeTopRows(topRows)
+        self._T.CachedTopRows = topRows
+        self._T.CachedMyRow = myRow
+
         self:RenderRankingTextClient(topRows)
         self:RenderMyRankTextClient(myRow)
+        self:RefreshRankingGridClient()
+    end
+
+    -- Normalizes rows to deterministic rank order.
+    method table NormalizeTopRows(table sourceRows)
+        local normalized = {}
+        if sourceRows == nil then
+            return normalized
+        end
+
+        for _, row in pairs(sourceRows) do
+            if row ~= nil then
+                table.insert(normalized, row)
+            end
+        end
+
+        table.sort(normalized, function(a, b)
+            local rankA = 0
+            local rankB = 0
+            if a ~= nil and a.Rank ~= nil then
+                rankA = math.floor(a.Rank)
+            end
+            if b ~= nil and b.Rank ~= nil then
+                rankB = math.floor(b.Rank)
+            end
+            return rankA < rankB
+        end)
+
+        return normalized
+    end
+
+    -- Grid refresh updates visible rows using cached payload.
+    @ExecSpace("ClientOnly")
+    method void RefreshRankingGridClient()
+        if self._T.IsLobbyState ~= true then
+            return
+        end
+        if self._T.IsRankingPanelOpen ~= true then
+            return
+        end
+
+        local gridView = self:ResolveRankingGridViewClient()
+        if gridView == nil then
+            return
+        end
+
+        local rows = self._T.CachedTopRows
+        if rows == nil then
+            rows = {}
+        end
+
+        local totalCount = #rows
+        if totalCount < self.DisplayCount then
+            totalCount = self.DisplayCount
+        end
+        if totalCount <= 0 then
+            totalCount = 1
+        end
+
+        pcall(function()
+            gridView.TotalCount = totalCount
+        end)
+
+        local resetPos = false
+        if self._T.GridNeedsResetPosition == true then
+            resetPos = true
+            self._T.GridNeedsResetPosition = false
+        end
+
+        pcall(function()
+            gridView:Refresh(resetPos, true)
+        end)
+    end
+
+    -- Grid row refresh callback.
+    @ExecSpace("Client")
+    method void OnRankingRowRefreshClient(number index, Entity rowEntity)
+        if rowEntity == nil or isvalid(rowEntity) == false then
+            return
+        end
+
+        local rowIndex = math.floor(index) + 1
+        local rowData = nil
+        if self._T.CachedTopRows ~= nil and rowIndex > 0 then
+            rowData = self._T.CachedTopRows[rowIndex]
+        end
+
+        if rowData == nil then
+            self:OnRankingRowClearClient(index, rowEntity)
+            return
+        end
+
+        self:ApplyRankingRowDataClient(rowEntity, rowIndex, rowData)
+    end
+
+    -- Grid row clear callback.
+    @ExecSpace("Client")
+    method void OnRankingRowClearClient(number index, Entity rowEntity)
+        if rowEntity == nil or isvalid(rowEntity) == false then
+            return
+        end
+
+        local rowIndex = math.floor(index) + 1
+        self:TryApplyRankIconClient(rowEntity, "", false)
+        self:TrySetRowTextByNameClient(rowEntity, "RankNumberText", tostring(rowIndex))
+        self:TrySetRowTextByNameClient(rowEntity, "NicknameText", "-")
+        self:TrySetRowTextByNameClient(rowEntity, "ScoreText", "-")
+        self:TrySetRowTextByNameClient(rowEntity, "DateText", self:ResolveDatePlaceholderText())
+    end
+
+    -- Applies ranking row payload data to row entity.
+    @ExecSpace("ClientOnly")
+    method void ApplyRankingRowDataClient(Entity rowEntity, integer rowIndex, table rowData)
+        local rank = rowIndex
+        if rowData ~= nil and rowData.Rank ~= nil then
+            rank = math.max(1, math.floor(rowData.Rank))
+        end
+
+        local iconRuid = self:GetRankIconRuid(rank)
+        local useIcon = (rank <= 3 and iconRuid ~= "")
+        self:TryApplyRankIconClient(rowEntity, iconRuid, useIcon)
+
+        local rankText = tostring(rank)
+        if useIcon == true then
+            rankText = ""
+        end
+
+        local nickname = "Unknown"
+        if rowData ~= nil and rowData.Nickname ~= nil and rowData.Nickname ~= "" then
+            nickname = tostring(rowData.Nickname)
+        end
+
+        local scoreText = "0"
+        if rowData ~= nil then
+            if rowData.DisplayValue ~= nil and rowData.DisplayValue ~= "" then
+                scoreText = tostring(rowData.DisplayValue)
+            elseif rowData.Score ~= nil then
+                scoreText = tostring(rowData.Score)
+            end
+        end
+
+        self:TrySetRowTextByNameClient(rowEntity, "RankNumberText", rankText)
+        self:TrySetRowTextByNameClient(rowEntity, "NicknameText", nickname)
+        self:TrySetRowTextByNameClient(rowEntity, "ScoreText", scoreText)
+        self:TrySetRowTextByNameClient(rowEntity, "DateText", self:ResolveDatePlaceholderText())
+    end
+
+    -- Writes text into child entity TextComponent by name.
+    @ExecSpace("ClientOnly")
+    method void TrySetRowTextByNameClient(Entity rowEntity, string childName, string value)
+        if rowEntity == nil or isvalid(rowEntity) == false then
+            return
+        end
+        if childName == nil or childName == "" then
+            return
+        end
+
+        local child = rowEntity:GetChildByName(childName, true)
+        if child == nil or isvalid(child) == false then
+            return
+        end
+        if child.TextComponent == nil then
+            return
+        end
+
+        pcall(function()
+            child.TextComponent.Text = value
+        end)
+    end
+
+    -- Applies medal icon visibility for top-3 rows.
+    @ExecSpace("ClientOnly")
+    method void TryApplyRankIconClient(Entity rowEntity, string iconRuid, boolean visible)
+        if rowEntity == nil or isvalid(rowEntity) == false then
+            return
+        end
+
+        local iconEntity = rowEntity:GetChildByName("RankIcon", true)
+        if iconEntity == nil or isvalid(iconEntity) == false then
+            return
+        end
+        if iconEntity.SpriteGUIRendererComponent == nil then
+            return
+        end
+
+        if visible == true and iconRuid ~= nil and iconRuid ~= "" then
+            pcall(function()
+                iconEntity.SpriteGUIRendererComponent.ImageRUID = iconRuid
+            end)
+            pcall(function()
+                iconEntity.Enable = true
+                iconEntity.Visible = true
+            end)
+            return
+        end
+
+        pcall(function()
+            iconEntity.Enable = false
+            iconEntity.Visible = false
+        end)
+    end
+
+    method string GetRankIconRuid(integer rank)
+        if rank == 1 then
+            return self.FirstRankIconRuid
+        end
+        if rank == 2 then
+            return self.SecondRankIconRuid
+        end
+        if rank == 3 then
+            return self.ThirdRankIconRuid
+        end
+        return ""
+    end
+
+    method string ResolveDatePlaceholderText()
+        if self.DatePlaceholderText == nil or self.DatePlaceholderText == "" then
+            return "-"
+        end
+        return self.DatePlaceholderText
     end
 
     -- Ranking list text is formatted in a compact top-N table to match minimal lobby UI.
@@ -114,9 +632,9 @@ script RankingUIComponent extends Component
 
         local header = "[TOP " .. tostring(self.DisplayCount) .. "] "
         if self.CurrentTab == 1 then
-            header = header .. "일반 모드"
+            header = header .. "Normal Mode"
         else
-            header = header .. "무한 모드"
+            header = header .. "Infinite Mode"
         end
 
         local lines = {}
@@ -193,6 +711,132 @@ script RankingUIComponent extends Component
         end
     end
 
+    -- Resolves lobby/ranking panel entities for overlay toggle flow.
+    @ExecSpace("ClientOnly")
+    method void ResolvePanelEntitiesClient()
+        self._T.LobbyPanelEntity = self:ResolveUIEntity(self.LobbyPanelPath)
+        self._T.RankingPanelEntity = self:ResolveUIEntity(self.RankingPanelPath)
+    end
+
+    method boolean HasOverlayPanelsClient()
+        self:ResolvePanelEntitiesClient()
+
+        if self._T.LobbyPanelEntity ~= nil and isvalid(self._T.LobbyPanelEntity) == true then
+            return true
+        end
+        if self._T.RankingPanelEntity ~= nil and isvalid(self._T.RankingPanelEntity) == true then
+            return true
+        end
+
+        return false
+    end
+
+    -- Applies lobby/ranking panel visibility and optional open transition.
+    @ExecSpace("ClientOnly")
+    method void ApplyPanelVisibilityClient(boolean showLobbyPanel, boolean showRankingPanel)
+        self:ResolvePanelEntitiesClient()
+
+        local lobbyPanel = self._T.LobbyPanelEntity
+        if lobbyPanel ~= nil and isvalid(lobbyPanel) == true then
+            self:ApplyPanelEntityVisibleClient(lobbyPanel, showLobbyPanel)
+        end
+
+        local rankingPanel = self._T.RankingPanelEntity
+        if rankingPanel ~= nil and isvalid(rankingPanel) == true then
+            self:ApplyPanelEntityVisibleClient(rankingPanel, showRankingPanel)
+        end
+    end
+
+    -- Panel visibility helper centralizes transition fallback behavior.
+    @ExecSpace("ClientOnly")
+    method void ApplyPanelEntityVisibleClient(Entity panelEntity, boolean visible)
+        if panelEntity == nil or isvalid(panelEntity) == false then
+            return
+        end
+
+        pcall(function()
+            panelEntity.Enable = visible
+            panelEntity.Visible = visible
+        end)
+
+        if visible == true then
+            self:AnimatePanelOpenClient(panelEntity)
+        end
+    end
+
+    -- Uses lightweight scale animation to avoid per-frame interpolation logic.
+    @ExecSpace("ClientOnly")
+    method void AnimatePanelOpenClient(Entity panelEntity)
+        if self.EnableTransitionAnimation ~= true then
+            return
+        end
+        if panelEntity == nil or isvalid(panelEntity) == false then
+            return
+        end
+        if panelEntity.UITransformComponent == nil then
+            return
+        end
+
+        pcall(function()
+            panelEntity.UITransformComponent.UIScale = Vector3(0.97, 0.97, 1)
+        end)
+
+        local duration = self.TransitionDuration
+        if duration <= 0 then
+            duration = 0.15
+        end
+
+        local timerId = 0
+        local complete = function()
+            if panelEntity ~= nil and isvalid(panelEntity) == true and panelEntity.UITransformComponent ~= nil then
+                pcall(function()
+                    panelEntity.UITransformComponent.UIScale = Vector3(1, 1, 1)
+                end)
+            end
+            self:UntrackPanelTimerClient(timerId)
+        end
+
+        timerId = _TimerService:SetTimerOnce(complete, duration)
+        self:TrackPanelTimerClient(timerId)
+    end
+
+    method void TrackPanelTimerClient(integer timerId)
+        if timerId == nil or timerId <= 0 then
+            return
+        end
+        if self._T.PanelTimerIds == nil then
+            self._T.PanelTimerIds = {}
+        end
+        table.insert(self._T.PanelTimerIds, timerId)
+    end
+
+    method void UntrackPanelTimerClient(integer timerId)
+        if self._T.PanelTimerIds == nil then
+            return
+        end
+
+        local remain = {}
+        for _, value in pairs(self._T.PanelTimerIds) do
+            if value ~= timerId then
+                table.insert(remain, value)
+            end
+        end
+        self._T.PanelTimerIds = remain
+    end
+
+    method void ClearPanelTimersClient()
+        if self._T.PanelTimerIds == nil then
+            return
+        end
+
+        for _, timerId in pairs(self._T.PanelTimerIds) do
+            if timerId ~= nil and timerId > 0 then
+                _TimerService:ClearTimer(timerId)
+            end
+        end
+        self._T.PanelTimerIds = {}
+    end
+
     -- Refresh loop polls at low frequency to avoid heavy UI updates every frame.
     @ExecSpace("ClientOnly")
     method void StartRefreshLoopClient()
@@ -246,6 +890,41 @@ script RankingUIComponent extends Component
         return entity
     end
 
+    method Entity ResolveUIEntity(string path)
+        if path == nil or path == "" then
+            return nil
+        end
+
+        local entity = _EntityService:GetEntityByPath(path)
+        if entity ~= nil and isvalid(entity) == true then
+            return entity
+        end
+
+        local root = _EntityService:GetEntityByPath("/ui/DefaultGroup")
+        if root == nil or isvalid(root) == false then
+            return nil
+        end
+
+        local leaf = self:GetLeafName(path)
+        if leaf == nil or leaf == "" then
+            return nil
+        end
+
+        return root:GetChildByName(leaf, true)
+    end
+
+    method string GetLeafName(string path)
+        if path == nil or path == "" then
+            return ""
+        end
+
+        local indexStart, indexEnd = string.find(path, "[^/]*$")
+        if indexStart == nil then
+            return path
+        end
+        return string.sub(path, indexStart, indexEnd)
+    end
+
     @ExecSpace("ClientOnly")
     method TextComponent ResolveRankingTextComponentClient()
         if self.RankingTextEntity == nil or isvalid(self.RankingTextEntity) == false then
@@ -281,6 +960,9 @@ script RankingUIComponent extends Component
             _TimerService:ClearTimer(self._T.RefreshTimerId)
             self._T.RefreshTimerId = 0
         end
+
+        self:ClearPanelTimersClient()
+        self:DisconnectAllButtonBindingsClient()
     end
 
     -- Utility bootstrap first; fallback local lookup is retained when global util cannot be initialized.
@@ -365,3 +1047,4 @@ script RankingUIComponent extends Component
         return component
     end
 end
+

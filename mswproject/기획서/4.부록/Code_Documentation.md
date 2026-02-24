@@ -856,3 +856,72 @@
 
 #### Layout Note
 - 기존 랭킹 UI (`GRRankingText`, `GRMyRankText`)의 좌표/크기/표시순서는 유지하고, 신규 엔티티만 추가 배치.
+
+## 2026-02-24 Lobby Ranking Overlay UI Update
+
+### RankingUIComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/UI/RankingUIComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/UI/RankingUIComponent.codeblock`
+- **Updated:** `2026-02-24`
+
+#### Added Properties
+- `LobbyPanelPath`, `RankingPanelPath`
+- `RankingOpenButtonPath`, `RankingBackButtonPath`
+- `NormalTabButtonPath`, `InfiniteTabButtonPath`
+- `RankingGridPath`, `RankingRowTemplatePath`
+- `FirstRankIconRuid`, `SecondRankIconRuid`, `ThirdRankIconRuid`
+- `DatePlaceholderText`
+- `EnableTransitionAnimation`, `TransitionDuration`
+
+#### Added/Changed Functions
+- `ApplyLobbyStateClient(boolean isLobby)`
+- `OpenRankingPanelClient(integer tab)`
+- `CloseRankingPanelClient()`
+- `BindPanelButtonsClient()` and button callbacks
+- `PrepareRankingGridClient()` / `RefreshRankingGridClient()`
+- `OnRankingRowRefreshClient()` / `OnRankingRowClearClient()`
+- `ApplyRankingRowDataClient()`
+
+#### Behavior
+- Lobby now supports overlay flow: `LobbyPanel <-> RankingPanel`.
+- Ranking grid rendering uses cached `RankingComponent._T.LastTopRanks` data.
+- Rank 1~3 supports icon RUID injection via properties.
+- Date column currently renders placeholder text (`-` by default).
+
+### LobbyFlowComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.codeblock`
+- **Updated:** `2026-02-24`
+
+#### Changed Function
+- `ApplyLobbyUIClient(boolean isLobby)` now delegates ranking panel visibility to:
+- `RankingUIComponent.ApplyLobbyStateClient(isLobby)` first
+- fallback to `ApplyVisibilityClient(isLobby)` when new API is absent
+
+### Map01BootstrapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.codeblock`
+- **Updated:** `2026-02-24`
+
+#### Changed Default
+- `AutoOpenRankingOnLobby = false`
+- Lobby now defaults to the base lobby panel and opens ranking only by UI action.
+
+### DefaultGroup UI Paths (Applied)
+- `/ui/DefaultGroup/GRLobbyPanel`
+- `/ui/DefaultGroup/GRLobbyPanel/GRRankingOpenButton`
+- `/ui/DefaultGroup/GRRankingPanel`
+- `/ui/DefaultGroup/GRRankingPanel/GRBackButton`
+- `/ui/DefaultGroup/GRRankingPanel/GRTabNormalButton`
+- `/ui/DefaultGroup/GRRankingPanel/GRTabInfiniteButton`
+- `/ui/DefaultGroup/GRRankingPanel/GRRankingGrid`
+- `/ui/DefaultGroup/GRRankingPanel/GRRankingRowTemplate`
+- `/ui/DefaultGroup/GRRankingPanel/GRRankingRowTemplate/RankIcon`
+- `/ui/DefaultGroup/GRRankingPanel/GRRankingRowTemplate/RankNumberText`
+- `/ui/DefaultGroup/GRRankingPanel/GRRankingRowTemplate/NicknameText`
+- `/ui/DefaultGroup/GRRankingPanel/GRRankingRowTemplate/ScoreText`
+- `/ui/DefaultGroup/GRRankingPanel/GRRankingRowTemplate/DateText`
+
+### 2026-02-24 Lobby First Screen Hotfix
+- `LobbyFlowComponent.AutoOpenRankingOnLobby` 기본값을 `false`로 고정.
+- `LobbyFlowComponent.OnInitialize()`에서 `self.AutoOpenRankingOnLobby = false`를 강제 적용해, 에디터 저장값이 남아 있어도 로비 최초 진입 시 랭킹 자동 오픈이 발생하지 않도록 수정.
