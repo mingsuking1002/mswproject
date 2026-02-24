@@ -14,7 +14,7 @@
     "Use": "Json",
     "Json": {
       "Version": 1,
-      "Name": "model_s",
+      "Name": "normal_s",
       "BaseModelId": null,
       "Id": "d604964e-dbc5-4c7d-8df2-5a5af659e911",
       "Components": [

@@ -251,7 +251,7 @@
 
 ## ShopManagerComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/ShopManagerComponent.mlua`
-- **수정일:** `2026-02-19`
+- **수정일:** `2026-02-24`
 
 ### Properties
 | 이름 | 타입 | 설명 |
@@ -265,6 +265,8 @@
 | `HealPrice` | integer | 회복 슬롯 가격 |
 | `AmmoPrice` | integer | 탄약 슬롯 가격 |
 | `PassivePrice` | integer | 패시브 슬롯 가격 |
+| `UseGameplayLockDuringShop` | boolean | 상점 오픈 중 이동/공격/타이머 잠금 사용 여부 (`false` 기본) |
+| `EnableDebugLogs` | boolean | 상점 오픈/클로즈/잠금 경로 디버그 로그 출력 여부 |
 | `Slot1~3Type/Name/Description/Price/SoldOut` | string/integer/boolean | 클라이언트 UI 렌더링용 슬롯 Sync 필드 |
 
 ### Functions
@@ -274,13 +276,13 @@
 | `CanOpenShopForOwnerServer` | `requestUserId: string` | boolean | 소유자/활성 상점/거리 기반 오픈 가능 여부 판정 |
 | `RequestPurchaseServer` | `slotIndex: integer` | void | 슬롯 구매 서버 처리(골드 차감/효과 적용) |
 | `RequestCloseShopServer` | void | void | ESC/닫기 기반 상점 종료 요청 |
-| `OpenShopServer` | void | void | 상점 오픈 + 게임플레이 잠금 + 슬롯 구성 |
+| `OpenShopServer` | void | void | 상점 오픈 + 슬롯 구성(잠금은 `UseGameplayLockDuringShop` 설정에 따름) |
 | `CloseAndRotateShopServer` | void | void | 상점 종료 + 방문 상점 비활성 + 랜덤 순환 |
 | `ResetShopStateServer` | void | void | 로비 복귀 시 상점 상태 초기화 |
 | `ResolveShopEntitiesServer` | void | void | 맵 엔티티 기반 상점 참조 자동 탐색 |
 | `LoadShopDataServer` | void | void | `ShopItemData` 로드 및 행 캐시 |
 | `ApplyPurchaseEffectServer` | `slotType: string, slotData: table` | void | 회복/탄약/패시브 구매 효과 분기 |
-| `SetGameplayLockServer` | `locked: boolean` | void | 이동/공격/타이머 정지 및 스왑 UI 충돌 방지 |
+| `SetGameplayLockServer` | `locked: boolean` | void | 기본은 잠금 스킵(상점 안전지대 제거), 필요 시 이동/공격/타이머 잠금 적용 |
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## TagManagerComponent
@@ -313,7 +315,7 @@
 
 ## SpeedrunTimerComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/SpeedrunTimerComponent.mlua`
-- **수정일:** `2026-02-18`
+- **수정일:** `2026-02-24`
 
 ### Properties
 | 이름 | 타입 | 설명 |
@@ -324,6 +326,8 @@
 | `BestTime` | number | 현재 스테이지 최고 기록(Sync) |
 | `CountdownSeconds` | number | 런 시작 카운트다운 시간 |
 | `TextUpdateInterval` | number | 타이머 텍스트 갱신 주기 |
+| `EnableDebugLogs` | boolean | 시작/일시정지/틱 상태 디버그 로그 출력 여부 |
+| `DebugTickLogInterval` | number | 서버 타이머 틱 로그 출력 간격(초) |
 | `TimerTextEntity` | Entity | 타이머 표시 텍스트 엔티티 |
 
 ### Functions
@@ -335,6 +339,8 @@
 | `ResetRun` | void | void | 타이머 초기화 |
 | `SetPauseSource` | `sourceKey: string, shouldPause: boolean` | void | 외부 시스템의 일시정지 소스 반영 |
 | `IsPausedServer` | void | boolean | 태그/무기교체/로비 상태 포함 일시정지 판정 |
+| `TracePauseReasonServer` | `paused: boolean, reason: string` | void | 일시정지 원인 변경 시점 디버그 로깅 |
+| `TraceTickServer` | `stateLabel: string` | void | 서버 타이머 런/정지 상태 주기 로그 출력 |
 | `LoadBestTimeFromStorageServer` | void | void | 사용자 저장소에서 최고기록 로드 |
 | `SaveBestTimeToStorageServer` | `bestTime: number` | void | 사용자 저장소에 최고기록 저장 |
 | `UpdateTimerTextClient` | `elapsedTime: number, isRunning: boolean` | void | 클라이언트 타이머 텍스트 반영 |
@@ -545,21 +551,29 @@
 | `IsBossPhase` | boolean | 보스 페이즈 상태(Sync) |
 | `MonsterParentEntity` | Entity | 스폰 몬스터 부모 엔티티 |
 | `MonsterContainerName` | string | 맵에서 부모 엔티티를 찾을 이름 |
-| `StateMonitorInterval` | number | 로비/상점 상태 기반 스폰 가능 여부 재평가 주기 |
+| `StateMonitorInterval` | number | 스폰 게이트 상태 재평가 주기 |
+| `EnableDebugLogs` | boolean | 스폰 게이트/틱/타이머 디버그 로그 출력 여부 |
+| `DebugLogThrottleSeconds` | number | 게이트 상태 로그 최소 출력 간격 |
 
 ### Functions
 | 함수명 | 파라미터 | 리턴값 | 설명 |
 |---|---|---|---|
 | `LoadSpawnDataFromTable` | void | boolean | `SpawnConfig`/`MonsterData` 로드 및 준비 상태 갱신 |
 | `LoadMonsterDataFromTable` | void | boolean | 몬스터 통합 테이블 로드 |
+| `BuildOptionalMonsterColumnsCache` | `rows: table` | void | optional `collider_*` column cache build |
+| `HasOptionalMonsterColumn` | `columnName: string` | boolean | optional column existence check with cached probe |
 | `ResolveSpawnCandidates` | `stage: integer, elapsedSec: number` | table | 현재 시점 스폰 후보(일반/보스) 분리 |
 | `BuildSpawnMetaFromRow` | `row: UserDataRow` | table | 드랍/보상 + 콜라이더(`collider_*`) 후속 연동용 메타 데이터 구성 |
 | `ApplyMonsterVisualIfAvailable` | `targetEntity: Entity, row: UserDataRow` | void | `sprite_ruid`가 있으면 SpriteRenderer 외형만 안전 교체 |
 | `ApplyMonsterColliderIfAvailable` | `targetEntity: Entity, row: UserDataRow` | void | `collider_w/h/offset` 데이터가 있으면 Trigger/Hit/PhysicsCollider 크기/오프셋 반영 |
+| `DisablePhysicsColliderIfMapHasNoSimulator` | `targetEntity: Entity` | void | disables PhysicsCollider when map has no PhysicsSimulator |
+| `HasPhysicsSimulatorInCurrentMap` | void | boolean | checks map-level PhysicsSimulatorComponent availability |
 | `ApplyMonsterStatsIfAvailable` | `targetEntity: Entity, row: UserDataRow` | void | 스탯 컴포넌트 존재 시 안전 적용(미정 명세 훅) |
 | `GetSpawnMetaByEntity` | `targetEntity: Entity` | table | 엔티티 기준 스폰 메타 조회 API |
-| `RefreshSpawnStateServer` | void | void | 로비/상점/보스/데이터 상태를 반영해 스폰 시작/정지 |
+| `RefreshSpawnStateServer` | void | void | 로비/보스/데이터 상태를 반영해 스폰 시작/정지 |
 | `SpawnTick` | void | void | 타이머 틱에서 좌표 검증 1회 기반 스폰/보스 판정 처리 (필드 상한 없음) |
+| `TraceSpawnGateServer` | `canSpawn: boolean, reason: string` | void | 스폰 가능/불가 전이 및 원인 디버그 로그 출력(스로틀 적용) |
+| `IsShopOpenServer` | void | boolean | 상점 열림 상태 조회(디버그 컨텍스트용, 스폰 차단에는 미사용) |
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
 
 ## PenaltySystemComponent
@@ -593,7 +607,7 @@
 
 ## LobbyFlowComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.mlua`
-- **수정일:** `2026-02-19`
+- **수정일:** `2026-02-24`
 
 ### Properties
 | 이름 | 타입 | 설명 |
@@ -608,12 +622,15 @@
 | `RankingTextPath` | string | 랭킹 텍스트 경로 |
 | `MyRankTextPath` | string | 내 순위 텍스트 경로 |
 | `UIRootPath` | string | 로비 UI 루트 경로 |
+| `EnableDebugLogs` | boolean | 시작/전환/타이머 연동 디버그 로그 출력 여부 |
 
 ### Functions
 | 함수명 | 파라미터 | 리턴값 | 설명 |
 |---|---|---|---|
 | `OnStartButtonClickedClient` | `event: ButtonClickEvent` | void | 버튼 클릭 디바운스 후 시작 요청 |
 | `RequestStartGameServer` | `requestUserId: string` | void | 시작 요청 서버 처리(소유자 검증 후 UI 상태 전환, 필요 시 맵 이동) |
+| `BeginInGameStateServer` | `targetUserId: string` | void | 인게임 상태 전환 우선 적용 후 맵 이동 시도 |
+| `TryStartRunTimerServer` | void | void | `SpeedrunTimerComponent` 존재 시 런 타이머 안전 시작 |
 | `SetLobbyStateServer` | `isLobby: boolean` | void | 로비 상태 전환 및 연동 컴포넌트 정책 적용 |
 | `ApplyLobbyUIClient` | `isLobby: boolean` | void | 시작/랭킹 UI 가시성 클라이언트 반영 |
 | `RequestOpenLobbyRankingClient` | void | void | 로비 진입 시 랭킹 탭 오픈/데이터 요청 |

@@ -12,6 +12,8 @@ script SpeedrunTimerComponent extends Component
     property number CountdownSeconds = 3.0
     property number TextUpdateInterval = 0.05
     property boolean AutoPauseBySwap = true
+    property boolean EnableDebugLogs = true
+    property number DebugTickLogInterval = 1.0
 
     property Entity TimerTextEntity = nil
     property string TimerStoragePrefix = "Stage_"
@@ -27,8 +29,14 @@ script SpeedrunTimerComponent extends Component
         self._T.CountdownTimerId = 0
         self._T.PauseSources = {}
         self._T.ClientTextTimerId = 0
+        self._T.LastPauseState = false
+        self._T.LastPauseReason = ""
+        self._T.LastTickLogAt = -9999
 
         self:LoadBestTimeFromStorageServer()
+        if self.EnableDebugLogs == true then
+            log("[SpeedrunTimerComponent][DEBUG] OnInitialize stage=", self.CurrentStageId, ", countdown=", self.CountdownSeconds)
+        end
     end
 
     -- Client starts timer text loop and utility bootstrap for UI-only updates.
@@ -43,13 +51,16 @@ script SpeedrunTimerComponent extends Component
     @ExecSpace("ServerOnly")
     method void OnUpdate(number delta)
         if self.IsRunning == false then
+            self:TraceTickServer("NotRunning")
             return
         end
         if self:IsPausedServer() == true then
+            self:TraceTickServer("Paused")
             return
         end
 
         self.ElapsedTime = self.ElapsedTime + delta
+        self:TraceTickServer("Running")
     end
 
     -- Countdown start method is used by bootstrap/lobby flow and resets state before run begins.
@@ -64,6 +75,9 @@ script SpeedrunTimerComponent extends Component
 
         local countdown = math.max(self.CountdownSeconds, 0)
         if countdown <= 0 then
+            if self.EnableDebugLogs == true then
+                log("[SpeedrunTimerComponent][DEBUG] StartRunWithCountdown skipped countdown; starting immediately.")
+            end
             self:StartRunNow()
             return
         end
@@ -74,6 +88,9 @@ script SpeedrunTimerComponent extends Component
         end
 
         self._T.CountdownTimerId = _TimerService:SetTimerOnce(runStart, countdown)
+        if self.EnableDebugLogs == true then
+            log("[SpeedrunTimerComponent][DEBUG] Countdown started. seconds=", countdown, ", timerId=", self._T.CountdownTimerId)
+        end
     end
 
     -- Immediate run start is separated so other systems can skip countdown while preserving same init flow.
@@ -82,6 +99,9 @@ script SpeedrunTimerComponent extends Component
         self.ElapsedTime = 0
         self.IsRunning = true
         self:TrySetTimerTextVisibleClient(true)
+        if self.EnableDebugLogs == true then
+            log("[SpeedrunTimerComponent][DEBUG] StartRunNow. isRunning=", self.IsRunning, ", stage=", self.CurrentStageId)
+        end
     end
 
     -- Completion finalizes run state once, evaluates best time, and forwards record to ranking.
@@ -95,6 +115,9 @@ script SpeedrunTimerComponent extends Component
         self:EvaluateBestTimeServer()
         self:NotifyRankingServer()
         self:TrySetTimerTextVisibleClient(false)
+        if self.EnableDebugLogs == true then
+            log("[SpeedrunTimerComponent][DEBUG] CompleteRun. finalElapsed=", self.ElapsedTime, ", best=", self.BestTime)
+        end
     end
 
     -- Reset keeps timer in standby mode for retry flow and clears pending countdown callbacks.
@@ -106,6 +129,9 @@ script SpeedrunTimerComponent extends Component
         if self._T.CountdownTimerId ~= nil and self._T.CountdownTimerId > 0 then
             _TimerService:ClearTimer(self._T.CountdownTimerId)
             self._T.CountdownTimerId = 0
+        end
+        if self.EnableDebugLogs == true then
+            log("[SpeedrunTimerComponent][DEBUG] ResetRun completed.")
         end
     end
 
@@ -120,6 +146,9 @@ script SpeedrunTimerComponent extends Component
             self._T.PauseSources = {}
         end
         self._T.PauseSources[sourceKey] = shouldPause
+        if self.EnableDebugLogs == true then
+            log("[SpeedrunTimerComponent][DEBUG] SetPauseSource key=", sourceKey, ", value=", shouldPause)
+        end
     end
 
     -- Explicit clear API is provided so external systems can release one pause source safely.
@@ -133,14 +162,18 @@ script SpeedrunTimerComponent extends Component
         end
 
         self._T.PauseSources[sourceKey] = false
+        if self.EnableDebugLogs == true then
+            log("[SpeedrunTimerComponent][DEBUG] ClearPauseSource key=", sourceKey)
+        end
     end
 
     -- Server pause decision merges explicit pause sources and linked component state checks.
     @ExecSpace("ServerOnly")
     method boolean IsPausedServer()
         if self._T.PauseSources ~= nil then
-            for _, isPaused in pairs(self._T.PauseSources) do
+            for sourceKey, isPaused in pairs(self._T.PauseSources) do
                 if isPaused == true then
+                    self:TracePauseReasonServer(true, "PauseSource:" .. tostring(sourceKey))
                     return true
                 end
             end
@@ -153,6 +186,7 @@ script SpeedrunTimerComponent extends Component
                     return swapComponent.IsSwapMenuOpen
                 end)
                 if swapOk == true and menuOpen == true then
+                    self:TracePauseReasonServer(true, "WeaponSwapMenuOpen")
                     return true
                 end
             end
@@ -164,10 +198,12 @@ script SpeedrunTimerComponent extends Component
                 return lobbyFlow["IsLobbyActive"]
             end)
             if lobbyOk == true and isLobby == true then
+                self:TracePauseReasonServer(true, "LobbyActive")
                 return true
             end
         end
 
+        self:TracePauseReasonServer(false, "None")
         return false
     end
 
@@ -381,6 +417,59 @@ script SpeedrunTimerComponent extends Component
         end
 
         return string.format("%02d:%02d.%02d", minute, second, centisecond)
+    end
+
+    -- Pause-trace logs only state transitions so pause reason debugging stays readable during frame updates.
+    @ExecSpace("ServerOnly")
+    method void TracePauseReasonServer(boolean paused, string reason)
+        if self.EnableDebugLogs ~= true then
+            return
+        end
+
+        if self._T.LastPauseState == paused and self._T.LastPauseReason == reason then
+            return
+        end
+
+        self._T.LastPauseState = paused
+        self._T.LastPauseReason = reason
+        log("[SpeedrunTimerComponent][DEBUG] Pause state changed. paused=", paused, ", reason=", reason, ", elapsed=", self.ElapsedTime, ", isRunning=", self.IsRunning)
+    end
+
+    -- Tick-trace is throttled to avoid per-frame spam while still proving timer progression in play tests.
+    @ExecSpace("ServerOnly")
+    method void TraceTickServer(string stateLabel)
+        if self.EnableDebugLogs ~= true then
+            return
+        end
+
+        local interval = self.DebugTickLogInterval
+        if interval <= 0 then
+            interval = 1.0
+        end
+
+        local nowSeconds = self:GetServerNowSeconds()
+        local lastTickAt = self._T.LastTickLogAt
+        if lastTickAt == nil then
+            lastTickAt = -9999
+        end
+        if (nowSeconds - lastTickAt) < interval then
+            return
+        end
+
+        self._T.LastTickLogAt = nowSeconds
+        log("[SpeedrunTimerComponent][DEBUG] Tick state=", stateLabel, ", elapsed=", self.ElapsedTime, ", isRunning=", self.IsRunning, ", stage=", self.CurrentStageId)
+    end
+
+    -- Server elapsed time helper is isolated to keep debug throttle stable when util access fails.
+    method number GetServerNowSeconds()
+        local nowSeconds = 0
+        local readOk, readValue = pcall(function()
+            return _UtilLogic.ServerElapsedSeconds
+        end)
+        if readOk == true and readValue ~= nil then
+            nowSeconds = readValue
+        end
+        return nowSeconds
     end
 
     -- Timer text resolve uses explicit entity reference first to avoid path-dependent runtime failures.

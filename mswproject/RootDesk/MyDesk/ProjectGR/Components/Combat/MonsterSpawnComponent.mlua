@@ -13,6 +13,8 @@ script MonsterSpawnComponent extends Component
 
     property string MonsterContainerName = "MonsterContainer"
     property number StateMonitorInterval = 0.2
+    property boolean EnableDebugLogs = false
+    property number DebugLogThrottleSeconds = 1.0
 
     -- Server initializes all runtime caches once so spawn flow remains deterministic after hot-reload.
     @ExecSpace("ServerOnly")
@@ -27,9 +29,17 @@ script MonsterSpawnComponent extends Component
         self._T.MonsterRows = {}
         self._T.ModelTypeByMonType = nil
         self._T.RowFallbackModelById = nil
+        self._T.OptionalColumnAvailability = {}
+        self._T.OptionalColumnMissingWarned = {}
         self._T.BossSpawnedEntity = nil
         self._T.WarnedMissingContainer = false
+        self._T.HasMapPhysicsSimulator = nil
+        self._T.WarnedMissingPhysicsSimulator = false
         self._T.DataReady = false
+        self._T.LastSpawnGateAllowed = nil
+        self._T.LastSpawnGateReason = ""
+        self._T.LastSpawnGateLogAt = -9999
+        self._T.SpawnTickCounter = 0
 
         self.IsSpawnActive = false
         self.IsBossPhase = false
@@ -48,6 +58,7 @@ script MonsterSpawnComponent extends Component
     @ExecSpace("ServerOnly")
     method void OnMapEnter(Entity enteredMap)
         self:ResolveMonsterParentEntity()
+        self._T.HasMapPhysicsSimulator = nil
         self:RefreshSpawnStateServer()
     end
 
@@ -86,6 +97,10 @@ script MonsterSpawnComponent extends Component
             self:StopSpawning()
         end
 
+        if self.EnableDebugLogs == true then
+            log("[MonsterSpawnComponent][DEBUG] LoadSpawnDataFromTable dataReady=", self._T.DataReady, ", configLoaded=", configLoaded, ", monsterLoaded=", monsterLoaded)
+        end
+
         return self._T.DataReady
     end
 
@@ -111,17 +126,18 @@ script MonsterSpawnComponent extends Component
             return false
         end
 
-        local row = nil
-        local rowOk, rowResult = pcall(function()
-            return tableData:GetRow(1)
+        local rows = nil
+        local rowsOk, rowsResult = pcall(function()
+            return tableData:GetAllRow()
         end)
-        if rowOk == true then
-            row = rowResult
+        if rowsOk == true then
+            rows = rowsResult
         end
-        if row == nil then
-            self:LogError("[MonsterSpawnComponent] SpawnConfig row(1) is missing.")
+        if rows == nil or #rows <= 0 then
+            self:LogError("[MonsterSpawnComponent] SpawnConfig has no rows.")
             return false
         end
+        local row = rows[1]
 
         local innerRadius = self:GetRowNumber(row, "InnerRadius", -1)
         local outerRadius = self:GetRowNumber(row, "OuterRadius", -1)
@@ -143,6 +159,9 @@ script MonsterSpawnComponent extends Component
         config.SpawnPerTick = spawnPerTick
 
         self._T.Config = config
+        if self.EnableDebugLogs == true then
+            log("[MonsterSpawnComponent][DEBUG] SpawnConfig loaded. rowCount=", #rows, ", inner=", innerRadius, ", outer=", outerRadius, ", interval=", spawnInterval, ", perTick=", spawnPerTick)
+        end
         return true
     end
 
@@ -185,6 +204,7 @@ script MonsterSpawnComponent extends Component
 
         self._T.MonsterRows = rows
         self:BuildRowModelFallbackCache(rows)
+        self:BuildOptionalMonsterColumnsCache(rows)
         return true
     end
 
@@ -221,6 +241,93 @@ script MonsterSpawnComponent extends Component
                 self._T.RowFallbackModelById[rowId] = lastModelByType[monType]
             end
         end
+    end
+
+    -- Optional-column cache avoids repeated row:GetItem calls that would spam engine errors when schema is old.
+    method void BuildOptionalMonsterColumnsCache(table rows)
+        self._T.OptionalColumnAvailability = {}
+        self._T.OptionalColumnMissingWarned = {}
+
+        if rows == nil or #rows <= 0 then
+            return
+        end
+
+        local probeRow = rows[1]
+        if probeRow == nil then
+            return
+        end
+
+        local optionalColumns = {
+            "collider_w",
+            "collider_h",
+            "collider_offset_x",
+            "collider_offset_y"
+        }
+        for _, columnName in pairs(optionalColumns) do
+            self:ProbeOptionalMonsterColumn(probeRow, columnName)
+        end
+    end
+
+    method boolean ProbeOptionalMonsterColumn(UserDataRow row, string columnName)
+        if self._T.OptionalColumnAvailability == nil then
+            self._T.OptionalColumnAvailability = {}
+        end
+
+        if columnName == nil or columnName == "" then
+            return false
+        end
+        if self._T.OptionalColumnAvailability[columnName] ~= nil then
+            return self._T.OptionalColumnAvailability[columnName]
+        end
+        if row == nil then
+            self._T.OptionalColumnAvailability[columnName] = false
+            return false
+        end
+
+        local readOk, _ = pcall(function()
+            return row:GetItem(columnName)
+        end)
+        self._T.OptionalColumnAvailability[columnName] = readOk
+
+        if readOk == false then
+            self:WarnMissingOptionalMonsterColumn(columnName)
+        end
+        return readOk
+    end
+
+    method boolean HasOptionalMonsterColumn(string columnName)
+        if columnName == nil or columnName == "" then
+            return false
+        end
+
+        if self._T.OptionalColumnAvailability == nil then
+            self._T.OptionalColumnAvailability = {}
+        end
+
+        local cached = self._T.OptionalColumnAvailability[columnName]
+        if cached ~= nil then
+            return cached
+        end
+
+        local rows = self._T.MonsterRows
+        if rows == nil or #rows <= 0 then
+            self._T.OptionalColumnAvailability[columnName] = false
+            return false
+        end
+
+        return self:ProbeOptionalMonsterColumn(rows[1], columnName)
+    end
+
+    method void WarnMissingOptionalMonsterColumn(string columnName)
+        if self._T.OptionalColumnMissingWarned == nil then
+            self._T.OptionalColumnMissingWarned = {}
+        end
+        if self._T.OptionalColumnMissingWarned[columnName] == true then
+            return
+        end
+
+        self._T.OptionalColumnMissingWarned[columnName] = true
+        log_warning("[MonsterSpawnComponent] Optional column missing in MonsterData. fallback applied. column=", columnName)
     end
 
     -- Backward-compatible resolver allows old SPEC alias without blocking current MonsterData naming.
@@ -283,6 +390,9 @@ script MonsterSpawnComponent extends Component
         if container ~= nil and isvalid(container) == true then
             self.MonsterParentEntity = container
             self._T.WarnedMissingContainer = false
+            if self.EnableDebugLogs == true then
+                log("[MonsterSpawnComponent][DEBUG] MonsterContainer resolved. name=", self.MonsterContainerName)
+            end
             return
         end
 
@@ -292,7 +402,7 @@ script MonsterSpawnComponent extends Component
         end
     end
 
-    -- Monitor timer reacts to lobby/shop safe-zone state without per-frame OnUpdate overhead.
+    -- Monitor timer reacts to spawn gate state without per-frame OnUpdate overhead.
     @ExecSpace("ServerOnly")
     method void StartStateMonitorTimer()
         if self._T.StateMonitorTimerId ~= nil and self._T.StateMonitorTimerId > 0 then
@@ -308,6 +418,9 @@ script MonsterSpawnComponent extends Component
             self:RefreshSpawnStateServer()
         end
         self._T.StateMonitorTimerId = _TimerService:SetTimerRepeat(callback, interval, 0)
+        if self.EnableDebugLogs == true then
+            log("[MonsterSpawnComponent][DEBUG] State monitor timer started. id=", self._T.StateMonitorTimerId, ", interval=", interval)
+        end
     end
 
     -- Single state gate keeps start/stop transitions deterministic and easy to extend later.
@@ -325,22 +438,27 @@ script MonsterSpawnComponent extends Component
     @ExecSpace("ServerOnly")
     method boolean CanSpawnNowServer()
         if self._T.DataReady ~= true then
+            self:TraceSpawnGateServer(false, "DataNotReady")
             return false
         end
         if self.IsBossPhase == true then
+            self:TraceSpawnGateServer(false, "BossPhaseActive")
             return false
         end
         if self.MonsterParentEntity == nil or isvalid(self.MonsterParentEntity) == false then
+            self:TraceSpawnGateServer(false, "MonsterContainerMissing")
             return false
         end
         if self:IsSafeZoneActiveServer() == true then
+            self:TraceSpawnGateServer(false, "LobbySafeZoneActive")
             return false
         end
 
+        self:TraceSpawnGateServer(true, "Ready")
         return true
     end
 
-    -- Safe-zone resolver depends only on stable Sync flags to avoid tight coupling to feature internals.
+    -- Safe-zone resolver now follows lobby state only; shop open no longer blocks monster spawning.
     @ExecSpace("ServerOnly")
     method boolean IsSafeZoneActiveServer()
         local lobbyFlow = self:ResolveComponentSafe(self.Entity, "LobbyFlowComponent", "IsLobbyActive")
@@ -353,6 +471,12 @@ script MonsterSpawnComponent extends Component
             end
         end
 
+        return false
+    end
+
+    -- Shop-open state is debug-only context and does not affect spawn gate decisions.
+    @ExecSpace("ServerOnly")
+    method boolean IsShopOpenServer()
         local shopManager = self:ResolveComponentSafe(self.Entity, "ShopManagerComponent", "IsShopOpen")
         if shopManager ~= nil then
             local shopOk, isShopOpen = pcall(function()
@@ -373,11 +497,17 @@ script MonsterSpawnComponent extends Component
             return
         end
         if self._T.Config == nil then
+            if self.EnableDebugLogs == true then
+                log_warning("[MonsterSpawnComponent][DEBUG] StartSpawning blocked: config missing.")
+            end
             return
         end
 
         local interval = self._T.Config.SpawnInterval
         if interval <= 0 then
+            if self.EnableDebugLogs == true then
+                log_warning("[MonsterSpawnComponent][DEBUG] StartSpawning blocked: invalid interval=", interval)
+            end
             return
         end
 
@@ -386,17 +516,26 @@ script MonsterSpawnComponent extends Component
         end
         local timerId = _TimerService:SetTimerRepeat(callback, interval, 0)
         if timerId == nil or timerId <= 0 then
+            if self.EnableDebugLogs == true then
+                log_warning("[MonsterSpawnComponent][DEBUG] StartSpawning failed: invalid timer id.")
+            end
             return
         end
 
         self._T.SpawnTimerId = timerId
         self.IsSpawnActive = true
+        if self.EnableDebugLogs == true then
+            log("[MonsterSpawnComponent][DEBUG] Spawn timer started. id=", timerId, ", interval=", interval)
+        end
     end
 
     -- Stop path clears only one timer id so duplicated ClearTimer calls are avoided.
     @ExecSpace("ServerOnly")
     method void StopSpawning()
         if self._T.SpawnTimerId ~= nil and self._T.SpawnTimerId > 0 then
+            if self.EnableDebugLogs == true then
+                log("[MonsterSpawnComponent][DEBUG] Spawn timer stopped. id=", self._T.SpawnTimerId)
+            end
             _TimerService:ClearTimer(self._T.SpawnTimerId)
             self._T.SpawnTimerId = 0
         end
@@ -410,6 +549,7 @@ script MonsterSpawnComponent extends Component
             return
         end
 
+        self._T.SpawnTickCounter = self._T.SpawnTickCounter + 1
         self:PruneSpawnedMonsters()
 
         local config = self._T.Config
@@ -418,6 +558,9 @@ script MonsterSpawnComponent extends Component
         end
         local context = self:ResolveCurrentSpawnContext()
         local candidates = self:ResolveSpawnCandidates(context.Stage, context.ElapsedSec)
+        if self.EnableDebugLogs == true then
+            log("[MonsterSpawnComponent][DEBUG] SpawnTick start. tick=", self._T.SpawnTickCounter, ", stage=", context.Stage, ", elapsed=", context.ElapsedSec, ", normal=", #candidates.NormalRows, ", boss=", #candidates.BossRows, ", alive=", self:GetSpawnedMonsterCount())
+        end
 
         local bossRows = candidates.BossRows
         if bossRows ~= nil and #bossRows > 0 then
@@ -426,14 +569,28 @@ script MonsterSpawnComponent extends Component
             if bossEntity ~= nil and isvalid(bossEntity) == true then
                 self.IsBossPhase = true
                 self:StopSpawning()
+                if self.EnableDebugLogs == true then
+                    local bossId = self:GetRowString(bossRow, "id", "(unknown)")
+                    log("[MonsterSpawnComponent][DEBUG] Boss spawned. id=", bossId, ", bossPhase=", self.IsBossPhase)
+                end
+            elseif self.EnableDebugLogs == true then
+                local bossId = self:GetRowString(bossRow, "id", "(unknown)")
+                log_warning("[MonsterSpawnComponent][DEBUG] Boss candidate failed to spawn. id=", bossId)
             end
             return
         end
 
         local normalRows = candidates.NormalRows
         if normalRows == nil or #normalRows <= 0 then
+            if self.EnableDebugLogs == true then
+                log("[MonsterSpawnComponent][DEBUG] SpawnTick skipped: no normal candidates.")
+            end
             return
         end
+
+        local attemptedCount = 0
+        local spawnedCount = 0
+        local invalidPositionCount = 0
 
         for i = 1, config.SpawnPerTick do
             self:PruneSpawnedMonsters()
@@ -442,12 +599,22 @@ script MonsterSpawnComponent extends Component
             if selectedRow == nil then
                 break
             end
+            attemptedCount = attemptedCount + 1
 
             -- Spawn config no longer retries; penalty system now owns overflow control.
             local spawnPosition = self:CalcDonutPosition()
             if spawnPosition ~= nil and self:IsValidSpawnPosition(spawnPosition) == true then
-                self:SpawnMonsterByRow(selectedRow, spawnPosition, false)
+                local spawned = self:SpawnMonsterByRow(selectedRow, spawnPosition, false)
+                if spawned ~= nil and isvalid(spawned) == true then
+                    spawnedCount = spawnedCount + 1
+                end
+            else
+                invalidPositionCount = invalidPositionCount + 1
             end
+        end
+
+        if self.EnableDebugLogs == true then
+            log("[MonsterSpawnComponent][DEBUG] SpawnTick end. attempted=", attemptedCount, ", spawned=", spawnedCount, ", invalidPos=", invalidPositionCount, ", alive=", self:GetSpawnedMonsterCount())
         end
     end
 
@@ -521,15 +688,7 @@ script MonsterSpawnComponent extends Component
     end
 
     method number GetSpawnMinuteFromRow(UserDataRow row)
-        local spawnMinute = self:GetRowNumber(row, "spawn_time (min)", -1)
-        if spawnMinute < 0 then
-            spawnMinute = self:GetRowNumber(row, "spawn_time_min", -1)
-        end
-        if spawnMinute < 0 then
-            spawnMinute = self:GetRowNumber(row, "spawn_time", -1)
-        end
-
-        return spawnMinute
+        return self:GetRowNumber(row, "spawn_time", -1)
     end
 
     method boolean IsBossRow(UserDataRow row)
@@ -659,6 +818,12 @@ script MonsterSpawnComponent extends Component
             log_warning("[MonsterSpawnComponent] Skip spawn because model_type is empty. rowId=", rowId)
             return nil
         end
+        modelId = self:ResolveModelIdForSpawn(modelId)
+        if modelId == "" then
+            local rowId = self:GetRowString(row, "id", "(unknown)")
+            log_warning("[MonsterSpawnComponent] Skip spawn because model id resolution failed. rowId=", rowId)
+            return nil
+        end
 
         local spawnName = self:GetRowString(row, "id", "Monster")
         local spawnedEntity = nil
@@ -671,6 +836,8 @@ script MonsterSpawnComponent extends Component
         if spawnedEntity == nil or isvalid(spawnedEntity) == false then
             return nil
         end
+
+        self:DisablePhysicsColliderIfMapHasNoSimulator(spawnedEntity)
 
         if self._T.SpawnedMonsters == nil then
             self._T.SpawnedMonsters = {}
@@ -693,7 +860,7 @@ script MonsterSpawnComponent extends Component
         return spawnedEntity
     end
 
-    -- Metadata builder intentionally stores drop columns only; actual drop execution is future work.
+    -- Metadata builder stores drop_id for future drop pipeline; detailed drop execution remains deferred.
     method table BuildSpawnMetaFromRow(UserDataRow row)
         local meta = {}
         meta.Id = self:GetRowString(row, "id", "")
@@ -705,22 +872,39 @@ script MonsterSpawnComponent extends Component
         meta.MonSpd = self:GetRowNumber(row, "mon_spd", 0)
         meta.SpawnStage = self:GetRowInteger(row, "spawn_stage", 1)
         meta.SpawnTimeMin = self:GetSpawnMinuteFromRow(row)
-        meta.Gold = self:GetRowInteger(row, "gold", 0)
+        meta.Gold = 0
 
-        meta.DropItem1Id = self:GetRowString(row, "drop_item_1_id", "")
-        meta.DropItem1Rate = self:GetRowNumber(row, "drop_item_1_rate", 0)
-        meta.DropItem1Amount = self:GetRowInteger(row, "drop_item_1_amount", 0)
-        meta.DropItem2Id = self:GetRowString(row, "drop_item_2_id", "")
-        meta.DropItem2Rate = self:GetRowNumber(row, "drop_item_2_rate", 0)
-        meta.DropItem2Amount = self:GetRowInteger(row, "drop_item_2_amount", 0)
+        meta.DropId = self:GetRowString(row, "drop_id", "")
+        meta.DropItem1Id = ""
+        meta.DropItem1Rate = 0
+        meta.DropItem1Amount = 0
+        meta.DropItem2Id = ""
+        meta.DropItem2Rate = 0
+        meta.DropItem2Amount = 0
 
         meta.SpriteRuid = self:GetRowString(row, "sprite_ruid", "")
         meta.SoundRuid = self:GetRowString(row, "sound_ruid", "")
         meta.DeathEffectRuid = self:GetRowString(row, "death_effect_ruid", "")
-        meta.ColliderW = self:GetRowNumber(row, "collider_w", -1)
-        meta.ColliderH = self:GetRowNumber(row, "collider_h", -1)
-        meta.ColliderOffsetX = self:GetRowNumber(row, "collider_offset_x", 0)
-        meta.ColliderOffsetY = self:GetRowNumber(row, "collider_offset_y", 0)
+        if self:HasOptionalMonsterColumn("collider_w") == true then
+            meta.ColliderW = self:GetRowNumber(row, "collider_w", -1)
+        else
+            meta.ColliderW = -1
+        end
+        if self:HasOptionalMonsterColumn("collider_h") == true then
+            meta.ColliderH = self:GetRowNumber(row, "collider_h", -1)
+        else
+            meta.ColliderH = -1
+        end
+        if self:HasOptionalMonsterColumn("collider_offset_x") == true then
+            meta.ColliderOffsetX = self:GetRowNumber(row, "collider_offset_x", 0)
+        else
+            meta.ColliderOffsetX = 0
+        end
+        if self:HasOptionalMonsterColumn("collider_offset_y") == true then
+            meta.ColliderOffsetY = self:GetRowNumber(row, "collider_offset_y", 0)
+        else
+            meta.ColliderOffsetY = 0
+        end
         meta.IsBoss = self:IsBossRow(row)
 
         return meta
@@ -763,6 +947,10 @@ script MonsterSpawnComponent extends Component
             return
         end
 
+        if self:HasOptionalMonsterColumn("collider_w") == false or self:HasOptionalMonsterColumn("collider_h") == false then
+            return
+        end
+
         local colliderW = self:GetRowNumber(row, "collider_w", -1)
         local colliderH = self:GetRowNumber(row, "collider_h", -1)
         if colliderW <= 0 or colliderH <= 0 then
@@ -770,8 +958,14 @@ script MonsterSpawnComponent extends Component
         end
 
         local colliderSize = Vector2(colliderW, colliderH)
-        local offsetXText = self:GetRowString(row, "collider_offset_x", "")
-        local offsetYText = self:GetRowString(row, "collider_offset_y", "")
+        local offsetXText = ""
+        local offsetYText = ""
+        if self:HasOptionalMonsterColumn("collider_offset_x") == true then
+            offsetXText = self:GetRowString(row, "collider_offset_x", "")
+        end
+        if self:HasOptionalMonsterColumn("collider_offset_y") == true then
+            offsetYText = self:GetRowString(row, "collider_offset_y", "")
+        end
         local hasOffset = false
         local colliderOffset = Vector2.zero
         if offsetXText ~= "" and offsetYText ~= "" then
@@ -820,28 +1014,92 @@ script MonsterSpawnComponent extends Component
             end
         end
 
-        local physicsCollider = self:ResolveComponentSafe(targetEntity, "PhysicsColliderComponent", "BoxSize")
-        if physicsCollider ~= nil then
-            local sizeOk, _ = pcall(function()
-                physicsCollider.BoxSize = colliderSize
-            end)
-            if sizeOk == true then
-                appliedAny = true
-            end
-            if hasOffset == true then
-                pcall(function()
-                    physicsCollider.ColliderOffset = colliderOffset
+        if self:HasPhysicsSimulatorInCurrentMap() == true then
+            local physicsCollider = self:ResolveComponentSafe(targetEntity, "PhysicsColliderComponent", "BoxSize")
+            if physicsCollider ~= nil then
+                local sizeOk, _ = pcall(function()
+                    physicsCollider.BoxSize = colliderSize
                 end)
-                pcall(function()
-                    physicsCollider.BoxOffset = colliderOffset
-                end)
+                if sizeOk == true then
+                    appliedAny = true
+                end
+                if hasOffset == true then
+                    pcall(function()
+                        physicsCollider.ColliderOffset = colliderOffset
+                    end)
+                    pcall(function()
+                        physicsCollider.BoxOffset = colliderOffset
+                    end)
+                end
             end
         end
 
         if appliedAny == false then
+            if self:HasPhysicsSimulatorInCurrentMap() == false then
+                return
+            end
             local rowId = self:GetRowString(row, "id", "(unknown)")
             log_warning("[MonsterSpawnComponent] collider_w/h provided but no collider component found. rowId=", rowId)
         end
+    end
+
+    -- PhysicsSimulator is map-level dependency; when missing, disable model physics collider to avoid runtime spam.
+    method void DisablePhysicsColliderIfMapHasNoSimulator(Entity targetEntity)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+        if self:HasPhysicsSimulatorInCurrentMap() == true then
+            return
+        end
+
+        local physicsCollider = self:ResolveComponentSafe(targetEntity, "PhysicsColliderComponent", "Enable")
+        if physicsCollider == nil then
+            return
+        end
+
+        pcall(function()
+            physicsCollider.Enable = false
+        end)
+    end
+
+    method boolean HasPhysicsSimulatorInCurrentMap()
+        if self._T.HasMapPhysicsSimulator ~= nil then
+            return self._T.HasMapPhysicsSimulator
+        end
+
+        local mapEntity = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            mapEntity = self.Entity.CurrentMap
+        end
+        if mapEntity == nil or isvalid(mapEntity) == false then
+            self._T.HasMapPhysicsSimulator = false
+            return false
+        end
+
+        local simulator = nil
+        local readOkA, readResultA = pcall(function()
+            return mapEntity:GetComponent("MOD.Core.PhysicsSimulatorComponent")
+        end)
+        if readOkA == true then
+            simulator = readResultA
+        end
+        if simulator == nil then
+            local readOkB, readResultB = pcall(function()
+                return mapEntity:GetComponent("PhysicsSimulatorComponent")
+            end)
+            if readOkB == true then
+                simulator = readResultB
+            end
+        end
+
+        local hasSimulator = (simulator ~= nil and isvalid(simulator) == true)
+        self._T.HasMapPhysicsSimulator = hasSimulator
+
+        if hasSimulator == false and self._T.WarnedMissingPhysicsSimulator ~= true then
+            log_warning("[MonsterSpawnComponent] PhysicsSimulatorComponent missing on current map. physics collider will be disabled on spawned monsters.")
+            self._T.WarnedMissingPhysicsSimulator = true
+        end
+        return hasSimulator
     end
 
     -- TODO: Replace this adapter with dedicated monster stat component integration when spec arrives.
@@ -1000,6 +1258,68 @@ script MonsterSpawnComponent extends Component
         return fallbackValue
     end
 
+    -- SpawnByModelId requires model entry id; resolver tolerates name/entry-key mixed authoring.
+    method string ResolveModelIdForSpawn(string rawModelType)
+        local normalized = self:NormalizeModelIdText(rawModelType)
+        if normalized == "" then
+            return ""
+        end
+
+        if self:IsExplicitModelId(normalized) == true then
+            return normalized
+        end
+
+        local resolvedId = ""
+        local resolveOk, resolveResult = pcall(function()
+            return _EntryService:GetModelIdByName(normalized)
+        end)
+        if resolveOk == true and resolveResult ~= nil then
+            resolvedId = self:NormalizeModelIdText(tostring(resolveResult))
+        end
+        if resolvedId ~= "" then
+            return resolvedId
+        end
+
+        return normalized
+    end
+
+    method string NormalizeModelIdText(string value)
+        if value == nil then
+            return ""
+        end
+
+        local text = tostring(value)
+        if text == "" then
+            return ""
+        end
+
+        local prefix = "model://"
+        if string.sub(text, 1, #prefix) == prefix then
+            return string.sub(text, #prefix + 1)
+        end
+
+        return text
+    end
+
+    -- Explicit-id detector prevents unnecessary lookup calls for GUID/preset-style ids.
+    method boolean IsExplicitModelId(string value)
+        if value == nil or value == "" then
+            return false
+        end
+
+        if string.find(value, "-") ~= nil then
+            return true
+        end
+        if string.find(value, "$") ~= nil then
+            return true
+        end
+        if string.find(value, "://") ~= nil then
+            return true
+        end
+
+        return false
+    end
+
     method table CloneTable(table source)
         local clone = {}
         if source == nil then
@@ -1010,6 +1330,63 @@ script MonsterSpawnComponent extends Component
             clone[key] = value
         end
         return clone
+    end
+
+    -- Gate trace logs spawn-on/off reason transitions with throttle to keep logs readable during monitor polling.
+    @ExecSpace("ServerOnly")
+    method void TraceSpawnGateServer(boolean canSpawn, string reason)
+        if self.EnableDebugLogs ~= true then
+            return
+        end
+
+        local changed = false
+        if self._T.LastSpawnGateAllowed ~= canSpawn then
+            changed = true
+        end
+        if self._T.LastSpawnGateReason ~= reason then
+            changed = true
+        end
+
+        local nowSeconds = self:GetServerNowSeconds()
+        local throttle = self.DebugLogThrottleSeconds
+        if throttle < 0 then
+            throttle = 0
+        end
+        local lastAt = self._T.LastSpawnGateLogAt
+        if lastAt == nil then
+            lastAt = -9999
+        end
+
+        if changed == false and (nowSeconds - lastAt) < throttle then
+            return
+        end
+
+        self._T.LastSpawnGateAllowed = canSpawn
+        self._T.LastSpawnGateReason = reason
+        self._T.LastSpawnGateLogAt = nowSeconds
+
+        log(
+            "[MonsterSpawnComponent][DEBUG] gate canSpawn=", canSpawn,
+            ", reason=", reason,
+            ", dataReady=", self._T.DataReady,
+            ", bossPhase=", self.IsBossPhase,
+            ", hasParent=", (self.MonsterParentEntity ~= nil),
+            ", lobbySafeZone=", self:IsSafeZoneActiveServer(),
+            ", shopOpen=", self:IsShopOpenServer(),
+            ", spawnActive=", self.IsSpawnActive
+        )
+    end
+
+    -- Server elapsed time helper is isolated so debug throttle stays deterministic even if util lookup fails.
+    method number GetServerNowSeconds()
+        local nowSeconds = 0
+        local readOk, readValue = pcall(function()
+            return _UtilLogic.ServerElapsedSeconds
+        end)
+        if readOk == true and readValue ~= nil then
+            nowSeconds = readValue
+        end
+        return nowSeconds
     end
 
     method void LogError(string message)

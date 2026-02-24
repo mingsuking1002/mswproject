@@ -17,6 +17,8 @@ script ShopManagerComponent extends Component
     property integer HealPrice = 100
     property integer AmmoPrice = 50
     property integer PassivePrice = 200
+    property boolean UseGameplayLockDuringShop = false
+    property boolean EnableDebugLogs = true
 
     @Sync
     property string Slot1Type = ""
@@ -118,6 +120,9 @@ script ShopManagerComponent extends Component
     @ExecSpace("Server")
     method void RequestOpenShopServer()
         if self:CanOpenShopForOwnerServer(senderUserId) == false then
+            if self.EnableDebugLogs == true then
+                log("[ShopManagerComponent][DEBUG] RequestOpenShopServer rejected. userId=", senderUserId)
+            end
             return
         end
 
@@ -128,21 +133,37 @@ script ShopManagerComponent extends Component
     @ExecSpace("ServerOnly")
     method boolean CanOpenShopForOwnerServer(string requestUserId)
         if self:IsOwnerRequest(requestUserId) == false then
+            if self.EnableDebugLogs == true then
+                log("[ShopManagerComponent][DEBUG] CanOpen=false reason=NotOwner userId=", requestUserId)
+            end
             return false
         end
         if self.IsShopOpen == true then
+            if self.EnableDebugLogs == true then
+                log("[ShopManagerComponent][DEBUG] CanOpen=false reason=AlreadyOpen")
+            end
             return false
         end
         if self.ActiveShopIndex <= 0 then
+            if self.EnableDebugLogs == true then
+                log("[ShopManagerComponent][DEBUG] CanOpen=false reason=NoActiveShop")
+            end
             return false
         end
 
         local activeShop = self:GetShopEntityByIndex(self.ActiveShopIndex)
         if activeShop == nil or isvalid(activeShop) == false then
+            if self.EnableDebugLogs == true then
+                log("[ShopManagerComponent][DEBUG] CanOpen=false reason=InvalidActiveShop index=", self.ActiveShopIndex)
+            end
             return false
         end
 
-        return self:IsWithinInteractionRangeServer(activeShop)
+        local inRange = self:IsWithinInteractionRangeServer(activeShop)
+        if self.EnableDebugLogs == true then
+            log("[ShopManagerComponent][DEBUG] CanOpen result=", inRange, ", activeShopIndex=", self.ActiveShopIndex)
+        end
+        return inRange
     end
 
     -- Purchase requests stay server-side so currency and reward effects cannot be forged by clients.
@@ -212,9 +233,15 @@ script ShopManagerComponent extends Component
     @ExecSpace("Server")
     method void RequestCloseShopServer()
         if self:IsOwnerRequest(senderUserId) == false then
+            if self.EnableDebugLogs == true then
+                log("[ShopManagerComponent][DEBUG] RequestClose rejected reason=NotOwner userId=", senderUserId)
+            end
             return
         end
         if self.IsShopOpen == false then
+            if self.EnableDebugLogs == true then
+                log("[ShopManagerComponent][DEBUG] RequestClose ignored reason=AlreadyClosed")
+            end
             return
         end
 
@@ -225,17 +252,26 @@ script ShopManagerComponent extends Component
     @ExecSpace("ServerOnly")
     method void OpenShopServer()
         if self.IsShopOpen == true then
+            if self.EnableDebugLogs == true then
+                log("[ShopManagerComponent][DEBUG] OpenShopServer ignored: already open.")
+            end
             return
         end
 
         local activeShop = self:GetShopEntityByIndex(self.ActiveShopIndex)
         if activeShop == nil or isvalid(activeShop) == false then
+            if self.EnableDebugLogs == true then
+                log_warning("[ShopManagerComponent][DEBUG] OpenShopServer failed: active shop invalid. index=", self.ActiveShopIndex)
+            end
             return
         end
 
         self.IsShopOpen = true
         self:SetGameplayLockServer(true)
         self:BuildCurrentSlotsServer()
+        if self.EnableDebugLogs == true then
+            log("[ShopManagerComponent][DEBUG] Shop opened. activeShopIndex=", self.ActiveShopIndex, ", gameplayLock=", self.UseGameplayLockDuringShop)
+        end
     end
 
     -- Close flow deactivates current shop, rotates to another index, and resumes gameplay lock state.
@@ -248,6 +284,9 @@ script ShopManagerComponent extends Component
         self:SetShopEnabledByIndexServer(previousIndex, false)
         self:ChooseAndActivateNextShopServer(previousIndex)
         self:SetGameplayLockServer(false)
+        if self.EnableDebugLogs == true then
+            log("[ShopManagerComponent][DEBUG] Shop closed/rotated. previous=", previousIndex, ", next=", self.ActiveShopIndex)
+        end
     end
 
     -- Reset endpoint is used by lobby flow so each run starts from a clean shop rotation/state.
@@ -851,9 +890,27 @@ script ShopManagerComponent extends Component
         end)
     end
 
-    -- Central gameplay lock path pauses movement/attack/timer and closes swap menu to avoid UI conflicts.
+    -- Gameplay lock is now optional; default is no lock so shop no longer creates safe-zone behavior.
     @ExecSpace("ServerOnly")
     method void SetGameplayLockServer(boolean locked)
+        if self.UseGameplayLockDuringShop ~= true then
+            local timerComponent = self:ResolveComponentSafe(self.Entity, "SpeedrunTimerComponent", "IsRunning")
+            if timerComponent ~= nil and timerComponent.SetPauseSource ~= nil then
+                pcall(function()
+                    timerComponent:SetPauseSource("shop", false)
+                end)
+            end
+
+            if locked == true then
+                self:TryCloseWeaponSwapMenuServer()
+            end
+
+            if self.EnableDebugLogs == true then
+                log("[ShopManagerComponent][DEBUG] Gameplay lock skipped. locked=", locked, ", UseGameplayLockDuringShop=false")
+            end
+            return
+        end
+
         self:SetCanMoveSafely(not locked)
         self:SetCanAttackSafely(not locked)
 

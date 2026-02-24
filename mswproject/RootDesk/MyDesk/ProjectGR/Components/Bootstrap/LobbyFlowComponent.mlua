@@ -1,4 +1,4 @@
-﻿@Component
+@Component
 script LobbyFlowComponent extends Component
 
     @Sync
@@ -15,6 +15,7 @@ script LobbyFlowComponent extends Component
     property string RankingTextPath = "/ui/DefaultGroup/GRRankingText"
     property string MyRankTextPath = "/ui/DefaultGroup/GRMyRankText"
     property string UIRootPath = "/ui/DefaultGroup"
+    property boolean EnableDebugLogs = true
 
     -- Server initializes utility and runtime-only button/debounce state.
     @ExecSpace("ServerOnly")
@@ -23,6 +24,9 @@ script LobbyFlowComponent extends Component
         self._T.StartButtonHandler = nil
         self._T.StartButtonDebounce = false
         self._T.StartButtonDebounceTimerId = 0
+        if self.EnableDebugLogs == true then
+            log("[LobbyFlow][DEBUG] OnInitialize. useMapSplit=", self.UseMapSplit, ", inGameMap=", self.InGameMapName, ", lobbyMap=", self.LobbyMapName)
+        end
     end
 
     -- Server applies initial lobby lock state so movement/attack authority starts consistently.
@@ -77,9 +81,15 @@ script LobbyFlowComponent extends Component
     @ExecSpace("ClientOnly")
     method void OnStartButtonClickedClient(ButtonClickEvent event)
         if self.IsLobbyActive == false then
+            if self.EnableDebugLogs == true then
+                log("[LobbyFlow][DEBUG] Start click ignored: IsLobbyActive=false")
+            end
             return
         end
         if self._T.StartButtonDebounce == true then
+            if self.EnableDebugLogs == true then
+                log("[LobbyFlow][DEBUG] Start click ignored: debounce active")
+            end
             return
         end
 
@@ -104,6 +114,9 @@ script LobbyFlowComponent extends Component
     @ExecSpace("Server")
     method void RequestStartGameServer(string requestUserId)
         if self.IsLobbyActive == false then
+            if self.EnableDebugLogs == true then
+                log("[LobbyFlow][DEBUG] Start request ignored on server: lobby already inactive.")
+            end
             return
         end
 
@@ -111,14 +124,67 @@ script LobbyFlowComponent extends Component
         if targetUserId == nil or targetUserId == "" then
             targetUserId = self:GetOwnerUserId()
         end
+
+        log("[LobbyFlow] Start request accepted. userId=", targetUserId, ", map=", self.InGameMapName)
+        self:BeginInGameStateServer(targetUserId)
+    end
+
+    -- Start transition always enters in-game state first, then attempts map move when user id is available.
+    @ExecSpace("ServerOnly")
+    method void BeginInGameStateServer(string targetUserId)
+        if self.EnableDebugLogs == true then
+            log("[LobbyFlow][DEBUG] BeginInGameStateServer called. targetUserId=", targetUserId)
+        end
+        self:SetLobbyStateServer(false)
+        self:TryStartRunTimerServer()
+
         if targetUserId == nil or targetUserId == "" then
-            log_warning("[LobbyFlow] Start request blocked: empty user id.")
+            log_warning("[LobbyFlow] Start request has empty user id. Applied in-game state without map move.")
             return
         end
 
-        log("[LobbyFlow] Start request accepted. userId=", targetUserId, ", map=", self.InGameMapName)
-        self:SetLobbyStateServer(false)
-        self:MoveUserToInGameMapByUserId(targetUserId)
+        local moved = self:MoveUserToInGameMapByUserId(targetUserId)
+        if moved ~= true then
+            log_warning("[LobbyFlow] In-game map move failed. Keeping in-game state on current map. userId=", targetUserId, ", map=", self.InGameMapName)
+        elseif self.EnableDebugLogs == true then
+            log("[LobbyFlow][DEBUG] In-game map move success. userId=", targetUserId, ", map=", self.InGameMapName)
+        end
+    end
+
+    -- Timer kickoff is optional and nil-safe so lobby->ingame transition never depends on timer component state.
+    @ExecSpace("ServerOnly")
+    method void TryStartRunTimerServer()
+        local timerComponent = self:ResolveComponentSafe(self.Entity, "SpeedrunTimerComponent", "IsRunning")
+        if timerComponent == nil then
+            if self.EnableDebugLogs == true then
+                log_warning("[LobbyFlow][DEBUG] Timer start skipped: SpeedrunTimerComponent missing.")
+            end
+            return
+        end
+
+        if timerComponent.StartRunWithCountdown ~= nil then
+            local startOk, _ = pcall(function()
+                timerComponent:StartRunWithCountdown()
+            end)
+            if self.EnableDebugLogs == true then
+                log("[LobbyFlow][DEBUG] Timer start requested via StartRunWithCountdown. ok=", startOk)
+            end
+            return
+        end
+
+        if timerComponent.StartRunNow ~= nil then
+            local startOk, _ = pcall(function()
+                timerComponent:StartRunNow()
+            end)
+            if self.EnableDebugLogs == true then
+                log("[LobbyFlow][DEBUG] Timer start requested via StartRunNow. ok=", startOk)
+            end
+            return
+        end
+
+        if self.EnableDebugLogs == true then
+            log_warning("[LobbyFlow][DEBUG] Timer start skipped: no StartRunWithCountdown/StartRunNow method.")
+        end
     end
 
     -- Run completion path keeps compatibility with existing HP/game-over integration.
@@ -177,15 +243,22 @@ script LobbyFlowComponent extends Component
     -- Single authoritative lobby-state setter to keep sync and lock transitions in one path.
     @ExecSpace("ServerOnly")
     method void SetLobbyStateServer(boolean isLobby)
+        local before = self.IsLobbyActive
         self.IsLobbyActive = isLobby
         self:ApplyGameplayLockByLobbyServer(isLobby)
+        if self.EnableDebugLogs == true then
+            log("[LobbyFlow][DEBUG] SetLobbyStateServer. before=", before, ", after=", isLobby)
+        end
     end
 
     -- Gameplay lock uses core/combat components through GR utility-safe wrappers.
     @ExecSpace("ServerOnly")
     method void ApplyGameplayLockByLobbyServer(boolean isLobby)
-        self:SetCanMoveSafely(not isLobby)
-        self:SetCanAttackSafely(not isLobby)
+        local moveResult = self:SetCanMoveSafely(not isLobby)
+        local attackResult = self:SetCanAttackSafely(not isLobby)
+        if self.EnableDebugLogs == true then
+            log("[LobbyFlow][DEBUG] ApplyGameplayLockByLobbyServer. isLobby=", isLobby, ", moveSet=", moveResult, ", attackSet=", attackResult)
+        end
     end
 
     -- Client UI authority lives only here: start/ranking/my-rank visibility by lobby state.

@@ -1,5 +1,5 @@
 ﻿id,name,mon_type,model_type,mon_hp,mon_atk,mon_spd,spawn_stage,spawn_time,creep_score,drop_id,sprite_ruid,sound_ruid,death_effect_ruid,collider_w,collider_h,collider_offset_x,collider_offset_y,-copy14,-copy15,-copy16,-copy17,-copy18
-mon_n001,몬스터 1,normal,normal_s,900,20,2.6,1,0,10,normal_drop01,bde703ee45784e49bd62192f94248bf3,cddc2808e0324129b3c36c4e023e7e1a,b06f8dda65c34bfa8de53afb2a0906c7,0.7,0.84,0.045,0.52,,,,,
+mon_n001,몬스터 1,normal,model://d604964e-dbc5-4c7d-8df2-5a5af659e911,900,20,2.6,1,0,10,normal_drop01,bde703ee45784e49bd62192f94248bf3,cddc2808e0324129b3c36c4e023e7e1a,b06f8dda65c34bfa8de53afb2a0906c7,0.7,0.84,0.045,0.52,,,,,
 mon_n002,몬스터 2,normal,normal_s,1800,20,2.6,1,2,10,normal_drop01,c3a90d05576f43608d37be10387315b1,16f69ecb84ed47839d3bdf9129c0ed2e,34dd0f03fece434485668743d89ff9cf,0.7,0.84,0.045,0.52,,MonsterData 자료형 정의,,,
 mon_n003,몬스터 3,normal,normal_s,2700,20,2.6,1,4,10,normal_drop01,6c1aa4d5c67540b29b74fdf46daef1d3,41cfe54891dc4424b9c420b8a002c07c,d5dea7445ff842a3891a03e9e7c1fc1e,0.7,0.84,0.045,0.52,,컬럼명,역할,자료형,설명
 mon_n004,몬스터 4,normal,normal_s,3600,20,2.6,1,6,10,normal_drop01,68dad519868b4fad94870237de0c5d66,0332662965024e29bdc7e7722b128813,2bf6cd21cda34b59a8804fef805e5913,0.7,0.84,0.045,0.52,,id,몬스터 테이블 ID,STRING,

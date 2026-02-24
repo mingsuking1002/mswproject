@@ -16,7 +16,7 @@
       {
         "id": "9f3f13f2-6248-4f6e-b0f5-cff32e9622b7",
         "path": "/maps/games",
-        "componentNames": "MOD.Core.MapComponent,MOD.Core.FootholdComponent",
+        "componentNames": "MOD.Core.MapComponent,MOD.Core.FootholdComponent,MOD.Core.PhysicsSimulatorComponent",
         "jsonString": {
           "name": "games",
           "path": "/maps/games",
@@ -38,6 +38,20 @@
             {
               "@type": "MOD.Core.FootholdComponent",
               "FootholdsByLayer": {},
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.PhysicsSimulatorComponent",
+              "Gravity": {
+                "x": 0.0,
+                "y": 0.0
+              },
+              "NativePositionIteration": 3,
+              "NativeVelocityIteration": 8,
+              "Paused": false,
+              "PositionIteration": 3,
+              "ServerSimulation": false,
+              "VelocityIteration": 8,
               "Enable": true
             }
           ],
