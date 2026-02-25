@@ -411,6 +411,7 @@
               "EndFrameIndex": 2147483647,
               "FlipX": true,
               "FlipY": true,
+              "OrderInLayer": 1,
               "RenderSetting": 0,
               "StartFrameIndex": 0,
               "Enable": true

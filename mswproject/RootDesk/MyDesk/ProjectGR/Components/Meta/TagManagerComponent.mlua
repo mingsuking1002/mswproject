@@ -36,7 +36,8 @@ script TagManagerComponent extends Component
 
         self._T.CharacterStates = {}
         self._T.CharacterStates[1] = self:CaptureCurrentCharacterState()
-        self._T.CharacterStates[2] = self:CloneCharacterState(self._T.CharacterStates[1])
+        -- Character B state must start empty; cloning A here makes first tag-to-B overwrite B weapon data with A snapshot.
+        self._T.CharacterStates[2] = nil
 
         if self.EnsureCharacterDataOnInit == true then
             self:EnsureCharacterDataComponentServer()

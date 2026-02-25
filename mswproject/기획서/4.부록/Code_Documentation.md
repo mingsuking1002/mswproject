@@ -1987,3 +1987,32 @@
 | Item | Detail |
 |---|---|
 | 계산식 강제 경로 | `CalculateFinalDamage()`가 `ResolveWeaponAttackFromLevelServer()`를 우선 호출해 레벨 공식 공격력을 최우선 적용. |
+
+## 2026-02-25 Smite One-Shot Visual Spawn (No Projectile Hitbox)
+
+### FireSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Smite visual options | Added `EnableSmiteVisualSpawn` and `SmiteVisualLifetime` properties. |
+| One-shot visual path | `SmiteAttackServer()` now triggers `SpawnSmiteVisualServer(targetWorldPosition)` and keeps smite as non-projectile damage logic. |
+| No gameplay collision/damage from visual | `PrepareSmiteVisualEntityServer()` disables `ProjectileComponent`, `TriggerComponent`, and physics collider/body on spawned visual entity. |
+| Lifecycle cleanup | Added `ClearSmiteVisualRuntimeServer()` and `ClearAllSmiteVisualRuntimeServer()`; called from both `OnEndPlay()` and `OnDestroy()`. |
+
+## 2026-02-25 Tag B Weapon Swap Override Fix
+
+### TagManagerComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/TagManagerComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/TagManagerComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Root cause fix | Removed initial `CharacterStates[2]` clone from character A snapshot. |
+| Behavior change | Character B now starts with empty snapshot (`nil`), so first tag-to-B keeps `PlayerbleData(player_b)` weapon slots instead of being overwritten by A state. |
+| Stability | Subsequent tags still preserve per-character runtime state via existing `StoreCharacterState()`/`ApplyCharacterState()` flow. |

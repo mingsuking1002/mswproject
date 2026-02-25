@@ -35,6 +35,8 @@ script FireSystemComponent extends Component
     property string CurrentTurretModelId = ""
     property string ProjectileDataTableName = "ProjectileData"
     property string SummonDataTableName = "SummonData"
+    property boolean EnableSmiteVisualSpawn = true
+    property number SmiteVisualLifetime = 0.35
 
     -- Server initializes cooldown state and utility bootstrap before combat begins.
     @ExecSpace("ServerOnly")
@@ -44,6 +46,7 @@ script FireSystemComponent extends Component
         self._T.MissingProjectileWarnAt = -9999.0
         self._T.MissingSummonWarnAt = -9999.0
         self._T.InvalidFireConfigWarnAt = -9999.0
+        self._T.SmiteVisualRuntimeByEntity = {}
         self:EnsureGRUtil()
     end
 
@@ -525,9 +528,10 @@ script FireSystemComponent extends Component
     -- Smite deals instant server-side damage without projectile spawn.
     @ExecSpace("ServerOnly")
     method boolean SmiteAttackServer(Vector2 targetWorldPosition)
+        local didSpawnVisual = self:SpawnSmiteVisualServer(targetWorldPosition)
         local damage = self:CalculateFinalDamage()
         if damage <= 0 then
-            return false
+            return didSpawnVisual
         end
 
         local radius = math.max(self.SplashSize, 0)
@@ -538,18 +542,163 @@ script FireSystemComponent extends Component
 
         local nearestTarget = self:FindNearestDamageTargetServer(targetWorldPosition)
         if nearestTarget == nil or isvalid(nearestTarget) == false then
-            return false
+            return didSpawnVisual
         end
 
         local hpSystem = self:ResolveComponentSafe(nearestTarget, "HPSystemComponent", "CurrentHP")
         if hpSystem == nil then
+            return didSpawnVisual
+        end
+
+        local applyOk, _ = pcall(function()
+            hpSystem:ApplyDamage(damage)
+        end)
+        if applyOk == true then
+            return true
+        end
+
+        return didSpawnVisual
+    end
+
+    -- Smite can spawn projectile model as short-lived visual-only marker without collision or damage logic.
+    @ExecSpace("ServerOnly")
+    method boolean SpawnSmiteVisualServer(Vector2 targetWorldPosition)
+        if self.EnableSmiteVisualSpawn ~= true then
+            return false
+        end
+        if targetWorldPosition == nil then
+            return false
+        end
+        if self.ProjectileModelId == nil or self.ProjectileModelId == "" then
             return false
         end
 
-        pcall(function()
-            hpSystem:ApplyDamage(damage)
-        end)
+        local parentEntity = self.Entity.CurrentMap
+        if parentEntity == nil or isvalid(parentEntity) == false then
+            parentEntity = self.Entity
+        end
+
+        local spawnPosition = Vector3(targetWorldPosition.x, targetWorldPosition.y, 0)
+        local visualEntity = _SpawnService:SpawnByModelId(self.ProjectileModelId, "SmiteVisual", spawnPosition, parentEntity)
+        if visualEntity == nil or isvalid(visualEntity) == false then
+            return false
+        end
+
+        self:PrepareSmiteVisualEntityServer(visualEntity)
+
+        if self._T.SmiteVisualRuntimeByEntity == nil then
+            self._T.SmiteVisualRuntimeByEntity = {}
+        end
+
+        local runtime = {}
+        runtime.TimerId = 0
+        self._T.SmiteVisualRuntimeByEntity[visualEntity] = runtime
+
+        local lifeTime = math.max(self.SmiteVisualLifetime, 0.05)
+        local clearFn = function()
+            self:ClearSmiteVisualRuntimeServer(visualEntity, true)
+        end
+        runtime.TimerId = _TimerService:SetTimerOnce(clearFn, lifeTime)
+        self._T.SmiteVisualRuntimeByEntity[visualEntity] = runtime
         return true
+    end
+
+    -- Visual-only smite entity disables collision and projectile logic so it cannot apply gameplay damage.
+    @ExecSpace("ServerOnly")
+    method void PrepareSmiteVisualEntityServer(Entity visualEntity)
+        if visualEntity == nil or isvalid(visualEntity) == false then
+            return
+        end
+
+        local projectile = self:ResolveComponentSafe(visualEntity, "ProjectileComponent", nil)
+        if projectile ~= nil then
+            pcall(function()
+                projectile.Enable = false
+            end)
+        end
+
+        local trigger = self:ResolveComponentSafe(visualEntity, "TriggerComponent", nil)
+        if trigger ~= nil then
+            pcall(function()
+                trigger.IsPassive = true
+            end)
+            pcall(function()
+                trigger.Enable = false
+            end)
+        end
+
+        local physicsCollider = self:ResolveComponentSafe(visualEntity, "PhysicsColliderComponent", nil)
+        if physicsCollider ~= nil then
+            pcall(function()
+                physicsCollider.Enable = false
+            end)
+            pcall(function()
+                physicsCollider.EnableContactEvent = false
+            end)
+        end
+
+        local physicsBody = self:ResolveComponentSafe(visualEntity, "PhysicsRigidbodyComponent", nil)
+        if physicsBody ~= nil then
+            pcall(function()
+                physicsBody.Enable = false
+            end)
+            pcall(function()
+                physicsBody:SetLinearVelocity(Vector2.zero)
+            end)
+        end
+
+        local rigidbody = self:ResolveComponentSafe(visualEntity, "RigidbodyComponent", nil)
+        if rigidbody ~= nil then
+            pcall(function()
+                rigidbody.MoveVelocity = Vector2.zero
+            end)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ClearSmiteVisualRuntimeServer(Entity visualEntity, boolean destroyEntity)
+        if self._T.SmiteVisualRuntimeByEntity ~= nil then
+            local runtime = self._T.SmiteVisualRuntimeByEntity[visualEntity]
+            if runtime ~= nil then
+                local timerId = runtime.TimerId
+                if timerId ~= nil and timerId > 0 then
+                    pcall(function()
+                        _TimerService:ClearTimer(timerId)
+                    end)
+                end
+                self._T.SmiteVisualRuntimeByEntity[visualEntity] = nil
+            end
+        end
+
+        if destroyEntity == true and visualEntity ~= nil and isvalid(visualEntity) == true then
+            _EntityService:Destroy(visualEntity)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ClearAllSmiteVisualRuntimeServer(boolean destroyEntities)
+        if self._T.SmiteVisualRuntimeByEntity == nil then
+            self._T.SmiteVisualRuntimeByEntity = {}
+            return
+        end
+
+        local tracked = self._T.SmiteVisualRuntimeByEntity
+        self._T.SmiteVisualRuntimeByEntity = {}
+
+        for visualEntity, runtime in pairs(tracked) do
+            if runtime ~= nil then
+                local timerId = runtime.TimerId
+                if timerId ~= nil and timerId > 0 then
+                    pcall(function()
+                        _TimerService:ClearTimer(timerId)
+                    end)
+                end
+            end
+
+            if destroyEntities == true and visualEntity ~= nil and isvalid(visualEntity) == true then
+                _EntityService:Destroy(visualEntity)
+            end
+        end
     end
 
     @ExecSpace("ServerOnly")
@@ -856,6 +1005,13 @@ script FireSystemComponent extends Component
             _TimerService:ClearTimer(self._T.FireCooldownTimerId)
             self._T.FireCooldownTimerId = 0
         end
+        self:ClearAllSmiteVisualRuntimeServer(true)
+    end
+
+    -- Destroy repeats timer/entity cleanup as final safety net.
+    @ExecSpace("ServerOnly")
+    method void OnDestroy()
+        self:ClearAllSmiteVisualRuntimeServer(true)
     end
 
     -- Utility bootstrap first; fallback path allows direct safe lookup when global util is absent.
