@@ -209,10 +209,27 @@ script LobbyFlowComponent extends Component
     -- Run completion path keeps compatibility with existing HP/game-over integration.
     @ExecSpace("ServerOnly")
     method void HandleRunCompletedServer(boolean isClear)
+        self:TryClearFieldItemsForOwnerServer()
         self:TryResetGoldForOwnerServer()
         self:TryResetShopForOwnerServer()
         self:SetLobbyStateServer(true)
         self:MoveOwnerToLobbyMapIfNeeded()
+    end
+
+    -- Run completion clears lingering drop entities so next run always starts with an empty field state.
+    @ExecSpace("ServerOnly")
+    method void TryClearFieldItemsForOwnerServer()
+        local dropManager = self:ResolveComponentSafe(self.Entity, "ItemDropManagerComponent", "DropDataTableName")
+        if dropManager == nil then
+            return
+        end
+        if dropManager.ClearAllFieldItemsServer == nil then
+            return
+        end
+
+        pcall(function()
+            dropManager:ClearAllFieldItemsServer()
+        end)
     end
 
     -- Lobby return resets run-lifetime gold so each run starts from deterministic initial currency.

@@ -2016,3 +2016,104 @@
 | Root cause fix | Removed initial `CharacterStates[2]` clone from character A snapshot. |
 | Behavior change | Character B now starts with empty snapshot (`nil`), so first tag-to-B keeps `PlayerbleData(player_b)` weapon slots instead of being overwritten by A state. |
 | Stability | Subsequent tags still preserve per-character runtime state via existing `StoreCharacterState()`/`ApplyCharacterState()` flow. |
+
+## 2026-02-25 Smite Timing Control (Visual Lifetime + Damage Delay)
+
+### FireSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Damage hit timing property | Added `SmiteDamageDelay` property to control when smite damage is applied after cast. |
+| Timing split | `SmiteVisualLifetime` controls only visual lifespan, while `SmiteDamageDelay` controls damage timing independently. |
+| Delayed damage scheduler | Added `ScheduleSmiteDamageServer()` and `ApplySmiteDamageAtPositionServer()` so instant/delayed paths share same hit logic. |
+| Cleanup safety | Added `ClearAllSmiteDamageTimerServer()` and called it from `OnEndPlay()`/`OnDestroy()` to prevent orphan timer callbacks. |
+
+## 2026-02-25 Per-Smite Timing From ProjectileData
+
+### WeaponSwapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Slot state fields | Added slot runtime fields `SmiteDamageDelay`, `SmiteVisualLifetime` in `NormalizeSlotData()`. |
+| ProjectileData binding | `ApplyWeaponRowToSlotDataServer()` now reads `smite_damage_delay`, `smite_visual_lifetime` from projectile rows and applies per-weapon timing. |
+| Fire bridge | `ApplySlotDataToCombat()` writes slot timing values into `FireSystemComponent.SmiteDamageDelay/SmiteVisualLifetime`. |
+| Tag/Swap persistence | `CaptureRuntimeToSlot()` now captures smite timing from `FireSystemComponent`, preserving per-character/per-slot state after tag/swap. |
+
+### ProjectileData (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Data/ProjectileData.csv`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| New columns | Added `smite_damage_delay`, `smite_visual_lifetime` columns for per-smite timing control. |
+| Initial values | `deathperado_pt`, `gungnir_pt` set to `0`, `0.35` to preserve current behavior baseline. |
+
+## 2026-02-25 DropSystem Implementation (SPEC_DropSystem)
+
+### ItemDropManagerComponent (New)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ItemDropManagerComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ItemDropManagerComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| New drop runtime component | Added `ItemDropManagerComponent` for server-authoritative drop/pickup flow and client-side magnet visuals. |
+| Data cache load | `OnBeginPlay()` now loads `DropData` + `ItemData` into `_T.DropCache` and `_T.ItemCache`. |
+| Drop execution API | Added `ExecuteDropServer(deathPosition, dropId)` with slot(1~3) rate checks and empty-slot skip. |
+| Gold amount interpretation | Gold (`itemId=="gold"` or `effect_type=="None"`) uses `spawnCount=1`, `payloadAmount=drop_amount`. |
+| Field spawn policy | Spawns by `_SpawnService:SpawnByModelId(FieldItemModelId, "FieldItem", ...)` and enforces `MaxFieldItems` FIFO eviction. |
+| Gameplay collision off | Disables projectile/trigger/physics components on spawned field items to prevent combat interaction. |
+| Magnet/pickup loop | `OnUpdate(dt)` handles airborne scatter interpolation, grounded magnet movement, and pickup request dispatch. |
+| Pickup authority | Added `RequestPickupServer(itemEntity, itemId)` with owner validation + runtime validity checks. |
+| Pickup effects | `heal_hp -> HPSystemComponent:Heal`, `a_mag/b_mag -> ReloadComponent` all slots full refill, gold -> `GoldComponent:AddGold(payloadAmount)`. |
+| Cleanup path | Added `ClearAllFieldItemsServer()` and safety cleanup in `OnEndPlay()` / `OnDestroy()`. |
+
+### MonsterSpawnComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Death drop hook | `BeginMonsterDeathSequenceServer()` now resolves `ItemDropManagerComponent` and calls `ExecuteDropServer()` right after `PrepareDeadMonsterForFadeServer()`. |
+| Drop metadata usage | Uses `SpawnMeta.DropId` (from `BuildSpawnMetaFromRow`) to execute per-monster drop table. |
+
+### LobbyFlowComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Run-end field cleanup | Added `TryClearFieldItemsForOwnerServer()` and call at start of `HandleRunCompletedServer()`. |
+| Drop manager bridge | Uses `ItemDropManagerComponent.ClearAllFieldItemsServer()` when component is available. |
+
+### Map01BootstrapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Required component list | Added `ItemDropManagerComponent` into `AttachRequiredComponentsServer()` required components. |
+
+### Codeblock Sync Integrity
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Target serialization fix | Corrected `ContentProto.Json.Target` to plain string for DropSystem-related codeblocks (`MonsterSpawnComponent`, `LobbyFlowComponent`, `Map01BootstrapComponent`, `ItemDropManagerComponent`). |
+| Source parity | Verified each related `.codeblock` target matches paired `.mlua` source exactly. |

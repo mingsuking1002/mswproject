@@ -37,6 +37,7 @@ script FireSystemComponent extends Component
     property string SummonDataTableName = "SummonData"
     property boolean EnableSmiteVisualSpawn = true
     property number SmiteVisualLifetime = 0.35
+    property number SmiteDamageDelay = 0.0
 
     -- Server initializes cooldown state and utility bootstrap before combat begins.
     @ExecSpace("ServerOnly")
@@ -47,6 +48,7 @@ script FireSystemComponent extends Component
         self._T.MissingSummonWarnAt = -9999.0
         self._T.InvalidFireConfigWarnAt = -9999.0
         self._T.SmiteVisualRuntimeByEntity = {}
+        self._T.SmiteDamageTimerById = {}
         self:EnsureGRUtil()
     end
 
@@ -525,7 +527,7 @@ script FireSystemComponent extends Component
         return templateEntity
     end
 
-    -- Smite deals instant server-side damage without projectile spawn.
+    -- Smite applies server-authoritative damage without gameplay projectile spawn, with optional delay for timing sync.
     @ExecSpace("ServerOnly")
     method boolean SmiteAttackServer(Vector2 targetWorldPosition)
         local didSpawnVisual = self:SpawnSmiteVisualServer(targetWorldPosition)
@@ -534,30 +536,90 @@ script FireSystemComponent extends Component
             return didSpawnVisual
         end
 
-        local radius = math.max(self.SplashSize, 0)
-        if radius > 0 then
-            self:ApplySmiteDamageInRadiusServer(targetWorldPosition, radius, damage)
+        local radiusSnapshot = math.max(self.SplashSize, 0)
+        local delaySnapshot = math.max(self.SmiteDamageDelay, 0)
+        if delaySnapshot > 0 then
+            self:ScheduleSmiteDamageServer(targetWorldPosition, damage, radiusSnapshot, delaySnapshot)
+            return true
+        end
+
+        local didDamage = self:ApplySmiteDamageAtPositionServer(targetWorldPosition, radiusSnapshot, damage)
+        if didDamage == true then
+            return true
+        end
+
+        return didSpawnVisual
+    end
+
+    -- Smite damage can be delayed to match animation timing, while using shot-time snapshots for deterministic hit values.
+    @ExecSpace("ServerOnly")
+    method void ScheduleSmiteDamageServer(Vector2 targetWorldPosition, integer damage, number radius, number delay)
+        if targetWorldPosition == nil then
+            return
+        end
+        if damage == nil or damage <= 0 then
+            return
+        end
+
+        local hitDelay = math.max(delay, 0)
+        if hitDelay <= 0 then
+            self:ApplySmiteDamageAtPositionServer(targetWorldPosition, radius, damage)
+            return
+        end
+
+        if self._T.SmiteDamageTimerById == nil then
+            self._T.SmiteDamageTimerById = {}
+        end
+
+        local targetSnapshot = Vector2(targetWorldPosition.x, targetWorldPosition.y)
+        local radiusSnapshot = math.max(radius, 0)
+        local damageSnapshot = math.max(0, math.floor(damage))
+        if damageSnapshot <= 0 then
+            return
+        end
+
+        local timerId = 0
+        local hitFn = function()
+            if self._T.SmiteDamageTimerById ~= nil then
+                self._T.SmiteDamageTimerById[timerId] = nil
+            end
+            self:ApplySmiteDamageAtPositionServer(targetSnapshot, radiusSnapshot, damageSnapshot)
+        end
+
+        timerId = _TimerService:SetTimerOnce(hitFn, hitDelay)
+        self._T.SmiteDamageTimerById[timerId] = true
+    end
+
+    -- Shared hit resolver keeps instant and delayed smite paths behavior-identical.
+    @ExecSpace("ServerOnly")
+    method boolean ApplySmiteDamageAtPositionServer(Vector2 targetWorldPosition, number radius, integer damage)
+        if targetWorldPosition == nil then
+            return false
+        end
+        if damage == nil or damage <= 0 then
+            return false
+        end
+
+        local hitRadius = math.max(radius, 0)
+        if hitRadius > 0 then
+            self:ApplySmiteDamageInRadiusServer(targetWorldPosition, hitRadius, damage)
             return true
         end
 
         local nearestTarget = self:FindNearestDamageTargetServer(targetWorldPosition)
         if nearestTarget == nil or isvalid(nearestTarget) == false then
-            return didSpawnVisual
+            return false
         end
 
         local hpSystem = self:ResolveComponentSafe(nearestTarget, "HPSystemComponent", "CurrentHP")
         if hpSystem == nil then
-            return didSpawnVisual
+            return false
         end
 
         local applyOk, _ = pcall(function()
             hpSystem:ApplyDamage(damage)
         end)
-        if applyOk == true then
-            return true
-        end
-
-        return didSpawnVisual
+        return (applyOk == true)
     end
 
     -- Smite can spawn projectile model as short-lived visual-only marker without collision or damage logic.
@@ -697,6 +759,25 @@ script FireSystemComponent extends Component
 
             if destroyEntities == true and visualEntity ~= nil and isvalid(visualEntity) == true then
                 _EntityService:Destroy(visualEntity)
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ClearAllSmiteDamageTimerServer()
+        if self._T.SmiteDamageTimerById == nil then
+            self._T.SmiteDamageTimerById = {}
+            return
+        end
+
+        local tracked = self._T.SmiteDamageTimerById
+        self._T.SmiteDamageTimerById = {}
+
+        for timerId, _ in pairs(tracked) do
+            if timerId ~= nil and timerId > 0 then
+                pcall(function()
+                    _TimerService:ClearTimer(timerId)
+                end)
             end
         end
     end
@@ -1006,12 +1087,14 @@ script FireSystemComponent extends Component
             self._T.FireCooldownTimerId = 0
         end
         self:ClearAllSmiteVisualRuntimeServer(true)
+        self:ClearAllSmiteDamageTimerServer()
     end
 
     -- Destroy repeats timer/entity cleanup as final safety net.
     @ExecSpace("ServerOnly")
     method void OnDestroy()
         self:ClearAllSmiteVisualRuntimeServer(true)
+        self:ClearAllSmiteDamageTimerServer()
     end
 
     -- Utility bootstrap first; fallback path allows direct safe lookup when global util is absent.

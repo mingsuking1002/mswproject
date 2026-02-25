@@ -1,0 +1,1111 @@
+@Component
+script ItemDropManagerComponent extends Component
+
+    property string DropDataTableName = "DropData"
+    property string ItemDataTableName = "ItemData"
+
+    property number MagnetRadius = 3.0
+    property number PickupRadius = 0.5
+    property number MagnetSpeed = 12.0
+    property number ScatterRadius = 2.0
+    property number ScatterAirTime = 0.4
+    property integer MaxFieldItems = 50
+
+    property string FieldItemModelId = "model://ff52b16c-daad-4d86-a30e-4b081bfc6581"
+    property string DefaultItemIconRuid = ""
+    property boolean EnableDebugLogs = false
+
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self:EnsureGRUtil()
+        self._T.DropCache = {}
+        self._T.ItemCache = {}
+        self._T.FieldItemByEntity = {}
+        self._T.FieldItemOrder = {}
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self:LoadDataCachesServer()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        self:ClearAllFieldItemsServer()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnDestroy()
+        self:ClearAllFieldItemsServer()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnMapEnter(Entity enteredMap)
+        self._T.ClientFieldItemByEntity = {}
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnMapLeave(Entity leftMap)
+        self._T.ClientFieldItemByEntity = {}
+    end
+
+    -- Client handles only visuals; authoritative pickup and rewards remain server-side.
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number dt)
+        local runtimeByEntity = self._T.ClientFieldItemByEntity
+        if runtimeByEntity == nil then
+            return
+        end
+
+        local now = self:GetNowSeconds()
+        local ownerPos = self:GetEntityWorldPosition2D(self.Entity)
+
+        for itemEntity, runtime in pairs(runtimeByEntity) do
+            if itemEntity == nil or isvalid(itemEntity) == false or runtime == nil then
+                runtimeByEntity[itemEntity] = nil
+                continue
+            end
+
+            if runtime.State == "airborne" then
+                local airTime = runtime.AirborneSeconds
+                if airTime == nil or airTime <= 0 then
+                    runtime.State = "grounded"
+                    self:SetEntityWorldPosition2D(itemEntity, runtime.TargetPosition)
+                else
+                    local ratio = (now - runtime.SpawnTime) / airTime
+                    if ratio < 0 then
+                        ratio = 0
+                    end
+                    if ratio > 1 then
+                        ratio = 1
+                    end
+                    local startPos = runtime.StartPosition
+                    local targetPos = runtime.TargetPosition
+                    local nextPos = Vector2(
+                        startPos.x + ((targetPos.x - startPos.x) * ratio),
+                        startPos.y + ((targetPos.y - startPos.y) * ratio)
+                    )
+                    self:SetEntityWorldPosition2D(itemEntity, nextPos)
+                    if ratio >= 1 then
+                        runtime.State = "grounded"
+                        self:SetEntityWorldPosition2D(itemEntity, targetPos)
+                    end
+                end
+                runtimeByEntity[itemEntity] = runtime
+                continue
+            end
+
+            if ownerPos == nil then
+                runtimeByEntity[itemEntity] = runtime
+                continue
+            end
+
+            local itemPos = self:GetEntityWorldPosition2D(itemEntity)
+            if itemPos == nil then
+                runtimeByEntity[itemEntity] = runtime
+                continue
+            end
+
+            local dx = ownerPos.x - itemPos.x
+            local dy = ownerPos.y - itemPos.y
+            local distanceSqr = (dx * dx) + (dy * dy)
+            local magnetSqr = self.MagnetRadius * self.MagnetRadius
+            if distanceSqr <= magnetSqr and distanceSqr > 0 then
+                local distance = math.sqrt(distanceSqr)
+                local maxStep = math.max(self.MagnetSpeed, 0) * math.max(dt, 0)
+                local step = math.min(distance, maxStep)
+                local ratio = 0
+                if distance > 0 then
+                    ratio = step / distance
+                end
+                local movedPos = Vector2(itemPos.x + (dx * ratio), itemPos.y + (dy * ratio))
+                self:SetEntityWorldPosition2D(itemEntity, movedPos)
+                itemPos = movedPos
+                dx = ownerPos.x - itemPos.x
+                dy = ownerPos.y - itemPos.y
+                distanceSqr = (dx * dx) + (dy * dy)
+            end
+
+            local pickupSqr = self.PickupRadius * self.PickupRadius
+            if distanceSqr <= pickupSqr then
+                local canRequest = (runtime.PickupRequested ~= true)
+                if canRequest ~= true then
+                    local lastAt = runtime.LastPickupRequestAt
+                    if lastAt == nil then
+                        lastAt = -9999
+                    end
+                    if (now - lastAt) >= 0.25 then
+                        canRequest = true
+                    end
+                end
+
+                if canRequest == true then
+                    runtime.PickupRequested = true
+                    runtime.LastPickupRequestAt = now
+                    pcall(function()
+                        self:RequestPickupServer(itemEntity, runtime.ItemId)
+                    end)
+                end
+            end
+
+            runtimeByEntity[itemEntity] = runtime
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ExecuteDropServer(Vector2 deathPosition, string dropId)
+        if deathPosition == nil then
+            return
+        end
+        if dropId == nil or dropId == "" then
+            return
+        end
+
+        local dropEntry = nil
+        if self._T.DropCache ~= nil then
+            dropEntry = self._T.DropCache[dropId]
+        end
+        if dropEntry == nil then
+            return
+        end
+
+        for slot = 1, 3 do
+            local slotEntry = dropEntry[slot]
+            if slotEntry == nil then
+                continue
+            end
+
+            local itemId = slotEntry.ItemId
+            if itemId == nil or itemId == "" then
+                continue
+            end
+
+            local rate = tonumber(slotEntry.Rate)
+            if rate == nil or rate <= 0 then
+                continue
+            end
+            if rate < 1 and math.random() > rate then
+                continue
+            end
+
+            local amount = tonumber(slotEntry.Amount)
+            if amount == nil then
+                amount = 0
+            end
+            amount = math.max(0, math.floor(amount))
+            if amount <= 0 then
+                continue
+            end
+
+            local itemData = self:ResolveItemDataByIdServer(itemId)
+            local isGold = self:IsGoldItemByContract(itemId, itemData)
+            local spawnCount = amount
+            local payloadAmount = 1
+            if isGold == true then
+                spawnCount = 1
+                payloadAmount = amount
+            end
+
+            for count = 1, spawnCount do
+                self:SpawnFieldItemServer(deathPosition, itemId, payloadAmount)
+            end
+        end
+    end
+
+    @ExecSpace("Server")
+    method void RequestPickupServer(Entity itemEntity, string itemId)
+        if self:IsOwnerRequest(senderUserId) ~= true then
+            return
+        end
+        if itemEntity == nil or isvalid(itemEntity) == false then
+            return
+        end
+
+        local runtime = nil
+        if self._T.FieldItemByEntity ~= nil then
+            runtime = self._T.FieldItemByEntity[itemEntity]
+        end
+        if runtime == nil then
+            return
+        end
+        if runtime.State ~= "grounded" then
+            return
+        end
+
+        local requested = ""
+        if itemId ~= nil then
+            requested = tostring(itemId)
+        end
+        local actual = ""
+        if runtime.ItemId ~= nil then
+            actual = tostring(runtime.ItemId)
+        end
+        if requested ~= "" and requested ~= actual then
+            return
+        end
+
+        self:ApplyItemPickupEffectServer(runtime)
+        self:RemoveFieldItemServer(itemEntity, true)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ClearAllFieldItemsServer()
+        if self._T.FieldItemByEntity == nil then
+            self._T.FieldItemByEntity = {}
+            self._T.FieldItemOrder = {}
+            return
+        end
+
+        local targets = {}
+        for itemEntity, _ in pairs(self._T.FieldItemByEntity) do
+            table.insert(targets, itemEntity)
+        end
+
+        for _, itemEntity in pairs(targets) do
+            self:RemoveFieldItemServer(itemEntity, true)
+        end
+
+        self._T.FieldItemByEntity = {}
+        self._T.FieldItemOrder = {}
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SpawnFieldItemServer(Vector2 deathPosition, string itemId, integer payloadAmount)
+        if deathPosition == nil then
+            return
+        end
+        if itemId == nil or itemId == "" then
+            return
+        end
+
+        local modelId = self:NormalizeModelIdText(self.FieldItemModelId)
+        if modelId == "" then
+            return
+        end
+
+        self:EnsureServerRuntimeContainers()
+        self:EnforceMaxFieldItemsServer()
+
+        local parentEntity = self.Entity.CurrentMap
+        if parentEntity == nil or isvalid(parentEntity) == false then
+            parentEntity = self.Entity
+        end
+        if parentEntity == nil or isvalid(parentEntity) == false then
+            return
+        end
+
+        local spawnPosition = Vector3(deathPosition.x, deathPosition.y, 0)
+        local itemEntity = nil
+        local spawnOk, spawnResult = pcall(function()
+            return _SpawnService:SpawnByModelId(modelId, "FieldItem", spawnPosition, parentEntity)
+        end)
+        if spawnOk == true then
+            itemEntity = spawnResult
+        end
+        if itemEntity == nil or isvalid(itemEntity) == false then
+            return
+        end
+
+        self:ApplyFieldItemVisualServer(itemEntity, itemId)
+        self:DisableFieldItemGameplayComponentsServer(itemEntity)
+
+        local offset = self:GetRandomScatterOffset()
+        local targetPos = Vector2(deathPosition.x + offset.x, deathPosition.y + offset.y)
+        local airTime = math.max(self.ScatterAirTime, 0)
+
+        local runtime = {}
+        runtime.Entity = itemEntity
+        runtime.ItemId = itemId
+        local finalPayload = tonumber(payloadAmount)
+        if finalPayload == nil then
+            finalPayload = 1
+        end
+        runtime.PayloadAmount = math.max(1, math.floor(finalPayload))
+        runtime.State = "airborne"
+        runtime.StartPosition = Vector2(deathPosition.x, deathPosition.y)
+        runtime.TargetPosition = Vector2(targetPos.x, targetPos.y)
+        runtime.SpawnTime = self:GetNowSeconds()
+        runtime.AirborneUntil = runtime.SpawnTime + airTime
+        runtime.AirborneTimerId = 0
+
+        self._T.FieldItemByEntity[itemEntity] = runtime
+        table.insert(self._T.FieldItemOrder, itemEntity)
+
+        if airTime <= 0 then
+            self:SetFieldItemGroundedServer(itemEntity)
+        else
+            local callback = function()
+                self:SetFieldItemGroundedServer(itemEntity)
+            end
+            runtime.AirborneTimerId = _TimerService:SetTimerOnce(callback, airTime)
+            self._T.FieldItemByEntity[itemEntity] = runtime
+        end
+
+        self:RegisterFieldItemClient(itemEntity, itemId, runtime.StartPosition, runtime.TargetPosition, airTime)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SetFieldItemGroundedServer(Entity itemEntity)
+        if self._T.FieldItemByEntity == nil then
+            return
+        end
+
+        local runtime = self._T.FieldItemByEntity[itemEntity]
+        if runtime == nil then
+            return
+        end
+
+        runtime.AirborneTimerId = 0
+        runtime.State = "grounded"
+        runtime.AirborneUntil = self:GetNowSeconds()
+        self._T.FieldItemByEntity[itemEntity] = runtime
+        self:SetEntityWorldPosition2D(itemEntity, runtime.TargetPosition)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RemoveFieldItemServer(Entity itemEntity, boolean destroyEntity)
+        if itemEntity == nil then
+            return
+        end
+
+        self:EnsureServerRuntimeContainers()
+
+        local runtime = self._T.FieldItemByEntity[itemEntity]
+        if runtime ~= nil then
+            local timerId = runtime.AirborneTimerId
+            if timerId ~= nil and timerId > 0 then
+                pcall(function()
+                    _TimerService:ClearTimer(timerId)
+                end)
+            end
+            self._T.FieldItemByEntity[itemEntity] = nil
+        end
+
+        for index = #self._T.FieldItemOrder, 1, -1 do
+            if self._T.FieldItemOrder[index] == itemEntity then
+                table.remove(self._T.FieldItemOrder, index)
+                break
+            end
+        end
+
+        self:UnregisterFieldItemClient(itemEntity)
+
+        if destroyEntity == true and itemEntity ~= nil and isvalid(itemEntity) == true then
+            pcall(function()
+                _EntityService:Destroy(itemEntity)
+            end)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyItemPickupEffectServer(table runtime)
+        if runtime == nil then
+            return
+        end
+
+        local itemId = ""
+        if runtime.ItemId ~= nil then
+            itemId = tostring(runtime.ItemId)
+        end
+        if itemId == "" then
+            return
+        end
+
+        local payloadAmount = 1
+        if runtime.PayloadAmount ~= nil then
+            local parsed = tonumber(runtime.PayloadAmount)
+            if parsed ~= nil then
+                payloadAmount = math.max(1, math.floor(parsed))
+            end
+        end
+
+        local itemData = self:ResolveItemDataByIdServer(itemId)
+        local effectType = ""
+        local effectValue1 = 0
+        if itemData ~= nil then
+            if itemData.EffectType ~= nil then
+                effectType = string.lower(tostring(itemData.EffectType))
+            end
+            if itemData.EffectValue1 ~= nil then
+                local parsed = tonumber(itemData.EffectValue1)
+                if parsed ~= nil then
+                    effectValue1 = math.floor(parsed)
+                end
+            end
+        end
+
+        if effectType == "heal_hp" then
+            local hpSystem = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "CurrentHP")
+            if hpSystem ~= nil and hpSystem.Heal ~= nil then
+                pcall(function()
+                    hpSystem:Heal(math.max(1, effectValue1))
+                end)
+            end
+            return
+        end
+
+        if effectType == "a_mag" or effectType == "b_mag" then
+            self:RefillAllAmmoSlotsServer()
+            return
+        end
+
+        if self:IsGoldItemByContract(itemId, itemData) == true then
+            local goldComponent = self:ResolveComponentSafe(self.Entity, "GoldComponent", "CurrentGold")
+            if goldComponent ~= nil and goldComponent.AddGold ~= nil then
+                pcall(function()
+                    goldComponent:AddGold(payloadAmount)
+                end)
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RefillAllAmmoSlotsServer()
+        local reload = self:ResolveComponentSafe(self.Entity, "ReloadComponent", "CurrentAmmo")
+        if reload == nil then
+            return
+        end
+
+        if reload.CancelCurrentReload ~= nil then
+            pcall(function()
+                reload:CancelCurrentReload()
+            end)
+        end
+
+        local slotCount = 1
+        pcall(function()
+            slotCount = math.max(1, math.floor(reload.WeaponSlotCount))
+        end)
+
+        for slot = 1, slotCount do
+            local slotMax = self:ResolveReloadSlotMaxAmmo(reload, slot)
+            if reload.SetSlotAmmo ~= nil then
+                pcall(function()
+                    reload:SetSlotAmmo(slot, slotMax)
+                end)
+            end
+        end
+
+        local currentSlot = 1
+        pcall(function()
+            currentSlot = math.max(1, math.floor(reload.CurrentWeaponSlot))
+        end)
+        local currentMax = self:ResolveReloadSlotMaxAmmo(reload, currentSlot)
+        pcall(function()
+            reload.CurrentAmmo = currentMax
+            reload.IsReloading = false
+        end)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyFieldItemVisualServer(Entity itemEntity, string itemId)
+        if itemEntity == nil or isvalid(itemEntity) == false then
+            return
+        end
+
+        local iconRuid = ""
+        local itemData = self:ResolveItemDataByIdServer(itemId)
+        if itemData ~= nil and itemData.IconRuid ~= nil then
+            iconRuid = tostring(itemData.IconRuid)
+        end
+        if iconRuid == "" and self.DefaultItemIconRuid ~= nil then
+            iconRuid = tostring(self.DefaultItemIconRuid)
+        end
+        if iconRuid == "" then
+            return
+        end
+
+        local sprite = self:ResolveComponentSafe(itemEntity, "SpriteRendererComponent", "SpriteRUID")
+        if sprite == nil then
+            return
+        end
+
+        pcall(function()
+            sprite.SpriteRUID = iconRuid
+            sprite.StartFrameIndex = 0
+            sprite.EndFrameIndex = 2147483647
+            sprite.PlayRate = 1
+        end)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void DisableFieldItemGameplayComponentsServer(Entity itemEntity)
+        if itemEntity == nil or isvalid(itemEntity) == false then
+            return
+        end
+
+        local projectile = self:ResolveComponentSafe(itemEntity, "ProjectileComponent", nil)
+        if projectile ~= nil then
+            pcall(function()
+                projectile.Enable = false
+            end)
+        end
+
+        local trigger = self:ResolveComponentSafe(itemEntity, "TriggerComponent", nil)
+        if trigger ~= nil then
+            pcall(function()
+                trigger.IsPassive = true
+                trigger.Enable = false
+            end)
+        end
+
+        local physicsCollider = self:ResolveComponentSafe(itemEntity, "PhysicsColliderComponent", nil)
+        if physicsCollider ~= nil then
+            pcall(function()
+                physicsCollider.Enable = false
+                physicsCollider.EnableContactEvent = false
+            end)
+        end
+
+        local physicsBody = self:ResolveComponentSafe(itemEntity, "PhysicsRigidbodyComponent", nil)
+        if physicsBody ~= nil then
+            pcall(function()
+                physicsBody.Enable = false
+                physicsBody:SetLinearVelocity(Vector2.zero)
+            end)
+        end
+
+        local rigidbody = self:ResolveComponentSafe(itemEntity, "RigidbodyComponent", nil)
+        if rigidbody ~= nil then
+            pcall(function()
+                rigidbody.MoveVelocity = Vector2.zero
+            end)
+        end
+    end
+
+    @ExecSpace("Client")
+    method void RegisterFieldItemClient(Entity itemEntity, string itemId, Vector2 startPosition, Vector2 targetPosition, number airborneSeconds)
+        if itemEntity == nil or isvalid(itemEntity) == false then
+            return
+        end
+
+        self:EnsureClientRuntimeContainers()
+
+        local currentPos = self:GetEntityWorldPosition2D(itemEntity)
+        if currentPos == nil then
+            currentPos = Vector2.zero
+        end
+
+        local runtime = {}
+        runtime.ItemId = itemId
+        runtime.State = "airborne"
+        runtime.AirborneSeconds = math.max(airborneSeconds, 0)
+        runtime.PickupRequested = false
+        runtime.LastPickupRequestAt = -9999
+        runtime.SpawnTime = self:GetNowSeconds()
+
+        if startPosition == nil then
+            runtime.StartPosition = Vector2(currentPos.x, currentPos.y)
+        else
+            runtime.StartPosition = Vector2(startPosition.x, startPosition.y)
+        end
+        if targetPosition == nil then
+            runtime.TargetPosition = Vector2(currentPos.x, currentPos.y)
+        else
+            runtime.TargetPosition = Vector2(targetPosition.x, targetPosition.y)
+        end
+
+        if runtime.AirborneSeconds <= 0 then
+            runtime.State = "grounded"
+            self:SetEntityWorldPosition2D(itemEntity, runtime.TargetPosition)
+        end
+
+        self._T.ClientFieldItemByEntity[itemEntity] = runtime
+    end
+
+    @ExecSpace("Client")
+    method void UnregisterFieldItemClient(Entity itemEntity)
+        if itemEntity == nil then
+            return
+        end
+        if self._T.ClientFieldItemByEntity == nil then
+            return
+        end
+
+        self._T.ClientFieldItemByEntity[itemEntity] = nil
+    end
+
+    method void EnsureServerRuntimeContainers()
+        if self._T.FieldItemByEntity == nil then
+            self._T.FieldItemByEntity = {}
+        end
+        if self._T.FieldItemOrder == nil then
+            self._T.FieldItemOrder = {}
+        end
+    end
+
+    method void EnsureClientRuntimeContainers()
+        if self._T.ClientFieldItemByEntity == nil then
+            self._T.ClientFieldItemByEntity = {}
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void EnforceMaxFieldItemsServer()
+        self:EnsureServerRuntimeContainers()
+        local maxItems = math.max(1, math.floor(self.MaxFieldItems))
+        while self:GetFieldItemCountServer() >= maxItems do
+            local oldest = self:GetOldestTrackedFieldItemEntity()
+            if oldest == nil then
+                break
+            end
+            self:RemoveFieldItemServer(oldest, true)
+        end
+    end
+
+    method integer GetFieldItemCountServer()
+        if self._T.FieldItemByEntity == nil then
+            return 0
+        end
+
+        local count = 0
+        for _, _ in pairs(self._T.FieldItemByEntity) do
+            count += 1
+        end
+        return count
+    end
+
+    method Entity GetOldestTrackedFieldItemEntity()
+        if self._T.FieldItemOrder == nil then
+            return nil
+        end
+
+        for index = 1, #self._T.FieldItemOrder do
+            local itemEntity = self._T.FieldItemOrder[index]
+            if itemEntity ~= nil and isvalid(itemEntity) == true then
+                return itemEntity
+            end
+        end
+
+        return nil
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadDataCachesServer()
+        self._T.DropCache = {}
+        self._T.ItemCache = {}
+        self:LoadDropDataCacheServer()
+        self:LoadItemDataCacheServer()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadDropDataCacheServer()
+        if self.DropDataTableName == nil or self.DropDataTableName == "" then
+            return
+        end
+
+        local tableData = nil
+        local tableOk, tableResult = pcall(function()
+            return _DataService:GetTable(self.DropDataTableName)
+        end)
+        if tableOk == true then
+            tableData = tableResult
+        end
+        if tableData == nil then
+            return
+        end
+
+        local rows = nil
+        local rowsOk, rowsResult = pcall(function()
+            return tableData:GetAllRow()
+        end)
+        if rowsOk == true then
+            rows = rowsResult
+        end
+        if rows == nil then
+            return
+        end
+
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+
+            local dropId = self:GetRowString(row, "id", "")
+            if dropId == "" then
+                continue
+            end
+
+            local entry = {}
+            for slot = 1, 3 do
+                local slotEntry = {}
+                slotEntry.ItemId = self:GetRowString(row, "drop_item_" .. tostring(slot), "")
+                slotEntry.Rate = self:GetRowNumber(row, "drop_item_" .. tostring(slot) .. "_rate", 0)
+                slotEntry.Amount = self:GetRowInteger(row, "drop_item_" .. tostring(slot) .. "_amount", 0)
+                if slotEntry.Rate < 0 then
+                    slotEntry.Rate = 0
+                end
+                if slotEntry.Rate > 1 then
+                    slotEntry.Rate = 1
+                end
+                if slotEntry.Amount < 0 then
+                    slotEntry.Amount = 0
+                end
+                entry[slot] = slotEntry
+            end
+
+            self._T.DropCache[dropId] = entry
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadItemDataCacheServer()
+        if self.ItemDataTableName == nil or self.ItemDataTableName == "" then
+            return
+        end
+
+        local tableData = nil
+        local tableOk, tableResult = pcall(function()
+            return _DataService:GetTable(self.ItemDataTableName)
+        end)
+        if tableOk == true then
+            tableData = tableResult
+        end
+        if tableData == nil then
+            return
+        end
+
+        local rows = nil
+        local rowsOk, rowsResult = pcall(function()
+            return tableData:GetAllRow()
+        end)
+        if rowsOk == true then
+            rows = rowsResult
+        end
+        if rows == nil then
+            return
+        end
+
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+
+            local itemId = self:GetRowString(row, "item_id", "")
+            if itemId == "" then
+                continue
+            end
+
+            local itemData = {}
+            itemData.ItemId = itemId
+            itemData.EffectType = self:GetRowString(row, "effect_type", "")
+            itemData.EffectValue1 = self:GetRowInteger(row, "effect_value_1", 0)
+            itemData.EffectValue2 = self:GetRowInteger(row, "effect_value_2", 0)
+            itemData.IconRuid = self:GetRowString(row, "icon_ruid", "")
+            self._T.ItemCache[itemId] = itemData
+        end
+    end
+
+    method table ResolveItemDataByIdServer(string itemId)
+        if itemId == nil or itemId == "" then
+            return nil
+        end
+        if self._T.ItemCache == nil then
+            return nil
+        end
+        return self._T.ItemCache[itemId]
+    end
+
+    method boolean IsGoldItemByContract(string itemId, table itemData)
+        if itemId ~= nil and string.lower(tostring(itemId)) == "gold" then
+            return true
+        end
+        if itemData == nil then
+            return false
+        end
+        if itemData.EffectType == nil then
+            return false
+        end
+
+        local effectType = string.lower(tostring(itemData.EffectType))
+        if effectType == "" then
+            return true
+        end
+        if effectType == "none" then
+            return true
+        end
+
+        return false
+    end
+
+    method integer ResolveReloadSlotMaxAmmo(Component reload, integer slot)
+        if reload == nil then
+            return 1
+        end
+
+        local slotMax = 0
+        pcall(function()
+            if reload._T ~= nil and reload._T.MaxAmmoBySlot ~= nil then
+                local raw = tonumber(reload._T.MaxAmmoBySlot[slot])
+                if raw ~= nil then
+                    slotMax = math.floor(raw)
+                end
+            end
+        end)
+
+        if slotMax <= 0 then
+            pcall(function()
+                local raw = tonumber(reload.MaxAmmo)
+                if raw ~= nil then
+                    slotMax = math.floor(raw)
+                end
+            end)
+        end
+
+        if slotMax <= 0 then
+            slotMax = 1
+        end
+        return slotMax
+    end
+
+    method Vector2 GetRandomScatterOffset()
+        local radius = math.max(self.ScatterRadius, 0)
+        if radius <= 0 then
+            return Vector2.zero
+        end
+
+        local angle = math.random() * math.pi * 2
+        local distance = math.random() * radius
+        return Vector2(math.cos(angle) * distance, math.sin(angle) * distance)
+    end
+
+    method string NormalizeModelIdText(string value)
+        if value == nil then
+            return ""
+        end
+
+        local text = tostring(value)
+        if text == "" then
+            return ""
+        end
+
+        local prefix = "model://"
+        if string.sub(text, 1, #prefix) == prefix then
+            return string.sub(text, #prefix + 1)
+        end
+
+        return text
+    end
+
+    method void SetEntityWorldPosition2D(Entity targetEntity, Vector2 targetPosition)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+        if targetPosition == nil then
+            return
+        end
+
+        local transform = targetEntity.TransformComponent
+        if transform == nil or isvalid(transform) == false then
+            return
+        end
+
+        local currentPos = transform.WorldPosition
+        if currentPos == nil then
+            currentPos = Vector3.zero
+        end
+        pcall(function()
+            transform.WorldPosition = Vector3(targetPosition.x, targetPosition.y, currentPos.z)
+        end)
+    end
+
+    method Vector2 GetEntityWorldPosition2D(Entity targetEntity)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        local transform = targetEntity.TransformComponent
+        if transform == nil or isvalid(transform) == false then
+            return nil
+        end
+
+        local worldPos = nil
+        local worldOk, worldResult = pcall(function()
+            return transform.WorldPosition
+        end)
+        if worldOk == true then
+            worldPos = worldResult
+        end
+        if worldPos == nil then
+            return nil
+        end
+
+        return Vector2(worldPos.x, worldPos.y)
+    end
+
+    method number GetNowSeconds()
+        local now = 0
+        local ok, value = pcall(function()
+            return _UtilLogic.ServerElapsedSeconds
+        end)
+        if ok == true and value ~= nil then
+            local parsed = tonumber(value)
+            if parsed ~= nil then
+                now = parsed
+            end
+        end
+        return now
+    end
+
+    method string GetRowString(UserDataRow row, string columnName, string fallbackValue)
+        local fallback = fallbackValue
+        if fallback == nil then
+            fallback = ""
+        end
+
+        if row == nil or columnName == nil or columnName == "" then
+            return fallback
+        end
+
+        local text = nil
+        local readOk, readResult = pcall(function()
+            return row:GetItem(columnName)
+        end)
+        if readOk == true then
+            text = readResult
+        end
+        if text == nil then
+            return fallback
+        end
+
+        local normalized = tostring(text)
+        normalized = string.gsub(normalized, "^%s+", "")
+        normalized = string.gsub(normalized, "%s+$", "")
+        if normalized == "" then
+            return fallback
+        end
+
+        local lowered = string.lower(normalized)
+        if normalized == "-" or lowered == "null" or lowered == "nil" then
+            return fallback
+        end
+
+        return normalized
+    end
+
+    method integer GetRowInteger(UserDataRow row, string columnName, integer fallbackValue)
+        local text = self:GetRowString(row, columnName, "")
+        if text == "" then
+            return math.floor(fallbackValue)
+        end
+
+        local parsed = tonumber(text)
+        if parsed == nil then
+            return math.floor(fallbackValue)
+        end
+
+        return math.floor(parsed)
+    end
+
+    method number GetRowNumber(UserDataRow row, string columnName, number fallbackValue)
+        local text = self:GetRowString(row, columnName, "")
+        if text == "" then
+            return fallbackValue
+        end
+
+        local parsed = tonumber(text)
+        if parsed == nil then
+            return fallbackValue
+        end
+
+        return parsed
+    end
+
+    method void EnsureGRUtil()
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, utilApi = pcall(function()
+                return utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and utilApi ~= nil then
+                self._T.GRUtil = utilApi
+            end
+            if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+
+    method boolean IsOwnerRequest(string requestUserId)
+        if self._T.GRUtil ~= nil and self._T.GRUtil.IsOwner ~= nil then
+            return self._T.GRUtil.IsOwner(self.Entity, requestUserId)
+        end
+
+        local playerComponent = self.Entity.PlayerComponent
+        if playerComponent == nil then
+            return true
+        end
+
+        if requestUserId == nil or requestUserId == "" then
+            return true
+        end
+
+        return requestUserId == playerComponent.UserId
+    end
+end

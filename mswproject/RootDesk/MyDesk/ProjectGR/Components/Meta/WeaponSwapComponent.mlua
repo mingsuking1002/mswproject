@@ -399,6 +399,8 @@ script WeaponSwapComponent extends Component
         data.SummonFireRate = 0
         data.SummonProjectileId = ""
         data.TurretModelId = ""
+        data.SmiteDamageDelay = 0
+        data.SmiteVisualLifetime = 0.35
 
         if data.ProjectileId ~= "" then
             local projectileRow = self:GetProjectileRowByIdServer(data.ProjectileId)
@@ -421,6 +423,16 @@ script WeaponSwapComponent extends Component
                 local modelId = self:GetProjectileModelIdFromProjectileRow(projectileRow, data.WeaponId, data.ProjectileId)
                 if modelId ~= "" then
                     data.ProjectileModelId = modelId
+                end
+
+                local smiteDamageDelay = self:GetRowNumber(projectileRow, "smite_damage_delay", data.SmiteDamageDelay)
+                if smiteDamageDelay >= 0 then
+                    data.SmiteDamageDelay = smiteDamageDelay
+                end
+
+                local smiteVisualLifetime = self:GetRowNumber(projectileRow, "smite_visual_lifetime", data.SmiteVisualLifetime)
+                if smiteVisualLifetime >= 0 then
+                    data.SmiteVisualLifetime = smiteVisualLifetime
                 end
             end
         end
@@ -487,6 +499,16 @@ script WeaponSwapComponent extends Component
                     local summonProjectileModelId = self:GetProjectileModelIdFromProjectileRow(summonProjectileRow, data.WeaponId, data.ProjectileId)
                     if summonProjectileModelId ~= "" then
                         data.ProjectileModelId = summonProjectileModelId
+                    end
+
+                    local summonSmiteDamageDelay = self:GetRowNumber(summonProjectileRow, "smite_damage_delay", data.SmiteDamageDelay)
+                    if summonSmiteDamageDelay >= 0 then
+                        data.SmiteDamageDelay = summonSmiteDamageDelay
+                    end
+
+                    local summonSmiteVisualLifetime = self:GetRowNumber(summonProjectileRow, "smite_visual_lifetime", data.SmiteVisualLifetime)
+                    if summonSmiteVisualLifetime >= 0 then
+                        data.SmiteVisualLifetime = summonSmiteVisualLifetime
                     end
                 end
             end
@@ -579,6 +601,24 @@ script WeaponSwapComponent extends Component
         if data.TurretModelId == nil then
             data.TurretModelId = ""
         end
+        if data.SmiteDamageDelay == nil then
+            data.SmiteDamageDelay = 0
+        end
+        if data.SmiteVisualLifetime == nil then
+            data.SmiteVisualLifetime = 0.35
+        end
+
+        local parsedSmiteDelay = tonumber(data.SmiteDamageDelay)
+        if parsedSmiteDelay == nil or parsedSmiteDelay < 0 then
+            parsedSmiteDelay = 0
+        end
+        data.SmiteDamageDelay = parsedSmiteDelay
+
+        local parsedSmiteLifetime = tonumber(data.SmiteVisualLifetime)
+        if parsedSmiteLifetime == nil or parsedSmiteLifetime < 0 then
+            parsedSmiteLifetime = 0.35
+        end
+        data.SmiteVisualLifetime = parsedSmiteLifetime
 
         return data
     end
@@ -732,6 +772,20 @@ script WeaponSwapComponent extends Component
                 data.SummonFireRate = math.max(0, summonFireRateValue)
             end
 
+            local smiteDelayOk, smiteDelayValue = pcall(function()
+                return fireComponent.SmiteDamageDelay
+            end)
+            if smiteDelayOk == true and smiteDelayValue ~= nil then
+                data.SmiteDamageDelay = math.max(0, smiteDelayValue)
+            end
+
+            local smiteLifeOk, smiteLifeValue = pcall(function()
+                return fireComponent.SmiteVisualLifetime
+            end)
+            if smiteLifeOk == true and smiteLifeValue ~= nil then
+                data.SmiteVisualLifetime = math.max(0, smiteLifeValue)
+            end
+
             local summonProjectileIdOk, summonProjectileIdValue = pcall(function()
                 return fireComponent.CurrentSummonProjectileId
             end)
@@ -826,6 +880,12 @@ script WeaponSwapComponent extends Component
             end)
             pcall(function()
                 fireComponent.SplashSize = math.max(0, data.SplashSize)
+            end)
+            pcall(function()
+                fireComponent.SmiteDamageDelay = math.max(0, data.SmiteDamageDelay)
+            end)
+            pcall(function()
+                fireComponent.SmiteVisualLifetime = math.max(0, data.SmiteVisualLifetime)
             end)
             pcall(function()
                 fireComponent.CurrentSummonCooldown = math.max(0, data.SummonCooldown)

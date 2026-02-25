@@ -2230,6 +2230,28 @@ script MonsterSpawnComponent extends Component
         end
 
         self:PrepareDeadMonsterForFadeServer(monsterEntity)
+
+        -- Drop pipeline starts at death-sequence entry so visual fade timing does not delay reward spawn.
+        local dropManager = self:ResolveComponentSafe(self.Entity, "ItemDropManagerComponent", "DropDataTableName")
+        if dropManager ~= nil and dropManager.ExecuteDropServer ~= nil then
+            local dropId = ""
+            if self._T.SpawnMetaByEntity ~= nil then
+                local spawnMeta = self._T.SpawnMetaByEntity[monsterEntity]
+                if spawnMeta ~= nil and spawnMeta.DropId ~= nil then
+                    dropId = tostring(spawnMeta.DropId)
+                end
+            end
+
+            if dropId ~= "" then
+                local deathPos = monsterEntity.TransformComponent.WorldPosition
+                if deathPos ~= nil then
+                    pcall(function()
+                        dropManager:ExecuteDropServer(Vector2(deathPos.x, deathPos.y), dropId)
+                    end)
+                end
+            end
+        end
+
         self:HideMonsterHPBarServer(monsterEntity)
 
         local runtime = {}
