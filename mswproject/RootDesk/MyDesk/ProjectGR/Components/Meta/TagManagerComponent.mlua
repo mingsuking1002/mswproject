@@ -266,6 +266,16 @@ script TagManagerComponent extends Component
             state.AmmoBySlot = ammoBySlot
         end
 
+        local weaponLevel = self:ResolveComponentSafe(self.Entity, "WeaponLevelUpComponent", "WeaponDataTableName")
+        if weaponLevel ~= nil and weaponLevel.ExportWeaponProgressState ~= nil then
+            local exportOk, exportState = pcall(function()
+                return weaponLevel:ExportWeaponProgressState()
+            end)
+            if exportOk == true and exportState ~= nil then
+                state.WeaponLevelProgressState = exportState
+            end
+        end
+
         return state
     end
 
@@ -306,6 +316,18 @@ script TagManagerComponent extends Component
         if swapComponent ~= nil and state.WeaponSwapState ~= nil and swapComponent.ImportWeaponSwapState ~= nil then
             pcall(function()
                 swapComponent:ImportWeaponSwapState(state.WeaponSwapState)
+            end)
+        end
+
+        local weaponLevel = self:ResolveComponentSafe(self.Entity, "WeaponLevelUpComponent", "WeaponDataTableName")
+        if weaponLevel ~= nil and state.WeaponLevelProgressState ~= nil and weaponLevel.ImportWeaponProgressState ~= nil then
+            pcall(function()
+                weaponLevel:ImportWeaponProgressState(state.WeaponLevelProgressState)
+            end)
+        end
+        if weaponLevel ~= nil and weaponLevel.ApplyWeaponPowerToFireServer ~= nil then
+            pcall(function()
+                weaponLevel:ApplyWeaponPowerToFireServer("")
             end)
         end
 

@@ -6,6 +6,9 @@ script ProjectileComponent extends Component
     property number Lifetime = 2.0
     property integer Damage = 10
     property number Spread = 0
+    property string ProjectileType = "single_projectile"
+    property number SplashSize = 0
+    property boolean ExplosionTriggered = false
 
     property Vector2 MoveDirection = Vector2.right
     property Vector2 StartPosition = Vector2.zero
@@ -17,6 +20,7 @@ script ProjectileComponent extends Component
         self._T.ElapsedLifeTime = 0
         self._T.IsInitialized = false
         self._T.IsDestroyed = false
+        self.ExplosionTriggered = false
         self:EnsureGRUtil()
     end
 
@@ -39,6 +43,7 @@ script ProjectileComponent extends Component
         self.OwnerEntity = ownerEntity
         self._T.ElapsedLifeTime = 0
         self._T.IsInitialized = true
+        self.ExplosionTriggered = false
 
         local transform = self.Entity.TransformComponent
         if transform ~= nil and isvalid(transform) == true then
@@ -76,7 +81,11 @@ script ProjectileComponent extends Component
 
         self._T.ElapsedLifeTime = self._T.ElapsedLifeTime + delta
         if self._T.ElapsedLifeTime >= self.Lifetime then
-            self:DestroySelf()
+            if self:IsAreaProjectile() == true then
+                self:ExplodeServer()
+            else
+                self:DestroySelf()
+            end
             return
         end
 
@@ -96,7 +105,11 @@ script ProjectileComponent extends Component
         if currentPosition ~= nil then
             local currentPosition2D = Vector2(currentPosition.x, currentPosition.y)
             if Vector2.Distance(self.StartPosition, currentPosition2D) >= self.MaxRange then
-                self:DestroySelf()
+                if self:IsAreaProjectile() == true then
+                    self:ExplodeServer()
+                else
+                    self:DestroySelf()
+                end
             end
         end
     end
@@ -118,6 +131,11 @@ script ProjectileComponent extends Component
             return
         end
 
+        if self:IsAreaProjectile() == true then
+            self:ExplodeServer()
+            return
+        end
+
         local hpSystem = self:ResolveComponentSafe(hitEntity, "HPSystemComponent", "CurrentHP")
         if hpSystem ~= nil then
             hpSystem:ApplyDamage(self.Damage)
@@ -126,6 +144,122 @@ script ProjectileComponent extends Component
         end
 
         self:DestroySelf()
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean IsAreaProjectile()
+        local projectileType = string.lower(tostring(self.ProjectileType))
+        return projectileType == "area_projectile"
+    end
+
+    -- Area projectiles apply radial damage once and then destroy themselves.
+    @ExecSpace("ServerOnly")
+    method void ExplodeServer()
+        if self.ExplosionTriggered == true then
+            return
+        end
+        self.ExplosionTriggered = true
+
+        if self._T.IsDestroyed == true then
+            return
+        end
+
+        local worldPos = self.Entity.TransformComponent.WorldPosition
+        if worldPos == nil then
+            self:DestroySelf()
+            return
+        end
+
+        local radius = math.max(self.SplashSize, 0)
+        if radius <= 0 then
+            self:DestroySelf()
+            return
+        end
+
+        local mapEntity = self.Entity.CurrentMap
+        if mapEntity == nil or isvalid(mapEntity) == false then
+            self:DestroySelf()
+            return
+        end
+
+        local candidates = {}
+        self:CollectDamageCandidatesRecursive(mapEntity, candidates)
+
+        local center = Vector2(worldPos.x, worldPos.y)
+        local radiusSqr = radius * radius
+        for _, target in pairs(candidates) do
+            if target == nil or isvalid(target) == false then
+                continue
+            end
+
+            local targetPos = target.TransformComponent.WorldPosition
+            if targetPos == nil then
+                continue
+            end
+
+            local distanceVector = Vector2(targetPos.x, targetPos.y) - center
+            if distanceVector:SqrMagnitude() > radiusSqr then
+                continue
+            end
+
+            local hpSystem = self:ResolveComponentSafe(target, "HPSystemComponent", "CurrentHP")
+            if hpSystem ~= nil then
+                pcall(function()
+                    hpSystem:ApplyDamage(self.Damage)
+                end)
+            end
+        end
+
+        self:DestroySelf()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CollectDamageCandidatesRecursive(Entity node, table outList)
+        if node == nil or isvalid(node) == false then
+            return
+        end
+
+        if self:IsDamageTargetCandidate(node) == true then
+            table.insert(outList, node)
+        end
+
+        local children = node.Children
+        if children == nil then
+            return
+        end
+
+        for _, child in pairs(children) do
+            if child ~= nil and isvalid(child) == true then
+                self:CollectDamageCandidatesRecursive(child, outList)
+            end
+        end
+    end
+
+    method boolean IsDamageTargetCandidate(Entity candidate)
+        if candidate == nil or isvalid(candidate) == false then
+            return false
+        end
+        if self.OwnerEntity ~= nil and candidate == self.OwnerEntity then
+            return false
+        end
+
+        local hpSystem = self:ResolveComponentSafe(candidate, "HPSystemComponent", "CurrentHP")
+        if hpSystem == nil then
+            return false
+        end
+
+        local isDead = false
+        local deadOk, deadValue = pcall(function()
+            return hpSystem.IsDead
+        end)
+        if deadOk == true and deadValue == true then
+            isDead = true
+        end
+        if isDead == true then
+            return false
+        end
+
+        return true
     end
 
     -- Centralized destroy path prevents duplicate Destroy calls from multiple triggers.

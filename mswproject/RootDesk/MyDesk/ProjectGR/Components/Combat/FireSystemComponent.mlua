@@ -19,6 +19,22 @@ script FireSystemComponent extends Component
     property number ProjectileRange = 15.0
     property number ProjectileLifetime = 2.0
     property number ProjectileSpread = 0
+    property number SplashSize = 0
+
+    @Sync
+    property string CurrentWeaponId = ""
+    @Sync
+    property string CurrentFireType = "projectile"
+    property string CurrentProjectileType = "single_projectile"
+    property string CurrentProjectileId = ""
+    property string CurrentSummonId = ""
+    property number CurrentSummonCooldown = 0
+    property number CurrentSummonDuration = 0
+    property number CurrentSummonFireRate = 0
+    property string CurrentSummonProjectileId = ""
+    property string CurrentTurretModelId = ""
+    property string ProjectileDataTableName = "ProjectileData"
+    property string SummonDataTableName = "SummonData"
 
     -- Server initializes cooldown state and utility bootstrap before combat begins.
     @ExecSpace("ServerOnly")
@@ -26,6 +42,7 @@ script FireSystemComponent extends Component
         self.IsFireReady = true
         self._T.FireCooldownTimerId = 0
         self._T.MissingProjectileWarnAt = -9999.0
+        self._T.MissingSummonWarnAt = -9999.0
         self:EnsureGRUtil()
     end
 
@@ -110,8 +127,33 @@ script FireSystemComponent extends Component
             return
         end
 
-        self:SpawnProjectileServer(fireDirection, shooterPosition2D)
+        local fired = self:TryFireByTypeServer(targetWorldPosition, fireDirection, shooterPosition2D)
+        if fired ~= true then
+            return
+        end
+
+        self:NotifyWeaponExpGainServer(self.CurrentWeaponId, 1)
         self:StartFireCooldown()
+    end
+
+    -- Fire-type branch keeps one entrypoint while allowing projectile/smite/summon behaviors.
+    @ExecSpace("ServerOnly")
+    method boolean TryFireByTypeServer(Vector2 targetWorldPosition, Vector2 fireDirection, Vector2 shooterPosition2D)
+        local fireType = string.lower(tostring(self.CurrentFireType))
+        if fireType == "" then
+            fireType = "projectile"
+        end
+
+        if fireType == "summon" then
+            return self:SummonTurretServer(targetWorldPosition)
+        end
+
+        local projectileType = string.lower(tostring(self.CurrentProjectileType))
+        if projectileType == "smite" then
+            return self:SmiteAttackServer(targetWorldPosition)
+        end
+
+        return self:SpawnProjectileServer(fireDirection, shooterPosition2D)
     end
 
     -- This gate consolidates ammo/reload/cooldown/attack-state checks in one authoritative function.
@@ -124,11 +166,25 @@ script FireSystemComponent extends Component
             return false
         end
 
-        local hasModelId = (self.ProjectileModelId ~= nil and self.ProjectileModelId ~= "")
-        local templateEntity = self:ResolveProjectileTemplateEntity()
-        if hasModelId == false and templateEntity == nil then
-            self:WarnMissingProjectileConfigServer()
-            return false
+        local fireType = string.lower(tostring(self.CurrentFireType))
+        local projectileType = string.lower(tostring(self.CurrentProjectileType))
+
+        if fireType == "summon" then
+            if self.CurrentSummonId == nil or self.CurrentSummonId == "" then
+                self:WarnMissingSummonConfigServer("CurrentSummonId")
+                return false
+            end
+            if self.CurrentTurretModelId == nil or self.CurrentTurretModelId == "" then
+                self:WarnMissingSummonConfigServer("CurrentTurretModelId")
+                return false
+            end
+        elseif projectileType ~= "smite" then
+            local hasModelId = (self.ProjectileModelId ~= nil and self.ProjectileModelId ~= "")
+            local templateEntity = self:ResolveProjectileTemplateEntity()
+            if hasModelId == false and templateEntity == nil then
+                self:WarnMissingProjectileConfigServer()
+                return false
+            end
         end
 
         local reloadComponent = self:ResolveComponentSafe(self.Entity, "ReloadComponent", "CurrentAmmo")
@@ -175,6 +231,27 @@ script FireSystemComponent extends Component
         log_warning("[FireSystem] Fire blocked: set ProjectileModelId or place /maps/games/GRProjectileTemplate with ProjectileComponent+TriggerComponent.")
     end
 
+    @ExecSpace("ServerOnly")
+    method void WarnMissingSummonConfigServer(string reason)
+        local nowSeconds = 0.0
+        local nowOk, nowValue = pcall(function()
+            return _UtilLogic.ServerElapsedSeconds
+        end)
+        if nowOk == true and nowValue ~= nil then
+            nowSeconds = nowValue
+        end
+
+        local lastWarnAt = self._T.MissingSummonWarnAt
+        if lastWarnAt ~= nil then
+            if (nowSeconds - lastWarnAt) < 5.0 then
+                return
+            end
+        end
+
+        self._T.MissingSummonWarnAt = nowSeconds
+        log_warning("[FireSystem] Summon fire blocked. missing=" .. tostring(reason) .. ", weaponId=" .. tostring(self.CurrentWeaponId) .. ", summonId=" .. tostring(self.CurrentSummonId))
+    end
+
     -- Server resolves muzzle directly from WeaponModelComponent, and falls back to shooter center when missing.
     @ExecSpace("ServerOnly")
     method Vector2 ResolveMuzzlePositionServer()
@@ -204,7 +281,7 @@ script FireSystemComponent extends Component
 
     -- Projectile is spawned and initialized with snapshot stats to keep post-swap damage immutable.
     @ExecSpace("ServerOnly")
-    method void SpawnProjectileServer(Vector2 direction, Vector2 shooterPosition)
+    method boolean SpawnProjectileServer(Vector2 direction, Vector2 shooterPosition)
         local muzzlePosition = self:CalculateMuzzleWorldPosition(direction, shooterPosition)
         local spawnPosition3D = Vector3(muzzlePosition.x, muzzlePosition.y, 0)
 
@@ -219,13 +296,13 @@ script FireSystemComponent extends Component
         else
             local templateEntity = self:ResolveProjectileTemplateEntity()
             if templateEntity == nil or isvalid(templateEntity) == false then
-                return
+                return false
             end
             projectileEntity = _SpawnService:SpawnByEntity(templateEntity, "Projectile", spawnPosition3D, parentEntity, true)
         end
 
         if projectileEntity == nil or isvalid(projectileEntity) == false then
-            return
+            return false
         end
 
         local triggerComponent = projectileEntity.TriggerComponent
@@ -246,7 +323,7 @@ script FireSystemComponent extends Component
         local projectileComponent = self:FindOrAddComponentSafe(projectileEntity, "ProjectileComponent")
         if projectileComponent == nil then
             _EntityService:Destroy(projectileEntity)
-            return
+            return false
         end
 
         projectileComponent.Speed = self.ProjectileSpeed
@@ -254,7 +331,10 @@ script FireSystemComponent extends Component
         projectileComponent.Lifetime = self.ProjectileLifetime
         projectileComponent.Damage = self:CalculateFinalDamage()
         projectileComponent.Spread = self.ProjectileSpread
+        projectileComponent.ProjectileType = self.CurrentProjectileType
+        projectileComponent.SplashSize = self.SplashSize
         projectileComponent:InitializeProjectile(direction, muzzlePosition, self.Entity)
+        return true
     end
 
     -- Template fallback keeps firing possible when model-id based spawn is not configured yet.
@@ -279,14 +359,251 @@ script FireSystemComponent extends Component
         return templateEntity
     end
 
+    -- Smite deals instant server-side damage without projectile spawn.
+    @ExecSpace("ServerOnly")
+    method boolean SmiteAttackServer(Vector2 targetWorldPosition)
+        local damage = self:CalculateFinalDamage()
+        if damage <= 0 then
+            return false
+        end
+
+        local radius = math.max(self.SplashSize, 0)
+        if radius > 0 then
+            self:ApplySmiteDamageInRadiusServer(targetWorldPosition, radius, damage)
+            return true
+        end
+
+        local nearestTarget = self:FindNearestDamageTargetServer(targetWorldPosition)
+        if nearestTarget == nil or isvalid(nearestTarget) == false then
+            return false
+        end
+
+        local hpSystem = self:ResolveComponentSafe(nearestTarget, "HPSystemComponent", "CurrentHP")
+        if hpSystem == nil then
+            return false
+        end
+
+        pcall(function()
+            hpSystem:ApplyDamage(damage)
+        end)
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplySmiteDamageInRadiusServer(Vector2 center, number radius, integer damage)
+        local targets = self:GetDamageCandidatesInMapServer()
+        if targets == nil then
+            return
+        end
+
+        local radiusSqr = radius * radius
+        for _, target in pairs(targets) do
+            if target == nil or isvalid(target) == false then
+                continue
+            end
+
+            local position = target.TransformComponent.WorldPosition
+            if position == nil then
+                continue
+            end
+
+            local offset = Vector2(position.x, position.y) - center
+            if offset:SqrMagnitude() > radiusSqr then
+                continue
+            end
+
+            local hpSystem = self:ResolveComponentSafe(target, "HPSystemComponent", "CurrentHP")
+            if hpSystem ~= nil then
+                pcall(function()
+                    hpSystem:ApplyDamage(damage)
+                end)
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method Entity FindNearestDamageTargetServer(Vector2 center)
+        local targets = self:GetDamageCandidatesInMapServer()
+        if targets == nil then
+            return nil
+        end
+
+        local nearest = nil
+        local nearestDistanceSqr = -1
+        for _, target in pairs(targets) do
+            if target == nil or isvalid(target) == false then
+                continue
+            end
+
+            local position = target.TransformComponent.WorldPosition
+            if position == nil then
+                continue
+            end
+
+            local offset = Vector2(position.x, position.y) - center
+            local distanceSqr = offset:SqrMagnitude()
+            if nearest == nil or distanceSqr < nearestDistanceSqr then
+                nearest = target
+                nearestDistanceSqr = distanceSqr
+            end
+        end
+
+        return nearest
+    end
+
+    -- Summon installs turret model and delegates autonomous fire to TurretAIComponent.
+    @ExecSpace("ServerOnly")
+    method boolean SummonTurretServer(Vector2 targetWorldPosition)
+        if self.CurrentTurretModelId == nil or self.CurrentTurretModelId == "" then
+            self:WarnMissingSummonConfigServer("CurrentTurretModelId")
+            return false
+        end
+
+        local parentEntity = self.Entity.CurrentMap
+        if parentEntity == nil or isvalid(parentEntity) == false then
+            parentEntity = self.Entity
+        end
+
+        local spawnPosition = Vector3(targetWorldPosition.x, targetWorldPosition.y, 0)
+        local turretEntity = _SpawnService:SpawnByModelId(self.CurrentTurretModelId, "SummonTurret", spawnPosition, parentEntity)
+        if turretEntity == nil or isvalid(turretEntity) == false then
+            log_warning("[FireSystem] Summon spawn failed. turretModelId=" .. tostring(self.CurrentTurretModelId))
+            return false
+        end
+
+        local turretAI = self:FindOrAddComponentSafe(turretEntity, "TurretAIComponent")
+        if turretAI == nil then
+            _EntityService:Destroy(turretEntity)
+            return false
+        end
+
+        local runtime = {}
+        runtime.OwnerEntity = self.Entity
+        runtime.ProjectileId = self.CurrentSummonProjectileId
+        runtime.FireRate = math.max(self.CurrentSummonFireRate, 0)
+        runtime.Duration = math.max(self.CurrentSummonDuration, 0)
+        runtime.ProjectileModelId = self.ProjectileModelId
+        runtime.ProjectileSpeed = self.ProjectileSpeed
+        runtime.ProjectileRange = self.ProjectileRange
+        runtime.ProjectileLifetime = self.ProjectileLifetime
+        runtime.ProjectileType = self.CurrentProjectileType
+        runtime.SplashSize = self.SplashSize
+        runtime.DamageSnapshot = self:CalculateFinalDamage()
+        runtime.ProjectileDataTableName = self.ProjectileDataTableName
+
+        if turretAI.InitializeTurretServer ~= nil then
+            pcall(function()
+                turretAI:InitializeTurretServer(runtime)
+            end)
+        end
+
+        if self.CurrentSummonCooldown ~= nil and self.CurrentSummonCooldown > 0 then
+            self.FireCooldown = self.CurrentSummonCooldown
+        end
+
+        return true
+    end
+
+    -- Shared target collector limits damage candidates to HP entities in current map and excludes owner/self.
+    @ExecSpace("ServerOnly")
+    method table GetDamageCandidatesInMapServer()
+        local mapEntity = self.Entity.CurrentMap
+        if mapEntity == nil or isvalid(mapEntity) == false then
+            return {}
+        end
+
+        local results = {}
+        self:CollectDamageCandidatesRecursiveServer(mapEntity, results)
+        return results
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CollectDamageCandidatesRecursiveServer(Entity node, table outList)
+        if node == nil or isvalid(node) == false then
+            return
+        end
+
+        if self:IsDamageTargetCandidateServer(node) == true then
+            table.insert(outList, node)
+        end
+
+        local children = node.Children
+        if children == nil then
+            return
+        end
+
+        for _, child in pairs(children) do
+            if child ~= nil and isvalid(child) == true then
+                self:CollectDamageCandidatesRecursiveServer(child, outList)
+            end
+        end
+    end
+
+    method boolean IsDamageTargetCandidateServer(Entity candidate)
+        if candidate == nil or isvalid(candidate) == false then
+            return false
+        end
+        if candidate == self.Entity then
+            return false
+        end
+        if self.Entity ~= nil and self.Entity.PlayerComponent ~= nil and candidate.PlayerComponent ~= nil then
+            return false
+        end
+
+        local hpSystem = self:ResolveComponentSafe(candidate, "HPSystemComponent", "CurrentHP")
+        if hpSystem == nil then
+            return false
+        end
+
+        local dead = false
+        local deadOk, deadValue = pcall(function()
+            return hpSystem.IsDead
+        end)
+        if deadOk == true and deadValue == true then
+            dead = true
+        end
+        if dead == true then
+            return false
+        end
+
+        return true
+    end
+
     -- Final damage formula is server-side to prevent packet-level damage spoofing.
     @ExecSpace("ServerOnly")
     method integer CalculateFinalDamage()
-        local baseDamage = self.BasePlayerAtk + self.BaseWeaponAttack + self.PassiveFlatAttack
+        local baseDamage = self.BaseWeaponAttack
+        if baseDamage == nil then
+            baseDamage = 0
+        end
+        if baseDamage <= 0 then
+            baseDamage = self.BasePlayerAtk
+        end
+        baseDamage = baseDamage + self.PassiveFlatAttack
         local buffMultiplier = 1 + (self.BuffIncreasePercent * 0.01)
         local passiveMultiplier = 1 + (self.PassiveIncreasePercent * 0.01)
         local finalDamage = baseDamage * buffMultiplier * passiveMultiplier
         return math.max(math.floor(finalDamage), 0)
+    end
+
+    -- Weapon exp is granted only for successful fire/install events.
+    @ExecSpace("ServerOnly")
+    method void NotifyWeaponExpGainServer(string weaponId, integer amount)
+        if weaponId == nil or weaponId == "" then
+            return
+        end
+        if amount <= 0 then
+            return
+        end
+
+        local levelComponent = self:ResolveComponentSafe(self.Entity, "WeaponLevelUpComponent", "WeaponDataTableName")
+        if levelComponent == nil or levelComponent.AddWeaponExpServer == nil then
+            return
+        end
+
+        pcall(function()
+            levelComponent:AddWeaponExpServer(weaponId, amount)
+        end)
     end
 
     -- Cooldown is timer-driven so fire-ready state is independent from frame rate.

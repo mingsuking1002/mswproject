@@ -20,6 +20,8 @@ script WeaponSwapComponent extends Component
     property number DefaultFireCooldown = 0.5
     property number DefaultReloadTime = 1.5
     property string WeaponDataTableName = "WeaponData"
+    property string ProjectileDataTableName = "ProjectileData"
+    property string SummonDataTableName = "SummonData"
 
     -- Server initializes deterministic slot state so tag/swap can load valid data even before first fire.
     @ExecSpace("ServerOnly")
@@ -27,6 +29,10 @@ script WeaponSwapComponent extends Component
         self:EnsureGRUtil()
         self._T.WeaponRowById = {}
         self._T.WeaponRowsLoaded = false
+        self._T.ProjectileRowById = {}
+        self._T.ProjectileRowsLoaded = false
+        self._T.SummonRowById = {}
+        self._T.SummonRowsLoaded = false
         self.CurrentWeaponSlot = self:ClampSlot(self.CurrentWeaponSlot)
         self:InitializeSlotData()
         self:ApplySlotDataToCombat(self.CurrentWeaponSlot)
@@ -300,6 +306,20 @@ script WeaponSwapComponent extends Component
             return
         end
 
+        data.WeaponId = tostring(weaponId)
+        data.FireType = string.lower(self:GetRowString(row, "fire_type", "projectile"))
+        if data.FireType == "" then
+            data.FireType = "projectile"
+        end
+        data.ProjectileId = self:GetRowString(row, "projectile_id", "")
+        if data.ProjectileId == "-" then
+            data.ProjectileId = ""
+        end
+        data.SummonId = self:GetRowString(row, "summon_id", "")
+        if data.SummonId == "-" then
+            data.SummonId = ""
+        end
+
         local maxAmmo = self:GetRowInteger(row, "max_basic_resource", data.Ammo)
         if maxAmmo > 0 then
             data.Ammo = maxAmmo
@@ -321,8 +341,89 @@ script WeaponSwapComponent extends Component
             data.Damage = math.max(math.floor(defaultDamage * damageRatio), 1)
         end
 
-        -- Keep existing projectile model mapping untouched here.
-        -- `projectile_id` -> projectile model resolution remains in dedicated projectile data flow.
+        data.ProjectileType = "single_projectile"
+        data.SplashSize = 0
+        data.SummonCooldown = 0
+        data.SummonDuration = 0
+        data.SummonFireRate = 0
+        data.SummonProjectileId = ""
+        data.TurretModelId = ""
+
+        if data.ProjectileId ~= "" then
+            local projectileRow = self:GetProjectileRowByIdServer(data.ProjectileId)
+            if projectileRow ~= nil then
+                data.ProjectileType = string.lower(self:GetRowString(projectileRow, "projectile_type", data.ProjectileType))
+                if data.ProjectileType == "" then
+                    data.ProjectileType = "single_projectile"
+                end
+
+                local bulletSpeed = self:GetRowNumber(projectileRow, "bulletspeed", data.ProjectileSpeed)
+                if bulletSpeed > 0 then
+                    data.ProjectileSpeed = bulletSpeed
+                end
+
+                local splashSize = self:GetRowNumber(projectileRow, "splash_size", data.SplashSize)
+                if splashSize > 0 then
+                    data.SplashSize = splashSize
+                end
+
+                local modelId = self:GetProjectileModelIdFromProjectileRow(projectileRow)
+                if modelId ~= "" then
+                    data.ProjectileModelId = modelId
+                end
+            end
+        end
+
+        if data.FireType == "summon" and data.SummonId ~= "" then
+            local summonRow = self:GetSummonRowByIdServer(data.SummonId)
+            if summonRow ~= nil then
+                local summonProjectileId = self:GetRowString(summonRow, "projectile_id", "")
+                if summonProjectileId ~= "" and summonProjectileId ~= "-" then
+                    data.SummonProjectileId = summonProjectileId
+                    data.ProjectileId = summonProjectileId
+                end
+
+                local summonFireRate = self:GetRowNumber(summonRow, "fire_rate", 0)
+                if summonFireRate > 0 then
+                    data.SummonFireRate = summonFireRate
+                end
+
+                local summonDuration = self:GetRowNumber(summonRow, "duration", 0)
+                if summonDuration > 0 then
+                    data.SummonDuration = summonDuration
+                end
+
+                local summonCooldown = self:GetRowNumber(summonRow, "cooldown", 0)
+                if summonCooldown > 0 then
+                    data.SummonCooldown = summonCooldown
+                    data.FireCooldown = summonCooldown
+                end
+
+                local turretModelId = self:GetRowString(summonRow, "turret_model", "")
+                if turretModelId ~= "" and turretModelId ~= "-" then
+                    data.TurretModelId = turretModelId
+                end
+            end
+
+            if data.ProjectileId ~= "" then
+                local summonProjectileRow = self:GetProjectileRowByIdServer(data.ProjectileId)
+                if summonProjectileRow ~= nil then
+                    data.ProjectileType = string.lower(self:GetRowString(summonProjectileRow, "projectile_type", data.ProjectileType))
+                    local summonBulletSpeed = self:GetRowNumber(summonProjectileRow, "bulletspeed", data.ProjectileSpeed)
+                    if summonBulletSpeed > 0 then
+                        data.ProjectileSpeed = summonBulletSpeed
+                    end
+                    local summonSplash = self:GetRowNumber(summonProjectileRow, "splash_size", data.SplashSize)
+                    if summonSplash > 0 then
+                        data.SplashSize = summonSplash
+                    end
+                    local summonProjectileModelId = self:GetProjectileModelIdFromProjectileRow(summonProjectileRow)
+                    if summonProjectileModelId ~= "" then
+                        data.ProjectileModelId = summonProjectileModelId
+                    end
+                end
+            end
+        end
     end
 
     -- Data normalization prevents missing fields from older save/state payloads.
@@ -364,6 +465,36 @@ script WeaponSwapComponent extends Component
         end
         if data.ProjectileModelId == nil then
             data.ProjectileModelId = ""
+        end
+        if data.FireType == nil or data.FireType == "" then
+            data.FireType = "projectile"
+        end
+        if data.ProjectileType == nil or data.ProjectileType == "" then
+            data.ProjectileType = "single_projectile"
+        end
+        if data.ProjectileId == nil then
+            data.ProjectileId = ""
+        end
+        if data.SummonId == nil then
+            data.SummonId = ""
+        end
+        if data.SplashSize == nil then
+            data.SplashSize = 0
+        end
+        if data.SummonCooldown == nil then
+            data.SummonCooldown = 0
+        end
+        if data.SummonDuration == nil then
+            data.SummonDuration = 0
+        end
+        if data.SummonFireRate == nil then
+            data.SummonFireRate = 0
+        end
+        if data.SummonProjectileId == nil then
+            data.SummonProjectileId = ""
+        end
+        if data.TurretModelId == nil then
+            data.TurretModelId = ""
         end
 
         return data
@@ -445,6 +576,76 @@ script WeaponSwapComponent extends Component
             if modelOk == true and modelValue ~= nil then
                 data.ProjectileModelId = modelValue
             end
+
+            local fireTypeOk, fireTypeValue = pcall(function()
+                return fireComponent.CurrentFireType
+            end)
+            if fireTypeOk == true and fireTypeValue ~= nil and tostring(fireTypeValue) ~= "" then
+                data.FireType = tostring(fireTypeValue)
+            end
+
+            local projectileTypeOk, projectileTypeValue = pcall(function()
+                return fireComponent.CurrentProjectileType
+            end)
+            if projectileTypeOk == true and projectileTypeValue ~= nil and tostring(projectileTypeValue) ~= "" then
+                data.ProjectileType = tostring(projectileTypeValue)
+            end
+
+            local projectileIdOk, projectileIdValue = pcall(function()
+                return fireComponent.CurrentProjectileId
+            end)
+            if projectileIdOk == true and projectileIdValue ~= nil then
+                data.ProjectileId = tostring(projectileIdValue)
+            end
+
+            local summonIdOk, summonIdValue = pcall(function()
+                return fireComponent.CurrentSummonId
+            end)
+            if summonIdOk == true and summonIdValue ~= nil then
+                data.SummonId = tostring(summonIdValue)
+            end
+
+            local splashOk, splashValue = pcall(function()
+                return fireComponent.SplashSize
+            end)
+            if splashOk == true and splashValue ~= nil then
+                data.SplashSize = math.max(0, splashValue)
+            end
+
+            local summonCooldownOk, summonCooldownValue = pcall(function()
+                return fireComponent.CurrentSummonCooldown
+            end)
+            if summonCooldownOk == true and summonCooldownValue ~= nil then
+                data.SummonCooldown = math.max(0, summonCooldownValue)
+            end
+
+            local summonDurationOk, summonDurationValue = pcall(function()
+                return fireComponent.CurrentSummonDuration
+            end)
+            if summonDurationOk == true and summonDurationValue ~= nil then
+                data.SummonDuration = math.max(0, summonDurationValue)
+            end
+
+            local summonFireRateOk, summonFireRateValue = pcall(function()
+                return fireComponent.CurrentSummonFireRate
+            end)
+            if summonFireRateOk == true and summonFireRateValue ~= nil then
+                data.SummonFireRate = math.max(0, summonFireRateValue)
+            end
+
+            local summonProjectileIdOk, summonProjectileIdValue = pcall(function()
+                return fireComponent.CurrentSummonProjectileId
+            end)
+            if summonProjectileIdOk == true and summonProjectileIdValue ~= nil then
+                data.SummonProjectileId = tostring(summonProjectileIdValue)
+            end
+
+            local turretModelOk, turretModelValue = pcall(function()
+                return fireComponent.CurrentTurretModelId
+            end)
+            if turretModelOk == true and turretModelValue ~= nil then
+                data.TurretModelId = tostring(turretModelValue)
+            end
         end
 
         self:SetSlotDataBySlot(finalSlot, data)
@@ -502,12 +703,52 @@ script WeaponSwapComponent extends Component
             pcall(function()
                 fireComponent.ProjectileModelId = data.ProjectileModelId
             end)
+            pcall(function()
+                fireComponent.CurrentWeaponId = tostring(data.WeaponId)
+            end)
+            pcall(function()
+                fireComponent.CurrentFireType = tostring(data.FireType)
+            end)
+            pcall(function()
+                fireComponent.CurrentProjectileType = tostring(data.ProjectileType)
+            end)
+            pcall(function()
+                fireComponent.CurrentProjectileId = tostring(data.ProjectileId)
+            end)
+            pcall(function()
+                fireComponent.CurrentSummonId = tostring(data.SummonId)
+            end)
+            pcall(function()
+                fireComponent.SplashSize = math.max(0, data.SplashSize)
+            end)
+            pcall(function()
+                fireComponent.CurrentSummonCooldown = math.max(0, data.SummonCooldown)
+            end)
+            pcall(function()
+                fireComponent.CurrentSummonDuration = math.max(0, data.SummonDuration)
+            end)
+            pcall(function()
+                fireComponent.CurrentSummonFireRate = math.max(0, data.SummonFireRate)
+            end)
+            pcall(function()
+                fireComponent.CurrentSummonProjectileId = tostring(data.SummonProjectileId)
+            end)
+            pcall(function()
+                fireComponent.CurrentTurretModelId = tostring(data.TurretModelId)
+            end)
         end
 
         local weaponModel = self:ResolveComponentSafe(self.Entity, "WeaponModelComponent", "CurrentWeaponId")
         if weaponModel ~= nil and weaponModel.SwapModel ~= nil then
             pcall(function()
                 weaponModel:SwapModel(tostring(data.WeaponId))
+            end)
+        end
+
+        local weaponLevel = self:ResolveComponentSafe(self.Entity, "WeaponLevelUpComponent", "WeaponDataTableName")
+        if weaponLevel ~= nil and weaponLevel.ApplyWeaponPowerToFireServer ~= nil then
+            pcall(function()
+                weaponLevel:ApplyWeaponPowerToFireServer(tostring(data.WeaponId))
             end)
         end
 
@@ -682,6 +923,36 @@ script WeaponSwapComponent extends Component
     end
 
     @ExecSpace("ServerOnly")
+    method table GetProjectileRowByIdServer(string projectileId)
+        if projectileId == nil or projectileId == "" then
+            return nil
+        end
+        if self._T.ProjectileRowsLoaded ~= true then
+            self:LoadProjectileRowsServer()
+        end
+        if self._T.ProjectileRowById == nil then
+            return nil
+        end
+
+        return self._T.ProjectileRowById[projectileId]
+    end
+
+    @ExecSpace("ServerOnly")
+    method table GetSummonRowByIdServer(string summonId)
+        if summonId == nil or summonId == "" then
+            return nil
+        end
+        if self._T.SummonRowsLoaded ~= true then
+            self:LoadSummonRowsServer()
+        end
+        if self._T.SummonRowById == nil then
+            return nil
+        end
+
+        return self._T.SummonRowById[summonId]
+    end
+
+    @ExecSpace("ServerOnly")
     method void LoadWeaponRowsServer()
         local tableName = self.WeaponDataTableName
         if tableName == nil or tableName == "" then
@@ -724,6 +995,114 @@ script WeaponSwapComponent extends Component
 
         self._T.WeaponRowById = cache
         self._T.WeaponRowsLoaded = true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadProjectileRowsServer()
+        local tableName = self.ProjectileDataTableName
+        if tableName == nil or tableName == "" then
+            return
+        end
+
+        local dataTable = nil
+        local loadOk, loadValue = pcall(function()
+            return _DataService:GetTable(tableName)
+        end)
+        if loadOk == true then
+            dataTable = loadValue
+        end
+        if dataTable == nil then
+            return
+        end
+
+        local rows = nil
+        local rowsOk, rowsValue = pcall(function()
+            return dataTable:GetAllRow()
+        end)
+        if rowsOk == true then
+            rows = rowsValue
+        end
+        if rows == nil then
+            return
+        end
+
+        local cache = {}
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+            local id = self:GetRowString(row, "id", "")
+            if id == "" then
+                continue
+            end
+            cache[id] = row
+        end
+
+        self._T.ProjectileRowById = cache
+        self._T.ProjectileRowsLoaded = true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadSummonRowsServer()
+        local tableName = self.SummonDataTableName
+        if tableName == nil or tableName == "" then
+            return
+        end
+
+        local dataTable = nil
+        local loadOk, loadValue = pcall(function()
+            return _DataService:GetTable(tableName)
+        end)
+        if loadOk == true then
+            dataTable = loadValue
+        end
+        if dataTable == nil then
+            return
+        end
+
+        local rows = nil
+        local rowsOk, rowsValue = pcall(function()
+            return dataTable:GetAllRow()
+        end)
+        if rowsOk == true then
+            rows = rowsValue
+        end
+        if rows == nil then
+            return
+        end
+
+        local cache = {}
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+            local id = self:GetRowString(row, "id", "")
+            if id == "" then
+                continue
+            end
+            cache[id] = row
+        end
+
+        self._T.SummonRowById = cache
+        self._T.SummonRowsLoaded = true
+    end
+
+    method string GetProjectileModelIdFromProjectileRow(any row)
+        if row == nil then
+            return ""
+        end
+
+        local modelId = self:GetRowString(row, "projectile_model", "")
+        if modelId == "" then
+            modelId = self:GetRowString(row, "projectile_ model", "")
+        end
+        if modelId == "" then
+            modelId = self:GetRowString(row, "projectile_model_id", "")
+        end
+        if modelId == "-" then
+            return ""
+        end
+        return modelId
     end
 
     method string GetRowString(any row, string columnName, string fallbackValue)

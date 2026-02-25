@@ -1,4 +1,4 @@
-﻿# 🟡 대기중
+﻿# 🔵 진행중
 # SPEC_WeaponCombat — 무기 발사 · 공격 타입 · 데이터 테이블 연동
 
 ## 1. 개요
@@ -199,17 +199,18 @@ PlayerbleData[player_a]
 
 ## 10. Codex 체크리스트
 
-- [ ] `FireSystemComponent` 수정: 공격 타입 분기 (§3)
-- [ ] 투사체 타입별 동작 구현 (single/area/smite) (§4)
-- [ ] `SummonTurretServer` 포탑 시스템 구현 (§5)
-- [ ] `WeaponSwapComponent` 슬롯 데이터 확장 (§6)
-- [ ] 데이터 테이블 연동 (`_DataService`) (§8)
+- [x] `FireSystemComponent` 수정: 공격 타입 분기 (§3)
+- [x] 투사체 타입별 동작 구현 (single/area/smite) (§4)
+- [x] `SummonTurretServer` 포탑 시스템 구현 (§5)
+- [x] `WeaponSwapComponent` 슬롯 데이터 확장 (§6)
+- [x] 데이터 테이블 연동 (`_DataService`) (§8)
 - [ ] 오브젝트 풀링 적용
-- [ ] `Code_Documentation.md` 업데이트
+- [x] `Code_Documentation.md` 업데이트
 - [ ] 완료 후 `🟢 완료`
 
 ---
 
-| **작성자** | Antigravity (TD) | **상태** | 🟡 대기중 |
+| **작성자** | Antigravity (TD) | **상태** | 🔵 진행중 |
 |---|---|---|---|
 | **담당자** | Codex | **작성일** | 2026-02-24 |
+

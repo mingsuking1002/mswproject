@@ -1135,3 +1135,126 @@
 | Item | Detail |
 |---|---|
 | 주기 Configure 시 HP 풀회복 이슈 | `ApplyCharacterDataServer(isInitialApply)`를 최초 1회만 초기 HP 적용하도록 변경, 이후 재호출은 현재 HP 보존 + MaxHP clamp |
+
+## 2026-02-24 Weapon Core Loop v1 (Chunk 1-3)
+
+### WeaponLevelUpComponent (New)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponLevelUpComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponLevelUpComponent.codeblock
+- **Updated:** 2026-02-24
+
+#### Properties
+| Name | Type | Description |
+|---|---|---|
+| WeaponDataTableName | string | 무기 메타 데이터 테이블명 |
+| WeaponLevelDataTableName | string | 레벨 배율 테이블명 |
+| DefaultRequiredExp | integer | 요구 경험치 기본값 |
+| DefaultStartLevel | integer | 시작 레벨 기본값 |
+| DefaultMaxLevel | integer | 최대 레벨 기본값 |
+
+#### Functions
+| Function | Parameters | Returns | Description |
+|---|---|---|---|
+| InitializeWeaponProgressServer | void | void | WeaponData/WeaponLevelData 캐시 및 무기별 진행도 초기화 |
+| AddWeaponExpServer | weaponId, amount | void | 발사/설치 성공 시 경험치 누적 및 연속 레벨업 처리 |
+| ApplyWeaponPowerToFireServer | weaponId | integer | player_atk * level_N을 FireSystem.BaseWeaponAttack에 적용 |
+| ExportWeaponProgressState | void | table | 태그 저장용 무기 진행도 스냅샷 반환 |
+| ImportWeaponProgressState | state | void | 태그 복원 시 무기 진행도 복원 + 현재 무기 공격력 재적용 |
+
+### TurretAIComponent (New)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Combat/TurretAIComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Combat/TurretAIComponent.codeblock
+- **Updated:** 2026-02-24
+
+#### Properties
+| Name | Type | Description |
+|---|---|---|
+| ThinkInterval | number | 서버 추적/사격 틱 간격 |
+| TargetSearchRadius | number | 타겟 탐색 반경(0이면 무제한) |
+| EnableDebugLogs | boolean | 디버그 로그 출력 여부 |
+
+#### Functions
+| Function | Parameters | Returns | Description |
+|---|---|---|---|
+| InitializeTurretServer | 	urretRuntimeConfig | void | 소환 런타임 설정(탄속/피해/지속시간) 주입 및 타이머 시작 |
+| TickTurretServer | void | void | 최근접 몬스터 타겟 획득 후 사격 판정 |
+| FireAtTargetServer | 	arget | boolean | projectile/smite 타입 분기 사격 |
+| SpawnTurretProjectileServer | direction, spawnPosition2D | boolean | 포탑 투사체 생성 및 ProjectileComponent 초기화 |
+| DestroyTurretServer | void | void | 지속시간 만료/종료 시 포탑 안전 파괴 |
+
+### FireSystemComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.codeblock
+- **Updated:** 2026-02-24
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| FireType 분기 | TryFireByTypeServer 추가 (projectile/area/smite/summon) |
+| Summon 연동 | SummonTurretServer에서 TurretAIComponent 런타임 주입 |
+| Smite | 투사체 없이 즉발 피해 (SmiteAttackServer) |
+| Projectile 확장 | SpawnProjectileServer가 성공 여부(boolean) 반환 |
+| Weapon EXP | 발사/소환 성공 시 WeaponLevelUpComponent:AddWeaponExpServer 호출 |
+| Damage 계산 | BaseWeaponAttack 우선, 미설정 시 BasePlayerAtk 폴백 |
+
+### ProjectileComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Combat/ProjectileComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Combat/ProjectileComponent.codeblock
+- **Updated:** 2026-02-24
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| ProjectileType | single/area 분기 처리 |
+| SplashSize | area 폭발 반경 |
+| ExplosionTriggered | 중복 폭발 방지 플래그 |
+| ExplodeServer | area 투사체 반경 피해 처리 |
+
+### WeaponSwapComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.codeblock
+- **Updated:** 2026-02-24
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| 데이터 소스 확장 | ProjectileDataTableName, SummonDataTableName 추가 |
+| 슬롯 스키마 확장 | FireType, ProjectileType, ProjectileId, SummonId, SplashSize, SummonCooldown, SummonDuration, SummonFireRate, SummonProjectileId, TurretModelId |
+| 테이블 캐시 | Projectile/Summon 행 캐시 로딩 추가 |
+| 전투 적용 연동 | ApplySlotDataToCombat에서 FireSystem 신규 필드 주입 |
+| 레벨업 연동 | 슬롯 적용 직후 WeaponLevelUp.ApplyWeaponPowerToFireServer 호출 |
+
+### TagManagerComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Meta/TagManagerComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Meta/TagManagerComponent.codeblock
+- **Updated:** 2026-02-24
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| 상태 캡처 | CaptureCurrentCharacterState에 WeaponLevelProgressState 포함 |
+| 상태 복원 | ApplyCharacterState에서 ImportWeaponProgressState 호출 |
+| 공격력 재적용 | 복원 후 ApplyWeaponPowerToFireServer("") 재실행 |
+
+### Map01BootstrapComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.codeblock
+- **Updated:** 2026-02-24
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| 필수 부착 목록 | WeaponLevelUpComponent 자동 부착 추가 |
+
+## 2026-02-25 Bootstrap Auto-Attach Hotfix
+
+### Map01BootstrapComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.codeblock
+- **Updated:** 2026-02-25
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Native player auto-attach | Added PlayerComponent, PlayerControllerComponent, StateComponent, SpriteRendererComponent, AvatarStateAnimationComponent, TriggerComponent, PhysicsColliderComponent to required attach list. |
+| Runtime stability | Prevents missing-base-component cases on custom player models (input/state animation not updating). |

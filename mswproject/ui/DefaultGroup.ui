@@ -635,378 +635,6 @@
         }
       },
       {
-        "id": "3b1a339c-f8af-42e6-bb99-543f31aabe50",
-        "path": "/ui/DefaultGroup/GRRankingText",
-        "componentNames": "MOD.Core.UITransformComponent,MOD.Core.SpriteGUIRendererComponent,MOD.Core.TextComponent",
-        "jsonString": {
-          "name": "GRRankingText",
-          "path": "/ui/DefaultGroup/GRRankingText",
-          "nameEditable": true,
-          "enable": true,
-          "visible": true,
-          "localize": true,
-          "displayOrder": 3,
-          "pathConstraints": "///",
-          "revision": 1,
-          "origin": {
-            "type": "Model",
-            "entry_id": "UIText",
-            "sub_entity_id": null,
-            "root_entity_id": null,
-            "replaced_model_id": null
-          },
-          "modelId": "uitext",
-          "@components": [
-            {
-              "@type": "MOD.Core.UITransformComponent",
-              "AlignmentOption": 0,
-              "AnchorsMax": {
-                "x": 0.5,
-                "y": 0.5
-              },
-              "AnchorsMin": {
-                "x": 0.5,
-                "y": 0.5
-              },
-              "MobileOnly": false,
-              "OffsetMax": {
-                "x": -140.0,
-                "y": 330.0
-              },
-              "OffsetMin": {
-                "x": -900.0,
-                "y": -90.0
-              },
-              "Pivot": {
-                "x": 0.5,
-                "y": 0.5
-              },
-              "RectSize": {
-                "x": 760.0,
-                "y": 420.0
-              },
-              "UIMode": 1,
-              "UIScale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-              },
-              "UIVersion": 2,
-              "anchoredPosition": {
-                "x": -520.0,
-                "y": 120.0
-              },
-              "Position": {
-                "x": -520.0,
-                "y": 120.0,
-                "z": 0.0
-              },
-              "QuaternionRotation": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0,
-                "w": 1.0
-              },
-              "Scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-              },
-              "Enable": true
-            },
-            {
-              "@type": "MOD.Core.SpriteGUIRendererComponent",
-              "AnimClipPlayType": 0,
-              "EndFrameIndex": 2147483647,
-              "ImageRUID": {
-                "DataId": ""
-              },
-              "LocalPosition": {
-                "x": 0.0,
-                "y": 0.0
-              },
-              "LocalScale": {
-                "x": 1.0,
-                "y": 1.0
-              },
-              "OverrideSorting": false,
-              "PlayRate": 1.0,
-              "PreserveSprite": 0,
-              "StartFrameIndex": 0,
-              "Color": {
-                "r": 0.0,
-                "g": 0.0,
-                "b": 0.0,
-                "a": 0.45
-              },
-              "DropShadow": false,
-              "DropShadowAngle": 30.0,
-              "DropShadowColor": {
-                "r": 0.0,
-                "g": 0.0,
-                "b": 0.0,
-                "a": 0.72
-              },
-              "DropShadowDistance": 32.0,
-              "FillAmount": 1.0,
-              "FillCenter": true,
-              "FillClockWise": true,
-              "FillMethod": 0,
-              "FillOrigin": 0,
-              "FlipX": false,
-              "FlipY": false,
-              "FrameColumn": 1,
-              "FrameRate": 0,
-              "FrameRow": 1,
-              "Outline": false,
-              "OutlineColor": {
-                "r": 0.0,
-                "g": 0.0,
-                "b": 0.0,
-                "a": 1.0
-              },
-              "OutlineWidth": 3.0,
-              "RaycastTarget": false,
-              "Type": 1,
-              "Enable": true
-            },
-            {
-              "@type": "MOD.Core.TextComponent",
-              "Alignment": 0,
-              "Bold": false,
-              "DropShadow": false,
-              "DropShadowAngle": 30.0,
-              "DropShadowColor": {
-                "r": 0.0,
-                "g": 0.0,
-                "b": 0.0,
-                "a": 0.72
-              },
-              "DropShadowDistance": 32.0,
-              "Font": 0,
-              "FontColor": {
-                "r": 1.0,
-                "g": 1.0,
-                "b": 1.0,
-                "a": 1.0
-              },
-              "FontSize": 30,
-              "MaxSize": 40,
-              "MinSize": 10,
-              "OutlineColor": {
-                "r": 0.698039234,
-                "g": 0.698039234,
-                "b": 0.698039234,
-                "a": 1.0
-              },
-              "OutlineDistance": {
-                "x": 1.0,
-                "y": -1.0
-              },
-              "Overflow": 1,
-              "OverrideSorting": false,
-              "Padding": {
-                "left": 8,
-                "right": 8,
-                "top": 4,
-                "bottom": 4
-              },
-              "SizeFit": false,
-              "Text": "[TOP 100] TIME ATTACK",
-              "UseOutLine": false,
-              "Enable": true
-            }
-          ],
-          "@version": 1
-        }
-      },
-      {
-        "id": "80ef4f5b-0967-4004-85d2-db9084dca2b7",
-        "path": "/ui/DefaultGroup/GRMyRankText",
-        "componentNames": "MOD.Core.UITransformComponent,MOD.Core.SpriteGUIRendererComponent,MOD.Core.TextComponent",
-        "jsonString": {
-          "name": "GRMyRankText",
-          "path": "/ui/DefaultGroup/GRMyRankText",
-          "nameEditable": true,
-          "enable": true,
-          "visible": true,
-          "localize": true,
-          "displayOrder": 4,
-          "pathConstraints": "///",
-          "revision": 1,
-          "origin": {
-            "type": "Model",
-            "entry_id": "UIText",
-            "sub_entity_id": null,
-            "root_entity_id": null,
-            "replaced_model_id": null
-          },
-          "modelId": "uitext",
-          "@components": [
-            {
-              "@type": "MOD.Core.UITransformComponent",
-              "AlignmentOption": 0,
-              "AnchorsMax": {
-                "x": 0.5,
-                "y": 0.5
-              },
-              "AnchorsMin": {
-                "x": 0.5,
-                "y": 0.5
-              },
-              "MobileOnly": false,
-              "OffsetMax": {
-                "x": -140.0,
-                "y": -125.0
-              },
-              "OffsetMin": {
-                "x": -900.0,
-                "y": -215.0
-              },
-              "Pivot": {
-                "x": 0.5,
-                "y": 0.5
-              },
-              "RectSize": {
-                "x": 760.0,
-                "y": 90.0
-              },
-              "UIMode": 1,
-              "UIScale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-              },
-              "UIVersion": 2,
-              "anchoredPosition": {
-                "x": -520.0,
-                "y": -170.0
-              },
-              "Position": {
-                "x": -520.0,
-                "y": -170.0,
-                "z": 0.0
-              },
-              "QuaternionRotation": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0,
-                "w": 1.0
-              },
-              "Scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-              },
-              "Enable": true
-            },
-            {
-              "@type": "MOD.Core.SpriteGUIRendererComponent",
-              "AnimClipPlayType": 0,
-              "EndFrameIndex": 2147483647,
-              "ImageRUID": {
-                "DataId": ""
-              },
-              "LocalPosition": {
-                "x": 0.0,
-                "y": 0.0
-              },
-              "LocalScale": {
-                "x": 1.0,
-                "y": 1.0
-              },
-              "OverrideSorting": false,
-              "PlayRate": 1.0,
-              "PreserveSprite": 0,
-              "StartFrameIndex": 0,
-              "Color": {
-                "r": 0.0,
-                "g": 0.0,
-                "b": 0.0,
-                "a": 0.45
-              },
-              "DropShadow": false,
-              "DropShadowAngle": 30.0,
-              "DropShadowColor": {
-                "r": 0.0,
-                "g": 0.0,
-                "b": 0.0,
-                "a": 0.72
-              },
-              "DropShadowDistance": 32.0,
-              "FillAmount": 1.0,
-              "FillCenter": true,
-              "FillClockWise": true,
-              "FillMethod": 0,
-              "FillOrigin": 0,
-              "FlipX": false,
-              "FlipY": false,
-              "FrameColumn": 1,
-              "FrameRate": 0,
-              "FrameRow": 1,
-              "Outline": false,
-              "OutlineColor": {
-                "r": 0.0,
-                "g": 0.0,
-                "b": 0.0,
-                "a": 1.0
-              },
-              "OutlineWidth": 3.0,
-              "RaycastTarget": false,
-              "Type": 1,
-              "Enable": true
-            },
-            {
-              "@type": "MOD.Core.TextComponent",
-              "Alignment": 0,
-              "Bold": false,
-              "DropShadow": false,
-              "DropShadowAngle": 30.0,
-              "DropShadowColor": {
-                "r": 0.0,
-                "g": 0.0,
-                "b": 0.0,
-                "a": 0.72
-              },
-              "DropShadowDistance": 32.0,
-              "Font": 0,
-              "FontColor": {
-                "r": 1.0,
-                "g": 1.0,
-                "b": 1.0,
-                "a": 1.0
-              },
-              "FontSize": 28,
-              "MaxSize": 40,
-              "MinSize": 10,
-              "OutlineColor": {
-                "r": 0.698039234,
-                "g": 0.698039234,
-                "b": 0.698039234,
-                "a": 1.0
-              },
-              "OutlineDistance": {
-                "x": 1.0,
-                "y": -1.0
-              },
-              "Overflow": 1,
-              "OverrideSorting": false,
-              "Padding": {
-                "left": 8,
-                "right": 8,
-                "top": 4,
-                "bottom": 4
-              },
-              "SizeFit": false,
-              "Text": "My Rank: -",
-              "UseOutLine": false,
-              "Enable": true
-            }
-          ],
-          "@version": 1
-        }
-      },
-      {
         "id": "34febfd2-c1ca-4059-b326-941fee82d304",
         "path": "/ui/DefaultGroup/GRTimerText",
         "componentNames": "MOD.Core.UITransformComponent,MOD.Core.SpriteGUIRendererComponent,MOD.Core.TextComponent",
@@ -1017,7 +645,7 @@
           "enable": false,
           "visible": false,
           "localize": true,
-          "displayOrder": 5,
+          "displayOrder": 3,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {
@@ -1203,7 +831,7 @@
           "enable": false,
           "visible": false,
           "localize": true,
-          "displayOrder": 6,
+          "displayOrder": 4,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {
@@ -1389,7 +1017,7 @@
           "enable": false,
           "visible": false,
           "localize": true,
-          "displayOrder": 7,
+          "displayOrder": 5,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {
@@ -1575,7 +1203,7 @@
           "enable": false,
           "visible": false,
           "localize": true,
-          "displayOrder": 8,
+          "displayOrder": 6,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {
@@ -1761,7 +1389,7 @@
           "enable": false,
           "visible": false,
           "localize": true,
-          "displayOrder": 9,
+          "displayOrder": 7,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {
@@ -1947,7 +1575,7 @@
           "enable": false,
           "visible": false,
           "localize": true,
-          "displayOrder": 10,
+          "displayOrder": 8,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {
@@ -2647,7 +2275,7 @@
           "enable": false,
           "visible": false,
           "localize": true,
-          "displayOrder": 11,
+          "displayOrder": 9,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {
@@ -2787,7 +2415,7 @@
           "enable": false,
           "visible": false,
           "localize": true,
-          "displayOrder": 12,
+          "displayOrder": 10,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {
@@ -6187,7 +5815,7 @@
           "enable": false,
           "visible": false,
           "localize": true,
-          "displayOrder": 13,
+          "displayOrder": 11,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {
@@ -6373,7 +6001,7 @@
           "enable": false,
           "visible": false,
           "localize": true,
-          "displayOrder": 14,
+          "displayOrder": 12,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {
@@ -6559,7 +6187,7 @@
           "enable": false,
           "visible": false,
           "localize": true,
-          "displayOrder": 15,
+          "displayOrder": 13,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {
@@ -7211,7 +6839,7 @@
           "enable": true,
           "visible": true,
           "localize": true,
-          "displayOrder": 16,
+          "displayOrder": 14,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {
@@ -7770,7 +7398,7 @@
           "enable": false,
           "visible": false,
           "localize": true,
-          "displayOrder": 17,
+          "displayOrder": 15,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {

@@ -1,0 +1,569 @@
+@Component
+script WeaponLevelUpComponent extends Component
+
+    property string WeaponDataTableName = "WeaponData"
+    property string WeaponLevelDataTableName = "WeaponLevelData"
+    property integer DefaultRequiredExp = 10
+    property integer DefaultStartLevel = 1
+    property integer DefaultMaxLevel = 10
+    property boolean EnableDebugLogs = false
+
+    -- Server initializes caches so exp/level lookup remains O(1) during combat.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self:EnsureGRUtil()
+        self._T.WeaponConfigById = {}
+        self._T.LevelRowByWeaponId = {}
+        self._T.WeaponProgressById = {}
+        self._T.IsWeaponConfigLoaded = false
+        self._T.IsWeaponLevelLoaded = false
+    end
+
+    -- BeginPlay preloads table contracts and applies the current weapon power once.
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self:InitializeWeaponProgressServer()
+        self:ApplyWeaponPowerToFireServer("")
+    end
+
+    -- Public initializer is idempotent so bootstrap/tag paths can call it safely.
+    @ExecSpace("ServerOnly")
+    method void InitializeWeaponProgressServer()
+        if self._T.IsWeaponConfigLoaded ~= true then
+            self:LoadWeaponConfigRowsServer()
+        end
+        if self._T.IsWeaponLevelLoaded ~= true then
+            self:LoadWeaponLevelRowsServer()
+        end
+
+        if self._T.WeaponConfigById ~= nil then
+            for weaponId, _ in pairs(self._T.WeaponConfigById) do
+                self:EnsureWeaponProgressByIdServer(tostring(weaponId))
+            end
+        end
+    end
+
+    -- FireSystem calls this API after successful fire/install; max-level weapons stop accumulating exp.
+    @ExecSpace("ServerOnly")
+    method void AddWeaponExpServer(string weaponId, integer amount)
+        if weaponId == nil or weaponId == "" then
+            return
+        end
+        if amount == nil or amount <= 0 then
+            return
+        end
+
+        local progress = self:EnsureWeaponProgressByIdServer(weaponId)
+        if progress == nil then
+            return
+        end
+        if progress.Level >= progress.MaxLevel then
+            progress.Exp = 0
+            return
+        end
+
+        local safeAmount = math.max(0, math.floor(amount))
+        if safeAmount <= 0 then
+            return
+        end
+
+        progress.Exp = math.max(0, math.floor(progress.Exp + safeAmount))
+
+        local requiredExp = math.max(1, math.floor(progress.RequiredExp))
+        local didLevelUp = false
+        while progress.Level < progress.MaxLevel and progress.Exp >= requiredExp do
+            progress.Exp -= requiredExp
+            progress.Level += 1
+            didLevelUp = true
+        end
+
+        if progress.Level >= progress.MaxLevel then
+            progress.Level = progress.MaxLevel
+            progress.Exp = 0
+        end
+
+        if didLevelUp == true and self.EnableDebugLogs == true then
+            log("[WeaponLevelUp] LevelUp weaponId=", tostring(weaponId), ", level=", tostring(progress.Level), ", remainExp=", tostring(progress.Exp))
+        end
+
+        local currentWeaponId = self:ResolveCurrentWeaponIdServer()
+        if currentWeaponId == weaponId then
+            self:ApplyWeaponPowerToFireServer(weaponId)
+        end
+    end
+
+    -- Applies PlayerbleData.player_atk * WeaponLevelData.level_N to FireSystem.BaseWeaponAttack.
+    @ExecSpace("ServerOnly")
+    method integer ApplyWeaponPowerToFireServer(string weaponId)
+        local finalWeaponId = weaponId
+        if finalWeaponId == nil or finalWeaponId == "" then
+            finalWeaponId = self:ResolveCurrentWeaponIdServer()
+        end
+        if finalWeaponId == nil or finalWeaponId == "" then
+            return 0
+        end
+
+        local progress = self:EnsureWeaponProgressByIdServer(finalWeaponId)
+        if progress == nil then
+            return 0
+        end
+
+        local fire = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "BaseWeaponAttack")
+        if fire == nil then
+            return 0
+        end
+
+        local basePlayerAtk = 0
+        local readAtkOk, readAtkValue = pcall(function()
+            return fire.BasePlayerAtk
+        end)
+        if readAtkOk == true and readAtkValue ~= nil then
+            basePlayerAtk = math.max(0, math.floor(readAtkValue))
+        end
+
+        local multiplier = self:ResolveLevelMultiplierServer(finalWeaponId, progress.Level)
+        local finalAttack = math.max(0, math.floor(basePlayerAtk * multiplier))
+
+        pcall(function()
+            fire.BaseWeaponAttack = finalAttack
+        end)
+
+        return finalAttack
+    end
+
+    -- Export payload is consumed by TagManager to keep character-specific weapon progress.
+    @ExecSpace("ServerOnly")
+    method table ExportWeaponProgressState()
+        local state = {}
+        if self._T.WeaponProgressById == nil then
+            return state
+        end
+
+        for weaponId, progress in pairs(self._T.WeaponProgressById) do
+            if weaponId == nil or progress == nil then
+                continue
+            end
+
+            local row = {}
+            row.Level = math.max(1, math.floor(progress.Level))
+            row.Exp = math.max(0, math.floor(progress.Exp))
+            row.RequiredExp = math.max(1, math.floor(progress.RequiredExp))
+            row.MaxLevel = math.max(1, math.floor(progress.MaxLevel))
+            state[tostring(weaponId)] = row
+        end
+        return state
+    end
+
+    -- Import payload restores progress and reapplies current weapon power immediately.
+    @ExecSpace("ServerOnly")
+    method void ImportWeaponProgressState(table state)
+        if state == nil then
+            return
+        end
+
+        for weaponId, row in pairs(state) do
+            if weaponId == nil then
+                continue
+            end
+
+            local finalWeaponId = tostring(weaponId)
+            if finalWeaponId == "" then
+                continue
+            end
+
+            local progress = self:EnsureWeaponProgressByIdServer(finalWeaponId)
+            if progress == nil then
+                continue
+            end
+
+            if type(row) ~= "table" then
+                continue
+            end
+
+            local level = progress.Level
+            local parsedLevel = tonumber(row.Level)
+            if parsedLevel ~= nil then
+                level = math.floor(parsedLevel)
+            end
+            if level < 1 then
+                level = 1
+            end
+            if level > progress.MaxLevel then
+                level = progress.MaxLevel
+            end
+
+            local exp = progress.Exp
+            local parsedExp = tonumber(row.Exp)
+            if parsedExp ~= nil then
+                exp = math.floor(parsedExp)
+            end
+            exp = math.max(0, exp)
+
+            progress.Level = level
+            progress.Exp = exp
+            if progress.Level >= progress.MaxLevel then
+                progress.Exp = 0
+            end
+        end
+
+        self:ApplyWeaponPowerToFireServer("")
+    end
+
+    -- Ensures one weapon progress row exists using WeaponData start/max/required defaults.
+    @ExecSpace("ServerOnly")
+    method table EnsureWeaponProgressByIdServer(string weaponId)
+        if weaponId == nil or weaponId == "" then
+            return nil
+        end
+
+        if self._T.IsWeaponConfigLoaded ~= true then
+            self:LoadWeaponConfigRowsServer()
+        end
+
+        local config = self._T.WeaponConfigById[weaponId]
+        if config == nil then
+            config = {}
+            config.StartLevel = math.max(1, self.DefaultStartLevel)
+            config.MaxLevel = math.max(config.StartLevel, self.DefaultMaxLevel)
+            config.RequiredExp = math.max(1, self.DefaultRequiredExp)
+            self._T.WeaponConfigById[weaponId] = config
+        end
+
+        if self._T.WeaponProgressById == nil then
+            self._T.WeaponProgressById = {}
+        end
+
+        local progress = self._T.WeaponProgressById[weaponId]
+        if progress == nil then
+            progress = {}
+            progress.Level = config.StartLevel
+            progress.Exp = 0
+            progress.RequiredExp = config.RequiredExp
+            progress.MaxLevel = config.MaxLevel
+            self._T.WeaponProgressById[weaponId] = progress
+        else
+            progress.RequiredExp = config.RequiredExp
+            progress.MaxLevel = config.MaxLevel
+
+            if progress.Level == nil then
+                progress.Level = config.StartLevel
+            end
+            progress.Level = math.max(1, math.floor(progress.Level))
+            if progress.Level > progress.MaxLevel then
+                progress.Level = progress.MaxLevel
+            end
+
+            if progress.Exp == nil then
+                progress.Exp = 0
+            end
+            progress.Exp = math.max(0, math.floor(progress.Exp))
+            if progress.Level >= progress.MaxLevel then
+                progress.Exp = 0
+            end
+        end
+
+        return progress
+    end
+
+    -- WeaponData is loaded once and cached by id to avoid repeated table scans during gameplay.
+    @ExecSpace("ServerOnly")
+    method void LoadWeaponConfigRowsServer()
+        if self._T.IsWeaponConfigLoaded == true then
+            return
+        end
+
+        local tableData = self:LoadTableServer(self.WeaponDataTableName)
+        if tableData == nil then
+            return
+        end
+
+        local rows = nil
+        local rowsOk, rowsValue = pcall(function()
+            return tableData:GetAllRow()
+        end)
+        if rowsOk == true then
+            rows = rowsValue
+        end
+        if rows == nil then
+            return
+        end
+
+        local cache = {}
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+
+            local id = self:GetRowString(row, "id", "")
+            if id == "" then
+                continue
+            end
+
+            local startLevel = self:GetRowInteger(row, "start_level", self.DefaultStartLevel)
+            local maxLevel = self:GetRowInteger(row, "max_level", self.DefaultMaxLevel)
+            local requiredExp = self:GetRowInteger(row, "required_exp", self.DefaultRequiredExp)
+
+            startLevel = math.max(1, startLevel)
+            maxLevel = math.max(startLevel, maxLevel)
+            requiredExp = math.max(1, requiredExp)
+
+            local config = {}
+            config.StartLevel = startLevel
+            config.MaxLevel = maxLevel
+            config.RequiredExp = requiredExp
+            cache[id] = config
+        end
+
+        self._T.WeaponConfigById = cache
+        self._T.IsWeaponConfigLoaded = true
+    end
+
+    -- WeaponLevelData rows are cached by weapon id for level multiplier lookup.
+    @ExecSpace("ServerOnly")
+    method void LoadWeaponLevelRowsServer()
+        if self._T.IsWeaponLevelLoaded == true then
+            return
+        end
+
+        local tableData = self:LoadTableServer(self.WeaponLevelDataTableName)
+        if tableData == nil then
+            return
+        end
+
+        local rows = nil
+        local rowsOk, rowsValue = pcall(function()
+            return tableData:GetAllRow()
+        end)
+        if rowsOk == true then
+            rows = rowsValue
+        end
+        if rows == nil then
+            return
+        end
+
+        local cache = {}
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+
+            local id = self:GetRowString(row, "id", "")
+            if id == "" then
+                continue
+            end
+            cache[id] = row
+        end
+
+        self._T.LevelRowByWeaponId = cache
+        self._T.IsWeaponLevelLoaded = true
+    end
+
+    -- Resolves level multiplier safely; invalid/missing data returns 1.0 as neutral multiplier.
+    method number ResolveLevelMultiplierServer(string weaponId, integer level)
+        if weaponId == nil or weaponId == "" then
+            return 1.0
+        end
+        if self._T.IsWeaponLevelLoaded ~= true then
+            self:LoadWeaponLevelRowsServer()
+        end
+
+        local row = nil
+        if self._T.LevelRowByWeaponId ~= nil then
+            row = self._T.LevelRowByWeaponId[weaponId]
+        end
+        if row == nil then
+            return 1.0
+        end
+
+        local safeLevel = math.max(1, math.floor(level))
+        local column = "level_" .. tostring(safeLevel)
+        local multiplier = self:GetRowNumber(row, column, -1)
+        if multiplier <= 0 then
+            multiplier = self:GetRowNumber(row, "level_1", 1.0)
+        end
+        if multiplier <= 0 then
+            multiplier = 1.0
+        end
+        return multiplier
+    end
+
+    -- Current weapon id is resolved from FireSystem first, then WeaponSwap slot fallback.
+    method string ResolveCurrentWeaponIdServer()
+        local fire = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "CurrentWeaponId")
+        if fire ~= nil then
+            local fireOk, fireValue = pcall(function()
+                return fire.CurrentWeaponId
+            end)
+            if fireOk == true and fireValue ~= nil and tostring(fireValue) ~= "" then
+                return tostring(fireValue)
+            end
+        end
+
+        local swap = self:ResolveComponentSafe(self.Entity, "WeaponSwapComponent", "CurrentWeaponSlot")
+        if swap ~= nil and swap.GetSlotDataBySlot ~= nil then
+            local slot = 1
+            local slotOk, slotValue = pcall(function()
+                return swap.CurrentWeaponSlot
+            end)
+            if slotOk == true and slotValue ~= nil then
+                slot = math.max(1, math.floor(slotValue))
+            end
+
+            local data = nil
+            local dataOk, dataValue = pcall(function()
+                return swap:GetSlotDataBySlot(slot)
+            end)
+            if dataOk == true then
+                data = dataValue
+            end
+            if data ~= nil and data.WeaponId ~= nil and tostring(data.WeaponId) ~= "" then
+                return tostring(data.WeaponId)
+            end
+        end
+
+        return ""
+    end
+
+    method table LoadTableServer(string tableName)
+        if tableName == nil or tableName == "" then
+            return nil
+        end
+
+        local loadOk, loadResult = pcall(function()
+            return _DataService:GetTable(tableName)
+        end)
+        if loadOk == true then
+            return loadResult
+        end
+        return nil
+    end
+
+    method string GetRowString(any row, string columnName, string fallbackValue)
+        if row == nil then
+            return fallbackValue
+        end
+        if columnName == nil or columnName == "" then
+            return fallbackValue
+        end
+
+        local value = nil
+        local readOk, readValue = pcall(function()
+            return row:GetItem(columnName)
+        end)
+        if readOk == true then
+            value = readValue
+        end
+        if value == nil or value == "" then
+            return fallbackValue
+        end
+        return tostring(value)
+    end
+
+    method integer GetRowInteger(any row, string columnName, integer fallbackValue)
+        local text = self:GetRowString(row, columnName, "")
+        if text == "" then
+            return math.floor(fallbackValue)
+        end
+
+        local parsed = tonumber(text)
+        if parsed == nil then
+            return math.floor(fallbackValue)
+        end
+        return math.floor(parsed)
+    end
+
+    method number GetRowNumber(any row, string columnName, number fallbackValue)
+        local text = self:GetRowString(row, columnName, "")
+        if text == "" then
+            return fallbackValue
+        end
+
+        local parsed = tonumber(text)
+        if parsed == nil then
+            return fallbackValue
+        end
+        return parsed
+    end
+
+    -- Utility bootstrap first; fallback local lookup remains when global util is absent.
+    method void EnsureGRUtil()
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, utilApi = pcall(function()
+                return utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and utilApi ~= nil then
+                self._T.GRUtil = utilApi
+            end
+            if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+end

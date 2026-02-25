@@ -208,6 +208,14 @@ script Map01BootstrapComponent extends Component
     @ExecSpace("ServerOnly")
     method void AttachRequiredComponentsServer(Entity playerEntity)
         local required = {
+            -- Native player runtime components needed for input/state animation compatibility.
+            "PlayerComponent",
+            "PlayerControllerComponent",
+            "StateComponent",
+            "SpriteRendererComponent",
+            "AvatarStateAnimationComponent",
+            "TriggerComponent",
+            "PhysicsColliderComponent",
             "GRUtilModule",
             "GoldComponent",
             "MovementComponent",
@@ -220,6 +228,7 @@ script Map01BootstrapComponent extends Component
             "ReloadComponent",
             "FireSystemComponent",
             "WeaponSwapComponent",
+            "WeaponLevelUpComponent",
             "ShopManagerComponent",
             "TagManagerComponent",
             "TagSkillComponent",

@@ -1,4 +1,4 @@
-﻿# 🟡 대기중
+﻿# 🔵 진행중
 # SPEC_WeaponLevelUp — 무기 경험치 & 레벨업 시스템
 
 ## 1. 개요
@@ -153,16 +153,17 @@ ApplyLevelUpServer(weaponId, newLevel):
 
 ## 10. Codex 체크리스트
 
-- [ ] `WeaponLevelUpComponent` 신규
-- [ ] `FireSystemComponent` 수정: 발사 성공 시 경험치 호출
-- [ ] `WeaponSwapComponent` 수정: 슬롯 데이터에 레벨/경험치 포함
-- [ ] `TagManagerComponent` 수정: 캡처/복원에 레벨/경험치 추가
-- [ ] `Map01BootstrapComponent` 목록 추가
-- [ ] `Code_Documentation.md` 업데이트
+- [x] `WeaponLevelUpComponent` 신규
+- [x] `FireSystemComponent` 수정: 발사 성공 시 경험치 호출
+- [x] `WeaponSwapComponent` 수정: 슬롯 적용 시 WeaponLevelUp 연동
+- [x] `TagManagerComponent` 수정: 캡처/복원에 레벨/경험치 추가
+- [x] `Map01BootstrapComponent` 목록 추가
+- [x] `Code_Documentation.md` 업데이트
 - [ ] 완료 후 `🟢 완료`
 
 ---
 
-| **작성자** | Antigravity (TD) | **상태** | 🟡 대기중 |
+| **작성자** | Antigravity (TD) | **상태** | 🔵 진행중 |
 |---|---|---|---|
 | **담당자** | Codex | **작성일** | 2026-02-24 |
+
