@@ -1,12 +1,12 @@
-id,name,fire_type,projectile_id,summon_id,fire_rate,reload_time,max_basic_resource,dmg_raito,start_level,max_level,required_exp,weapon_scale,weapon_offset_x,weapon_offset_y,muzzle_forward_offset,muzzle_side_offset,weapon_rotation_offset,sprite_ruid,-copy21,-copy22,-copy23,-copy24,-copy25
-bow,활,projectile,arrow,-,0.4,3,70,1,1,10,245,0.7,-0.18,0.06,0,00,0,511b7320b80349e9afe140aaf7cf68d5,,,,,
-cannon,캐논,projectile,cannonball,-,1.1,5,25,1.4,1,10,85,1,0,0,,,,aff8189949ea4f89a00f561579435fd9,,WeaponData 자료형 정의,,,
-turret_minigun,포탑 - 미니건,summon,-,a_turret,-,3,5,,1,10,15,1,0,,,,,aff8189949ea4f89a00f561579435fd9,,컬럼명,역할,자료형,설명
-deathperado,데스페라도,projectile,deathperado_pt,-,1.5,2,17,2,1,10,68,1,0,,,,,aff8189949ea4f89a00f561579435fd9,,id,무기 테이블 ID,STRING,
-gun,권총,projectile,pistol_bullet,-,0.9,1,40,1.5,1,10,120,1,0,0,,,,aff8189949ea4f89a00f561579435fd9,,name,무기 이름,STRING,
-fireball,파이어 볼,projectile,fireball_pt,-,0.6,3.5,40,1.3,1,10,160,1,0,,,,,aff8189949ea4f89a00f561579435fd9,,fire_type,공격 타입,ERUM,
-turret_sniper,포탑 - 저격탑,summon,-,b_turret,-,2,3,,1,10,10,1,0,0,,,,aff8189949ea4f89a00f561579435fd9,,projectile_id,프로젝트타일 ID,STRING,
-gungnir,궁니르,projectile,gungnir_pt,-,1.2,2.5,26,3,1,10,85,1,0,,,,,aff8189949ea4f89a00f561579435fd9,,summon_id,포탑 ID,STRING,
+﻿id,name,fire_type,projectile_id,summon_id,fire_rate,reload_time,max_basic_resource,dmg_raito,start_level,max_level,required_exp,weapon_scale,weapon_offset_x,weapon_offset_y,muzzle_forward_offset,muzzle_side_offset,weapon_rotation_offset,sprite_ruid,-copy19,-copy20,-copy21,-copy22,-copy23
+bow,활,projectile,arrow,-,0.4,3,70,1,1,10,245,,,,,,,511b7320b80349e9afe140aaf7cf68d5,,,,,
+cannon,캐논,projectile,cannonball,-,1.1,5,25,1.4,1,10,85,,,,,,,0432635c6ad44034b563c21acf3f185a,,WeaponData 자료형 정의,,,
+turret_minigun,포탑 - 미니건,summon,-,a_turret,-,3,5,,1,10,15,,,,,,,c1f8417938b14d25b33e0598fa61ed6a,,컬럼명,역할,자료형,설명
+deathperado,데스페라도,projectile,deathperado_pt,-,1.5,2,17,2,1,10,68,,,,,,,7dff929aff8d4d7ab2e28465072285da,,id,무기 테이블 ID,STRING,
+gun,권총,projectile,pistol_bullet,-,0.9,1,40,1.5,1,10,120,,,,,,,6298a6d072544a2da950af9905a2fb74,,name,무기 이름,STRING,
+fireball,파이어 볼,projectile,fireball_pt,-,0.6,3.5,40,1.3,1,10,160,,,,,,,cfeea44fca1f4e34a7f52a9813877709,,fire_type,공격 타입,ERUM,
+turret_sniper,포탑 - 저격탑,summon,-,b_turret,-,2,3,,1,10,10,,,,,,,b684fc5a79124397ba0545337f4dde1f,,projectile_id,프로젝트타일 ID,STRING,
+gungnir,궁니르,projectile,gungnir_pt,-,1.2,2.5,26,3,1,10,85,,,,,,,7038b7f5d9bb4a19929f494712aaad8f,,summon_id,포탑 ID,STRING,
 ,,,,,,,,,,,,,,,,,,,,fire_rate,발사 후 딜레이,FLOAT,
 ,,,,,,,,,,,,,,,,,,,,reload_time,장전 시간,FLOAT,
 ,,,,,,,,,,,,,,,,,,,,max_basic_resource,최대 탄약,INT,
@@ -14,9 +14,5 @@ gungnir,궁니르,projectile,gungnir_pt,-,1.2,2.5,26,3,1,10,85,1,0,,,,,aff818994
 ,,,,,,,,,,,,,,,,,,,,start_level,시작 레벨,INT,
 ,,,,,,,,,,,,,,,,,,,,max_level,최대 레벨,INT,
 ,,,,,,,,,,,,,,,,,,,,required_exp,레벨 업 요구 경험치량,INT,
-,,,,,,,,,,,,,,,,,,,,weapon_scale,무기 표시 스케일(통합),FLOAT,
-,,,,,,,,,,,,,,,,,,,,weapon_offset_x,무기 기준점 X 오프셋,FLOAT,
-,,,,,,,,,,,,,,,,,,,,weapon_offset_y,무기 기준점 Y 오프셋,FLOAT,
-,,,,,,,,,,,,,,,,,,,,muzzle_forward_offset,총구 전방 오프셋(통합),FLOAT,
-,,,,,,,,,,,,,,,,,,,,muzzle_side_offset,총구 측면 오프셋,FLOAT,
+,,,,,,,,,,,,,,,,,,,,weapon_model,무기 모델,ERUM,
 ,,,,,,,,,,,,,,,,,,,,sprite_ruid,무기 스프라이트 RUID,STRING,

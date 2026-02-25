@@ -49,6 +49,7 @@ script WeaponModelComponent extends Component
     property boolean KeepWeaponHolderUnflippedFromOwner = true
     property boolean FlipWeaponSpriteByCursor = true
     property boolean WeaponFlipWhenCursorRight = true
+    property boolean CorrectWeaponSpriteYFlipOnLeft = true
 
     -- Server initializes utility and data cache for weapon-id lookup.
     @ExecSpace("ServerOnly")
@@ -703,16 +704,6 @@ script WeaponModelComponent extends Component
         if holderTransform == nil or isvalid(holderTransform) == false then
             return
         end
-        local ownerTransform = self.Entity.TransformComponent
-        if ownerTransform == nil or isvalid(ownerTransform) == false then
-            return
-        end
-
-        local ownerScale = ownerTransform.Scale
-        local ownerSignX = 1
-        if ownerScale ~= nil and ownerScale.x < 0 then
-            ownerSignX = -1
-        end
 
         local scaleConfig = self._T.CurrentWeaponScale
         local baseScaleX = self.DefaultWeaponScaleX
@@ -739,7 +730,8 @@ script WeaponModelComponent extends Component
         if holderScale ~= nil then
             currentZ = holderScale.z
         end
-        local targetScale = Vector3(baseScaleX * ownerSignX, baseScaleY, currentZ)
+        -- Keep holder local scale positive so owner left-facing does not force holder local X to -1.
+        local targetScale = Vector3(baseScaleX, baseScaleY, currentZ)
         pcall(function()
             holderTransform.Scale = targetScale
         end)
@@ -777,6 +769,16 @@ script WeaponModelComponent extends Component
             flipX = not cursorRight
         end
 
+        local flipY = false
+        if self.CorrectWeaponSpriteYFlipOnLeft == true then
+            local ownerScale = ownerTransform.Scale
+            if ownerScale ~= nil and ownerScale.x < 0 then
+                -- Left-facing owner can visually invert up/down on weapon sprite only.
+                -- This compensates renderer orientation without touching muzzle/ballistic logic.
+                flipY = true
+            end
+        end
+
         local spriteRenderer = self:ResolveComponentSafe(holder, "SpriteRendererComponent", "FlipX")
         if spriteRenderer == nil then
             return
@@ -786,7 +788,7 @@ script WeaponModelComponent extends Component
             spriteRenderer.FlipX = flipX
         end)
         pcall(function()
-            spriteRenderer.FlipY = false
+            spriteRenderer.FlipY = flipY
         end)
     end
 
