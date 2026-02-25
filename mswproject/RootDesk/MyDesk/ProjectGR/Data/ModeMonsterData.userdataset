@@ -16,7 +16,7 @@
       "name": "ModeMonsterData",
       "id": "b60d4184-ce41-4ae8-8020-fa5a2595eae3",
       "serveronly": false,
-      "syncDataSetWebUrl": "",
+      "syncDataSetWebUrl": "https://docs.google.com/spreadsheets/d/e/2PACX-1vQOxEymcT_FyHC8daomhi2sXzlyhrG8xTEExyYGhrcls92rGTedMvLOtLDlYuDvWQaakeuBsAe0-eIc/pub?gid=1229475422&single=true&output=csv",
       "dynamicloading": 0
     }
   }

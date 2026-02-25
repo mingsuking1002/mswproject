@@ -1,2 +1,8 @@
-﻿InnerRadius,OuterRadius,SpawnInterval,SpawnPerTick
-10,18,5,3
+﻿InnerRadius,OuterRadius,SpawnInterval,SpawnPerTick,-copy4,-copy5,-copy6,-copy7,-copy8
+8,16,5,3,,,,,
+,,,,,SpawnConfig 자료형 정의,,,
+,,,,,컬럼명,역할,자료형,설명
+,,,,,InnerRadius,스폰 최소 반경,INT,플레이어 기준 스폰 최소 반경 (이 안쪽은 스폰 안 함)
+,,,,,OuterRadius,스폰 최대 반경,INT,"플레이어 기준 스폰 최대 반경 (이 바깥은 스폰 안 함, OuterRadius >= InnerRadius)"
+,,,,,SpawnInterval,스폰 틱 주기 (초),INT,스폰 틱 주기(초)
+,,,,,SpawnPerTick,스폰 틱 당 생성 시도 수,INT,스폰 틱 1회당 생성 시도 수

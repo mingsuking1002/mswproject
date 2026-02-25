@@ -16,7 +16,7 @@
       "name": "BossData",
       "id": "35c599c0-a0d8-49fc-afa6-52218b0ccc86",
       "serveronly": false,
-      "syncDataSetWebUrl": "",
+      "syncDataSetWebUrl": "https://docs.google.com/spreadsheets/d/e/2PACX-1vQOxEymcT_FyHC8daomhi2sXzlyhrG8xTEExyYGhrcls92rGTedMvLOtLDlYuDvWQaakeuBsAe0-eIc/pub?gid=575084701&single=true&output=csv",
       "dynamicloading": 0
     }
   }

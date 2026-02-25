@@ -16,7 +16,7 @@
       "name": "SkillData",
       "id": "3e84c8cd-27fc-4bbb-bba2-92f9ce5b8d9a",
       "serveronly": false,
-      "syncDataSetWebUrl": "",
+      "syncDataSetWebUrl": "https://docs.google.com/spreadsheets/d/e/2PACX-1vQOxEymcT_FyHC8daomhi2sXzlyhrG8xTEExyYGhrcls92rGTedMvLOtLDlYuDvWQaakeuBsAe0-eIc/pub?gid=1978592325&single=true&output=csv",
       "dynamicloading": 0
     }
   }

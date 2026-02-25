@@ -20,4 +20,3 @@ player_b,카르테,90,100,3,,gun,fireball,turret_sniper,gungnir,tag_skill_b,a02d
 ,,,,,,,,,,,,,,,,idle_ruid,idle 애니 ruid,string,idle 애니메이션 ruid 값
 ,,,,,,,,,,,,,,,,walk_ruid,walk 애니 ruid,string,walk 애니메이션 ruid 값
 ,,,,,,,,,,,,,,,,dead_ruid,dead 애니 ruid,string,dead 애니메이션 ruid 값
-,,,,,,,,,,,,,,,,dead_last_ruid,dead 마지막 프레임 ruid,string,사망 1회 재생 후 고정할 마지막 프레임 ruid 값(미지정 시 dead_ruid 사용)

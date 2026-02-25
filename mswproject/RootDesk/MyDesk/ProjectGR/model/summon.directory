@@ -1,0 +1,23 @@
+{
+  "Id": "",
+  "GameId": "",
+  "EntryKey": "directory://60d65bd3f4f1474b81b3178a1a66fab3",
+  "ContentType": "x-mod/directory",
+  "Content": "",
+  "Usage": 0,
+  "UsePublish": 1,
+  "UseService": 0,
+  "CoreVersion": "26.1.0.0",
+  "StudioVersion": "0.1.0.0",
+  "DynamicLoading": 0,
+  "ContentProto": {
+    "Use": "Json",
+    "Json": {
+      "entry_id": "directory://60d65bd3f4f1474b81b3178a1a66fab3",
+      "name": "summon",
+      "lock": false,
+      "folding": false,
+      "nameEditable": true
+    }
+  }
+}

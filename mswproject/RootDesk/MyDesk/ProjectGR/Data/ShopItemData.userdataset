@@ -16,7 +16,7 @@
       "name": "ShopItemData",
       "id": "da4cc55f-cae1-488e-aec6-6b7cd147b9e1",
       "serveronly": false,
-      "syncDataSetWebUrl": "",
+      "syncDataSetWebUrl": "https://docs.google.com/spreadsheets/d/e/2PACX-1vQOxEymcT_FyHC8daomhi2sXzlyhrG8xTEExyYGhrcls92rGTedMvLOtLDlYuDvWQaakeuBsAe0-eIc/pub?gid=1688943715&single=true&output=csv",
       "dynamicloading": 0
     }
   }

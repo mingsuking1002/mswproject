@@ -1,0 +1,27 @@
+{
+  "Id": "",
+  "GameId": "",
+  "EntryKey": "model://6d728d2e-d508-44aa-9588-dc1d205452ef",
+  "ContentType": "x-mod/model",
+  "Content": "",
+  "Usage": 0,
+  "UsePublish": 1,
+  "UseService": 0,
+  "CoreVersion": "26.1.0.0",
+  "StudioVersion": "0.1.0.0",
+  "DynamicLoading": 0,
+  "ContentProto": {
+    "Use": "Json",
+    "Json": {
+      "Version": 1,
+      "Name": "gungnir_pt",
+      "BaseModelId": null,
+      "Id": "6d728d2e-d508-44aa-9588-dc1d205452ef",
+      "Components": [],
+      "Properties": [],
+      "Values": [],
+      "EventLinks": [],
+      "Children": []
+    }
+  }
+}

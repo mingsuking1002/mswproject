@@ -17,9 +17,22 @@
       "Name": "WeaponHolder",
       "BaseModelId": null,
       "Id": "ff52b16c-daad-4d86-a30e-4b081bfc6581",
-      "Components": [],
+      "Components": [
+        "MOD.Core.SpriteRendererComponent",
+        "MOD.Core.TransformComponent"
+      ],
       "Properties": [],
-      "Values": [],
+      "Values": [
+        {
+          "TargetType": "MOD.Core.SpriteRendererComponent",
+          "Name": "SpriteRUID",
+          "ValueType": {
+            "$type": "MODNativeType",
+            "type": "System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+          },
+          "Value": "fddf8c51c3e242659e40757c5b2b2f19"
+        }
+      ],
       "EventLinks": [],
       "Children": []
     }

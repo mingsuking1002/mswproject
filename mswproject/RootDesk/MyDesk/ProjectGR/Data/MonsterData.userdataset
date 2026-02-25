@@ -16,7 +16,7 @@
       "name": "MonsterData",
       "id": "50ce446b-0285-44da-a65e-44c0d8bf66e3",
       "serveronly": false,
-      "syncDataSetWebUrl": "",
+      "syncDataSetWebUrl": "https://docs.google.com/spreadsheets/d/e/2PACX-1vQOxEymcT_FyHC8daomhi2sXzlyhrG8xTEExyYGhrcls92rGTedMvLOtLDlYuDvWQaakeuBsAe0-eIc/pub?gid=522961985&single=true&output=csv",
       "dynamicloading": 0
     }
   }

@@ -16,7 +16,7 @@
       "name": "DropData",
       "id": "b3d2c2d0-94c8-4c79-9923-9a89505db732",
       "serveronly": false,
-      "syncDataSetWebUrl": "",
+      "syncDataSetWebUrl": "https://docs.google.com/spreadsheets/d/e/2PACX-1vQOxEymcT_FyHC8daomhi2sXzlyhrG8xTEExyYGhrcls92rGTedMvLOtLDlYuDvWQaakeuBsAe0-eIc/pub?gid=317829662&single=true&output=csv",
       "dynamicloading": 0
     }
   }
