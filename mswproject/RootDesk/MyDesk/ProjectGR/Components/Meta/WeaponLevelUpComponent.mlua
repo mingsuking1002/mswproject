@@ -17,12 +17,19 @@ script WeaponLevelUpComponent extends Component
         self._T.WeaponProgressById = {}
         self._T.IsWeaponConfigLoaded = false
         self._T.IsWeaponLevelLoaded = false
+        self._T.RequiredColumnWarned = {}
     end
 
     -- BeginPlay preloads table contracts and applies the current weapon power once.
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
         self:InitializeWeaponProgressServer()
+        self:ApplyWeaponPowerToFireServer("")
+    end
+
+    -- Map enter can reorder component initialization timing; reapply once to keep current slot power deterministic.
+    @ExecSpace("ServerOnly")
+    method void OnMapEnter(Entity enteredMap)
         self:ApplyWeaponPowerToFireServer("")
     end
 
@@ -299,8 +306,17 @@ script WeaponLevelUpComponent extends Component
                 continue
             end
 
+            if self:GetRowString(row, "start_level", "") == "" then
+                self:WarnMissingRequiredColumnOnce(self.WeaponDataTableName, "start_level", id)
+            end
             local startLevel = self:GetRowInteger(row, "start_level", self.DefaultStartLevel)
+            if self:GetRowString(row, "max_level", "") == "" then
+                self:WarnMissingRequiredColumnOnce(self.WeaponDataTableName, "max_level", id)
+            end
             local maxLevel = self:GetRowInteger(row, "max_level", self.DefaultMaxLevel)
+            if self:GetRowString(row, "required_exp", "") == "" then
+                self:WarnMissingRequiredColumnOnce(self.WeaponDataTableName, "required_exp", id)
+            end
             local requiredExp = self:GetRowInteger(row, "required_exp", self.DefaultRequiredExp)
 
             startLevel = math.max(1, startLevel)
@@ -351,6 +367,7 @@ script WeaponLevelUpComponent extends Component
             if id == "" then
                 continue
             end
+            self:ValidateWeaponLevelRowColumnsServer(id, row)
             cache[id] = row
         end
 
@@ -385,6 +402,30 @@ script WeaponLevelUpComponent extends Component
             multiplier = 1.0
         end
         return multiplier
+    end
+
+    method void ValidateWeaponLevelRowColumnsServer(string weaponId, any row)
+        if weaponId == nil or weaponId == "" then
+            return
+        end
+        if row == nil then
+            return
+        end
+
+        local hasAnyLevel = false
+        for level = 1, 10 do
+            local column = "level_" .. tostring(level)
+            local text = self:GetRowString(row, column, "")
+            if text ~= "" then
+                hasAnyLevel = true
+            else
+                self:WarnMissingRequiredColumnOnce(self.WeaponLevelDataTableName, column, weaponId)
+            end
+        end
+
+        if hasAnyLevel ~= true then
+            self:WarnMissingRequiredColumnOnce(self.WeaponLevelDataTableName, "level_1", weaponId)
+        end
     end
 
     -- Current weapon id is resolved from FireSystem first, then WeaponSwap slot fallback.
@@ -438,12 +479,38 @@ script WeaponLevelUpComponent extends Component
         return nil
     end
 
+    method void WarnMissingRequiredColumnOnce(string tableName, string columnName, string key)
+        if self._T.RequiredColumnWarned == nil then
+            self._T.RequiredColumnWarned = {}
+        end
+
+        local warnKey = tostring(tableName) .. "|" .. tostring(columnName) .. "|" .. tostring(key)
+        if self._T.RequiredColumnWarned[warnKey] == true then
+            return
+        end
+        self._T.RequiredColumnWarned[warnKey] = true
+
+        log_warning(
+            "[WeaponLevelUp] missing required column value. table=",
+            tostring(tableName),
+            ", column=",
+            tostring(columnName),
+            ", key=",
+            tostring(key)
+        )
+    end
+
     method string GetRowString(any row, string columnName, string fallbackValue)
+        local fallback = fallbackValue
+        if fallback == nil then
+            fallback = ""
+        end
+
         if row == nil then
-            return fallbackValue
+            return fallback
         end
         if columnName == nil or columnName == "" then
-            return fallbackValue
+            return fallback
         end
 
         local value = nil
@@ -453,10 +520,23 @@ script WeaponLevelUpComponent extends Component
         if readOk == true then
             value = readValue
         end
-        if value == nil or value == "" then
-            return fallbackValue
+        if value == nil then
+            return fallback
         end
-        return tostring(value)
+
+        local text = tostring(value)
+        text = string.gsub(text, "^%s+", "")
+        text = string.gsub(text, "%s+$", "")
+        if text == "" then
+            return fallback
+        end
+
+        local lowered = string.lower(text)
+        if text == "-" or lowered == "null" or lowered == "nil" then
+            return fallback
+        end
+
+        return text
     end
 
     method integer GetRowInteger(any row, string columnName, integer fallbackValue)

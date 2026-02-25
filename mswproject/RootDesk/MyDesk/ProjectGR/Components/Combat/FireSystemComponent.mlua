@@ -43,6 +43,7 @@ script FireSystemComponent extends Component
         self._T.FireCooldownTimerId = 0
         self._T.MissingProjectileWarnAt = -9999.0
         self._T.MissingSummonWarnAt = -9999.0
+        self._T.InvalidFireConfigWarnAt = -9999.0
         self:EnsureGRUtil()
     end
 
@@ -139,16 +140,13 @@ script FireSystemComponent extends Component
     -- Fire-type branch keeps one entrypoint while allowing projectile/smite/summon behaviors.
     @ExecSpace("ServerOnly")
     method boolean TryFireByTypeServer(Vector2 targetWorldPosition, Vector2 fireDirection, Vector2 shooterPosition2D)
-        local fireType = string.lower(tostring(self.CurrentFireType))
-        if fireType == "" then
-            fireType = "projectile"
-        end
+        local fireType = self:NormalizeFireTypeToken(string.lower(tostring(self.CurrentFireType)))
 
         if fireType == "summon" then
             return self:SummonTurretServer(targetWorldPosition)
         end
 
-        local projectileType = string.lower(tostring(self.CurrentProjectileType))
+        local projectileType = self:NormalizeProjectileTypeToken(string.lower(tostring(self.CurrentProjectileType)))
         if projectileType == "smite" then
             return self:SmiteAttackServer(targetWorldPosition)
         end
@@ -166,8 +164,27 @@ script FireSystemComponent extends Component
             return false
         end
 
-        local fireType = string.lower(tostring(self.CurrentFireType))
-        local projectileType = string.lower(tostring(self.CurrentProjectileType))
+        local fireType = self:NormalizeFireTypeToken(string.lower(tostring(self.CurrentFireType)))
+        if fireType ~= tostring(self.CurrentFireType) then
+            pcall(function()
+                self.CurrentFireType = fireType
+            end)
+        end
+
+        local projectileType = self:NormalizeProjectileTypeToken(string.lower(tostring(self.CurrentProjectileType)))
+        if projectileType ~= tostring(self.CurrentProjectileType) then
+            pcall(function()
+                self.CurrentProjectileType = projectileType
+            end)
+        end
+
+        if projectileType == "area_projectile" and self.SplashSize <= 0 then
+            self:WarnInvalidFireConfigServer("area_projectile requires SplashSize > 0. fallback to single_projectile")
+            projectileType = "single_projectile"
+            pcall(function()
+                self.CurrentProjectileType = projectileType
+            end)
+        end
 
         if fireType == "summon" then
             if self.CurrentSummonId == nil or self.CurrentSummonId == "" then
@@ -228,7 +245,10 @@ script FireSystemComponent extends Component
         end
 
         self._T.MissingProjectileWarnAt = nowSeconds
-        log_warning("[FireSystem] Fire blocked: set ProjectileModelId or place /maps/games/GRProjectileTemplate with ProjectileComponent+TriggerComponent.")
+        log_warning(
+            "[FireSystem] Fire blocked: set ProjectileModelId or place /maps/games/GRProjectileTemplate with ProjectileComponent+TriggerComponent. ",
+            self:BuildFireContextString()
+        )
     end
 
     @ExecSpace("ServerOnly")
@@ -249,7 +269,72 @@ script FireSystemComponent extends Component
         end
 
         self._T.MissingSummonWarnAt = nowSeconds
-        log_warning("[FireSystem] Summon fire blocked. missing=" .. tostring(reason) .. ", weaponId=" .. tostring(self.CurrentWeaponId) .. ", summonId=" .. tostring(self.CurrentSummonId))
+        log_warning(
+            "[FireSystem] Summon fire blocked. missing=" .. tostring(reason) .. ", " .. self:BuildFireContextString()
+        )
+    end
+
+    @ExecSpace("ServerOnly")
+    method void WarnInvalidFireConfigServer(string reason)
+        local nowSeconds = 0.0
+        local nowOk, nowValue = pcall(function()
+            return _UtilLogic.ServerElapsedSeconds
+        end)
+        if nowOk == true and nowValue ~= nil then
+            nowSeconds = nowValue
+        end
+
+        local lastWarnAt = self._T.InvalidFireConfigWarnAt
+        if lastWarnAt ~= nil then
+            if (nowSeconds - lastWarnAt) < 5.0 then
+                return
+            end
+        end
+
+        self._T.InvalidFireConfigWarnAt = nowSeconds
+        log_warning("[FireSystem] invalid fire config. reason=" .. tostring(reason) .. ", " .. self:BuildFireContextString())
+    end
+
+    method string BuildFireContextString()
+        local weaponId = tostring(self.CurrentWeaponId)
+        local fireType = tostring(self.CurrentFireType)
+        local projectileType = tostring(self.CurrentProjectileType)
+        local projectileId = tostring(self.CurrentProjectileId)
+        local summonId = tostring(self.CurrentSummonId)
+        local summonProjectileId = tostring(self.CurrentSummonProjectileId)
+        local turretModelId = tostring(self.CurrentTurretModelId)
+
+        return "weaponId=" .. weaponId
+            .. ", fireType=" .. fireType
+            .. ", projectileType=" .. projectileType
+            .. ", projectileId=" .. projectileId
+            .. ", summonId=" .. summonId
+            .. ", summonProjectileId=" .. summonProjectileId
+            .. ", turretModelId=" .. turretModelId
+    end
+
+    method string NormalizeFireTypeToken(string rawType)
+        local fireType = rawType
+        if fireType == nil or fireType == "" then
+            fireType = "projectile"
+        end
+        if fireType ~= "projectile" and fireType ~= "summon" then
+            self:WarnInvalidFireConfigServer("CurrentFireType is unsupported: " .. tostring(fireType))
+            fireType = "projectile"
+        end
+        return fireType
+    end
+
+    method string NormalizeProjectileTypeToken(string rawType)
+        local projectileType = rawType
+        if projectileType == nil or projectileType == "" then
+            projectileType = "single_projectile"
+        end
+        if projectileType ~= "single_projectile" and projectileType ~= "area_projectile" and projectileType ~= "smite" then
+            self:WarnInvalidFireConfigServer("CurrentProjectileType is unsupported: " .. tostring(projectileType))
+            projectileType = "single_projectile"
+        end
+        return projectileType
     end
 
     -- Server resolves muzzle directly from WeaponModelComponent, and falls back to shooter center when missing.

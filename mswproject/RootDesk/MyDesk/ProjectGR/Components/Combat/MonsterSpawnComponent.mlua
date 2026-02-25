@@ -32,6 +32,7 @@ script MonsterSpawnComponent extends Component
         self._T.RowFallbackModelById = nil
         self._T.OptionalColumnAvailability = {}
         self._T.OptionalColumnMissingWarned = {}
+        self._T.RequiredColumnWarned = {}
         self._T.CreepScoreByMonsterId = {}
         self._T.BossSpawnedEntity = nil
         self._T.WarnedMissingContainer = false
@@ -142,6 +143,10 @@ script MonsterSpawnComponent extends Component
             return false
         end
         local row = rows[1]
+        if self:ValidateSpawnConfigRowContract(row) ~= true then
+            self:LogError("[MonsterSpawnComponent] SpawnConfig required columns are missing.")
+            return false
+        end
 
         local innerRadius = self:GetRowNumber(row, "InnerRadius", -1)
         local outerRadius = self:GetRowNumber(row, "OuterRadius", -1)
@@ -206,6 +211,7 @@ script MonsterSpawnComponent extends Component
             return false
         end
 
+        self:ValidateMonsterRowsContract(rows, tableName)
         self._T.MonsterRows = rows
         self:BuildRowModelFallbackCache(rows)
         self:BuildOptionalMonsterColumnsCache(rows)
@@ -232,6 +238,81 @@ script MonsterSpawnComponent extends Component
 
             local creepScore = self:GetRowInteger(row, "creep_score", 0)
             self._T.CreepScoreByMonsterId[rowId] = math.max(0, creepScore)
+        end
+    end
+
+    method boolean ValidateSpawnConfigRowContract(UserDataRow row)
+        if row == nil then
+            return false
+        end
+
+        local required = {
+            "InnerRadius",
+            "OuterRadius",
+            "SpawnInterval",
+            "SpawnPerTick"
+        }
+
+        local valid = true
+        for _, columnName in pairs(required) do
+            local text = self:GetRowString(row, columnName, "")
+            if text == "" then
+                self:WarnMissingRequiredColumnOnce(self.SpawnConfigTableName, columnName, "SpawnConfig")
+                valid = false
+            end
+        end
+
+        return valid
+    end
+
+    method void ValidateMonsterRowsContract(table rows, string tableName)
+        if rows == nil then
+            return
+        end
+
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+
+            local rowId = self:GetRowString(row, "id", "")
+            if rowId == "" then
+                continue
+            end
+
+            local monType = self:GetRowString(row, "mon_type", "")
+            if monType == "" then
+                self:WarnMissingRequiredColumnOnce(tableName, "mon_type", rowId)
+            end
+
+            local isModeRow = self:IsModeMonsterRow(row)
+            local modelType = self:GetRowString(row, "model_type", "")
+            if isModeRow ~= true and modelType == "" then
+                self:WarnMissingRequiredColumnOnce(tableName, "model_type", rowId)
+            end
+
+            if isModeRow == true then
+                if self:GetRowString(row, "mode_mon_hp", "") == "" then
+                    self:WarnMissingRequiredColumnOnce(tableName, "mode_mon_hp", rowId)
+                end
+            else
+                if self:GetRowString(row, "mon_hp", "") == "" then
+                    self:WarnMissingRequiredColumnOnce(tableName, "mon_hp", rowId)
+                end
+            end
+
+            if self:GetRowString(row, "mon_atk", "") == "" then
+                self:WarnMissingRequiredColumnOnce(tableName, "mon_atk", rowId)
+            end
+            if self:GetRowString(row, "mon_spd", "") == "" then
+                self:WarnMissingRequiredColumnOnce(tableName, "mon_spd", rowId)
+            end
+            if self:GetRowString(row, "spawn_time", "") == "" then
+                self:WarnMissingRequiredColumnOnce(tableName, "spawn_time", rowId)
+            end
+            if self:GetRowString(row, "creep_score", "") == "" then
+                self:WarnMissingRequiredColumnOnce(tableName, "creep_score", rowId)
+            end
         end
     end
 
@@ -1363,7 +1444,10 @@ script MonsterSpawnComponent extends Component
 
         local baseSpd = self:GetRowNumber(row, "mon_spd", -1)
         if baseSpd >= 0 then
-            local spdUp = self:GetRowNumber(row, "mon_spd_up", 0)
+            local spdUp = self:GetRowNumber(row, "mon_spd_up", -1)
+            if spdUp < 0 then
+                spdUp = self:GetRowNumber(row, "mode_mon_spd_up", 0)
+            end
             stats.MonSpd = math.max(0, baseSpd + (spdUp * minute))
         end
 
@@ -1484,12 +1568,38 @@ script MonsterSpawnComponent extends Component
         return #self._T.SpawnedMonsters
     end
 
+    method void WarnMissingRequiredColumnOnce(string tableName, string columnName, string key)
+        if self._T.RequiredColumnWarned == nil then
+            self._T.RequiredColumnWarned = {}
+        end
+
+        local warnKey = tostring(tableName) .. "|" .. tostring(columnName) .. "|" .. tostring(key)
+        if self._T.RequiredColumnWarned[warnKey] == true then
+            return
+        end
+        self._T.RequiredColumnWarned[warnKey] = true
+
+        log_warning(
+            "[MonsterSpawnComponent] missing required column value. table=",
+            tostring(tableName),
+            ", column=",
+            tostring(columnName),
+            ", key=",
+            tostring(key)
+        )
+    end
+
     method string GetRowString(UserDataRow row, string columnName, string fallbackValue)
+        local fallback = fallbackValue
+        if fallback == nil then
+            fallback = ""
+        end
+
         if row == nil then
-            return fallbackValue
+            return fallback
         end
         if columnName == nil or columnName == "" then
-            return fallbackValue
+            return fallback
         end
 
         local text = nil
@@ -1499,11 +1609,23 @@ script MonsterSpawnComponent extends Component
         if readOk == true then
             text = readResult
         end
-        if text == nil or text == "" then
-            return fallbackValue
+        if text == nil then
+            return fallback
         end
 
-        return tostring(text)
+        local normalized = tostring(text)
+        normalized = string.gsub(normalized, "^%s+", "")
+        normalized = string.gsub(normalized, "%s+$", "")
+        if normalized == "" then
+            return fallback
+        end
+
+        local lowered = string.lower(normalized)
+        if normalized == "-" or lowered == "null" or lowered == "nil" then
+            return fallback
+        end
+
+        return normalized
     end
 
     method integer GetRowInteger(UserDataRow row, string columnName, integer fallbackValue)

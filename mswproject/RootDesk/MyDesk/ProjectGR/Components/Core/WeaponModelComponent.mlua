@@ -1275,11 +1275,16 @@ script WeaponModelComponent extends Component
     end
 
     method string GetRowString(any row, string columnName, string fallbackValue)
+        local fallback = fallbackValue
+        if fallback == nil then
+            fallback = ""
+        end
+
         if row == nil then
-            return fallbackValue
+            return fallback
         end
         if columnName == nil or columnName == "" then
-            return fallbackValue
+            return fallback
         end
 
         local value = nil
@@ -1289,11 +1294,23 @@ script WeaponModelComponent extends Component
         if readOk == true then
             value = readResult
         end
-        if value == nil or value == "" then
-            return fallbackValue
+        if value == nil then
+            return fallback
         end
 
-        return tostring(value)
+        local text = tostring(value)
+        text = string.gsub(text, "^%s+", "")
+        text = string.gsub(text, "%s+$", "")
+        if text == "" then
+            return fallback
+        end
+
+        local lowered = string.lower(text)
+        if text == "-" or lowered == "null" or lowered == "nil" then
+            return fallback
+        end
+
+        return text
     end
 
     method number GetRowNumber(any row, string columnName, number fallbackValue)

@@ -37,6 +37,8 @@ script TagSkillComponent extends Component
         self._T.SkillRowsLoaded = false
         self._T.CharacterRowById = {}
         self._T.CharacterRowsLoaded = false
+        self._T.RequiredColumnWarned = {}
+        self._T.InvalidBuffConfigWarned = {}
     end
 
     -- EndPlay clears timers to prevent delayed callbacks on invalid entities.
@@ -70,7 +72,12 @@ script TagSkillComponent extends Component
         local nowSec = self:GetServerNowSeconds()
         if self:IsSkillOnCooldownServer(skillId, nowSec) == true then
             if self.EnableDebugLogs == true then
-                log("[TagSkill] cooldown active. skillId=", skillId)
+                local endsAt = self._T.CooldownEndsAt[skillId]
+                local remain = 0
+                if endsAt ~= nil then
+                    remain = math.max(0, endsAt - nowSec)
+                end
+                log("[TagSkill] cooldown active. skillId=", skillId, ", remain=", tostring(remain))
             end
             return
         end
@@ -215,7 +222,11 @@ script TagSkillComponent extends Component
             return ""
         end
 
-        return self:GetRowString(row, "tag_skill", "")
+        local skillId = self:GetRowString(row, "tag_skill", "")
+        if skillId == "" then
+            self:WarnMissingRequiredColumnOnce(self.CharacterTableName, "tag_skill", charId)
+        end
+        return skillId
     end
 
     @ExecSpace("ServerOnly")
@@ -238,6 +249,8 @@ script TagSkillComponent extends Component
         if hasDmg == true and hasSpeed == false then
             return "attack", plusDmg
         end
+
+        self:WarnInvalidBuffConfigOnce(skillId, plusSpeed, plusDmg)
 
         return "", 0
     end
@@ -358,6 +371,12 @@ script TagSkillComponent extends Component
             if id == "" then
                 continue
             end
+
+            local plusSpeedText = self:GetRowString(row, "plus_speed", "")
+            local plusDmgText = self:GetRowString(row, "plus_dmg", "")
+            if plusSpeedText == "" and plusDmgText == "" then
+                self:WarnMissingRequiredColumnOnce(self.SkillDataTableName, "plus_speed|plus_dmg", id)
+            end
             cache[id] = row
         end
 
@@ -415,9 +434,60 @@ script TagSkillComponent extends Component
         return nil
     end
 
+    method void WarnMissingRequiredColumnOnce(string tableName, string columnName, string key)
+        if self._T.RequiredColumnWarned == nil then
+            self._T.RequiredColumnWarned = {}
+        end
+
+        local warnKey = tostring(tableName) .. "|" .. tostring(columnName) .. "|" .. tostring(key)
+        if self._T.RequiredColumnWarned[warnKey] == true then
+            return
+        end
+        self._T.RequiredColumnWarned[warnKey] = true
+
+        log_warning(
+            "[TagSkill] missing required column value. table=",
+            tostring(tableName),
+            ", column=",
+            tostring(columnName),
+            ", key=",
+            tostring(key)
+        )
+    end
+
+    method void WarnInvalidBuffConfigOnce(string skillId, number plusSpeed, number plusDmg)
+        if self._T.InvalidBuffConfigWarned == nil then
+            self._T.InvalidBuffConfigWarned = {}
+        end
+
+        local key = tostring(skillId)
+        if self._T.InvalidBuffConfigWarned[key] == true then
+            return
+        end
+        self._T.InvalidBuffConfigWarned[key] = true
+
+        log_warning(
+            "[TagSkill] invalid buff contract. skillId=",
+            tostring(skillId),
+            ", plus_speed=",
+            tostring(plusSpeed),
+            ", plus_dmg=",
+            tostring(plusDmg),
+            ". exactly one must be > 0."
+        )
+    end
+
     method string GetRowString(any row, string columnName, string fallbackValue)
+        local fallback = fallbackValue
+        if fallback == nil then
+            fallback = ""
+        end
+
         if row == nil then
-            return fallbackValue
+            return fallback
+        end
+        if columnName == nil or columnName == "" then
+            return fallback
         end
 
         local value = nil
@@ -427,11 +497,23 @@ script TagSkillComponent extends Component
         if readOk == true then
             value = readResult
         end
-        if value == nil or value == "" then
-            return fallbackValue
+        if value == nil then
+            return fallback
         end
 
-        return tostring(value)
+        local text = tostring(value)
+        text = string.gsub(text, "^%s+", "")
+        text = string.gsub(text, "%s+$", "")
+        if text == "" then
+            return fallback
+        end
+
+        local lowered = string.lower(text)
+        if text == "-" or lowered == "null" or lowered == "nil" then
+            return fallback
+        end
+
+        return text
     end
 
     method number GetRowNumber(any row, string columnName, number fallbackValue)

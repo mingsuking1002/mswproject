@@ -24,6 +24,7 @@ script CharacterDataInitComponent extends Component
         self._T.CharDataById = {}
         self._T.CharacterRowsLoaded = false
         self._T.InitialCharacterApplyDone = false
+        self._T.RequiredColumnWarned = {}
     end
 
     -- BeginPlay loads A/B rows and applies default character baseline once.
@@ -113,6 +114,7 @@ script CharacterDataInitComponent extends Component
             end
             return false
         end
+        self:ValidateCharacterRowContractServer(charId, row)
 
         local currentId = ""
         local currentOk, currentValue = pcall(function()
@@ -213,6 +215,14 @@ script CharacterDataInitComponent extends Component
                     weaponModel:SwapModel(tostring(data.WeaponId))
                 end)
             end
+        end
+
+        -- Reapply level-scaled attack after slot data injection to keep final damage tied to current weapon level.
+        local weaponLevel = self:ResolveComponentSafe(self.Entity, "WeaponLevelUpComponent", "WeaponDataTableName")
+        if weaponLevel ~= nil and weaponLevel.ApplyWeaponPowerToFireServer ~= nil then
+            pcall(function()
+                weaponLevel:ApplyWeaponPowerToFireServer("")
+            end)
         end
 
         self.CurrentCharacterId = charId
@@ -369,12 +379,60 @@ script CharacterDataInitComponent extends Component
         return nil
     end
 
-    method string GetRowString(any row, string columnName, string fallbackValue)
+    method void ValidateCharacterRowContractServer(string charId, any row)
         if row == nil then
-            return fallbackValue
+            return
+        end
+
+        for _, column in pairs({
+            "player_hp",
+            "player_atk",
+            "movespeed",
+            "weaponslot1",
+            "weaponslot2",
+            "weaponslot3",
+            "weaponslot4",
+            "tag_skill"
+        }) do
+            local value = self:GetRowString(row, column, "")
+            if value == "" then
+                self:WarnMissingRequiredColumnOnce(self.CharacterTableName, column, charId)
+            end
+        end
+    end
+
+    method void WarnMissingRequiredColumnOnce(string tableName, string columnName, string key)
+        if self._T.RequiredColumnWarned == nil then
+            self._T.RequiredColumnWarned = {}
+        end
+
+        local warnKey = tostring(tableName) .. "|" .. tostring(columnName) .. "|" .. tostring(key)
+        if self._T.RequiredColumnWarned[warnKey] == true then
+            return
+        end
+        self._T.RequiredColumnWarned[warnKey] = true
+
+        log_warning(
+            "[CharacterDataInit] missing required column value. table=",
+            tostring(tableName),
+            ", column=",
+            tostring(columnName),
+            ", charId=",
+            tostring(key)
+        )
+    end
+
+    method string GetRowString(any row, string columnName, string fallbackValue)
+        local fallback = fallbackValue
+        if fallback == nil then
+            fallback = ""
+        end
+
+        if row == nil then
+            return fallback
         end
         if columnName == nil or columnName == "" then
-            return fallbackValue
+            return fallback
         end
 
         local value = nil
@@ -384,11 +442,23 @@ script CharacterDataInitComponent extends Component
         if readOk == true then
             value = readResult
         end
-        if value == nil or value == "" then
-            return fallbackValue
+        if value == nil then
+            return fallback
         end
 
-        return tostring(value)
+        local text = tostring(value)
+        text = string.gsub(text, "^%s+", "")
+        text = string.gsub(text, "%s+$", "")
+        if text == "" then
+            return fallback
+        end
+
+        local lowered = string.lower(text)
+        if text == "-" or lowered == "null" or lowered == "nil" then
+            return fallback
+        end
+
+        return text
     end
 
     method integer GetRowInteger(any row, string columnName, integer fallbackValue)

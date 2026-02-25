@@ -34,6 +34,8 @@ script WeaponSwapComponent extends Component
         self._T.ProjectileRowsLoaded = false
         self._T.SummonRowById = {}
         self._T.SummonRowsLoaded = false
+        self._T.RequiredColumnWarned = {}
+        self._T.ProjectileModelMissingWarned = {}
         self.CurrentWeaponSlot = self:ClampSlot(self.CurrentWeaponSlot)
         self:InitializeSlotData()
         self:ApplySlotDataToCombat(self.CurrentWeaponSlot)
@@ -308,35 +310,70 @@ script WeaponSwapComponent extends Component
         end
 
         data.WeaponId = tostring(weaponId)
-        data.FireType = string.lower(self:GetRowString(row, "fire_type", "projectile"))
+        local fireTypeText = self:GetRowString(row, "fire_type", "")
+        if fireTypeText == "" then
+            self:WarnMissingRequiredColumnOnce(self.WeaponDataTableName, "fire_type", data.WeaponId, "")
+        end
+        data.FireType = string.lower(fireTypeText)
         if data.FireType == "" then
             data.FireType = "projectile"
         end
-        data.ProjectileId = self:GetRowString(row, "projectile_id", "")
-        if data.ProjectileId == "-" then
-            data.ProjectileId = ""
+        local projectileIdText = self:GetRowString(row, "projectile_id", "")
+        data.ProjectileId = projectileIdText
+        if data.ProjectileId == "" and data.FireType ~= "summon" then
+            self:WarnMissingRequiredColumnOnce(self.WeaponDataTableName, "projectile_id", data.WeaponId, "")
         end
-        data.SummonId = self:GetRowString(row, "summon_id", "")
-        if data.SummonId == "-" then
-            data.SummonId = ""
+        local summonIdText = self:GetRowString(row, "summon_id", "")
+        data.SummonId = summonIdText
+        if data.FireType == "summon" and data.SummonId == "" then
+            self:WarnMissingRequiredColumnOnce(self.WeaponDataTableName, "summon_id", data.WeaponId, "")
         end
 
+        if self:GetRowString(row, "max_basic_resource", "") == "" then
+            self:WarnMissingRequiredColumnOnce(self.WeaponDataTableName, "max_basic_resource", data.WeaponId, "")
+        end
         local maxAmmo = self:GetRowInteger(row, "max_basic_resource", data.Ammo)
         if maxAmmo > 0 then
             data.Ammo = maxAmmo
         end
 
+        if self:GetRowString(row, "fire_rate", "") == "" then
+            self:WarnMissingRequiredColumnOnce(self.WeaponDataTableName, "fire_rate", data.WeaponId, "")
+        end
         local fireRate = self:GetRowNumber(row, "fire_rate", data.FireCooldown)
         if fireRate > 0 then
             data.FireCooldown = fireRate
         end
 
+        if self:GetRowString(row, "reload_time", "") == "" then
+            self:WarnMissingRequiredColumnOnce(self.WeaponDataTableName, "reload_time", data.WeaponId, "")
+        end
         local reloadTime = self:GetRowNumber(row, "reload_time", data.ReloadTime)
         if reloadTime > 0 then
             data.ReloadTime = reloadTime
         end
 
-        local damageRatio = self:GetRowNumber(row, "dmg_raito", 0)
+        if self:GetRowString(row, "start_level", "") == "" then
+            self:WarnMissingRequiredColumnOnce(self.WeaponDataTableName, "start_level", data.WeaponId, "")
+        end
+        if self:GetRowString(row, "max_level", "") == "" then
+            self:WarnMissingRequiredColumnOnce(self.WeaponDataTableName, "max_level", data.WeaponId, "")
+        end
+        if self:GetRowString(row, "required_exp", "") == "" then
+            self:WarnMissingRequiredColumnOnce(self.WeaponDataTableName, "required_exp", data.WeaponId, "")
+        end
+
+        local damageRatio = self:GetRowNumber(row, "dmg_raito", -1)
+        if damageRatio <= 0 then
+            if self:GetRowString(row, "dmg_raito", "") == "" then
+                self:WarnMissingRequiredColumnOnce(self.WeaponDataTableName, "dmg_raito", data.WeaponId, "")
+            end
+            -- Keep dmg_raito as primary contract and accept dmg_ratio only as optional compatibility alias.
+            local aliasRatio = self:GetRowNumber(row, "dmg_ratio", -1)
+            if aliasRatio > 0 then
+                damageRatio = aliasRatio
+            end
+        end
         if damageRatio > 0 then
             local defaultDamage = math.max(self.DefaultDamage, 1)
             data.Damage = math.max(math.floor(defaultDamage * damageRatio), 1)
@@ -368,7 +405,7 @@ script WeaponSwapComponent extends Component
                     data.SplashSize = splashSize
                 end
 
-                local modelId = self:GetProjectileModelIdFromProjectileRow(projectileRow)
+                local modelId = self:GetProjectileModelIdFromProjectileRow(projectileRow, data.WeaponId, data.ProjectileId)
                 if modelId ~= "" then
                     data.ProjectileModelId = modelId
                 end
@@ -378,30 +415,46 @@ script WeaponSwapComponent extends Component
         if data.FireType == "summon" and data.SummonId ~= "" then
             local summonRow = self:GetSummonRowByIdServer(data.SummonId)
             if summonRow ~= nil then
+                if self:GetRowString(summonRow, "projectile_id", "") == "" then
+                    self:WarnMissingRequiredColumnOnce(self.SummonDataTableName, "projectile_id", data.WeaponId, data.SummonId)
+                end
                 local summonProjectileId = self:GetRowString(summonRow, "projectile_id", "")
-                if summonProjectileId ~= "" and summonProjectileId ~= "-" then
+                -- Summon row has priority for projectile source when fire_type is summon.
+                if summonProjectileId ~= "" then
                     data.SummonProjectileId = summonProjectileId
                     data.ProjectileId = summonProjectileId
                 end
 
+                if self:GetRowString(summonRow, "fire_rate", "") == "" then
+                    self:WarnMissingRequiredColumnOnce(self.SummonDataTableName, "fire_rate", data.WeaponId, data.SummonId)
+                end
                 local summonFireRate = self:GetRowNumber(summonRow, "fire_rate", 0)
                 if summonFireRate > 0 then
                     data.SummonFireRate = summonFireRate
                 end
 
+                if self:GetRowString(summonRow, "duration", "") == "" then
+                    self:WarnMissingRequiredColumnOnce(self.SummonDataTableName, "duration", data.WeaponId, data.SummonId)
+                end
                 local summonDuration = self:GetRowNumber(summonRow, "duration", 0)
                 if summonDuration > 0 then
                     data.SummonDuration = summonDuration
                 end
 
+                if self:GetRowString(summonRow, "cooldown", "") == "" then
+                    self:WarnMissingRequiredColumnOnce(self.SummonDataTableName, "cooldown", data.WeaponId, data.SummonId)
+                end
                 local summonCooldown = self:GetRowNumber(summonRow, "cooldown", 0)
                 if summonCooldown > 0 then
                     data.SummonCooldown = summonCooldown
                     data.FireCooldown = summonCooldown
                 end
 
+                if self:GetRowString(summonRow, "turret_model", "") == "" then
+                    self:WarnMissingRequiredColumnOnce(self.SummonDataTableName, "turret_model", data.WeaponId, data.SummonId)
+                end
                 local turretModelId = self:GetRowString(summonRow, "turret_model", "")
-                if turretModelId ~= "" and turretModelId ~= "-" then
+                if turretModelId ~= "" then
                     data.TurretModelId = turretModelId
                 end
             end
@@ -418,7 +471,7 @@ script WeaponSwapComponent extends Component
                     if summonSplash > 0 then
                         data.SplashSize = summonSplash
                     end
-                    local summonProjectileModelId = self:GetProjectileModelIdFromProjectileRow(summonProjectileRow)
+                    local summonProjectileModelId = self:GetProjectileModelIdFromProjectileRow(summonProjectileRow, data.WeaponId, data.ProjectileId)
                     if summonProjectileModelId ~= "" then
                         data.ProjectileModelId = summonProjectileModelId
                     end
@@ -1088,7 +1141,7 @@ script WeaponSwapComponent extends Component
         self._T.SummonRowsLoaded = true
     end
 
-    method string GetProjectileModelIdFromProjectileRow(any row)
+    method string GetProjectileModelIdFromProjectileRow(any row, string weaponId, string projectileId)
         if row == nil then
             return ""
         end
@@ -1098,18 +1151,62 @@ script WeaponSwapComponent extends Component
 
         -- Primary column only. Alias probes are intentionally skipped to avoid missing-column log spam.
         local modelId = self:GetRowString(row, "projectile_model", "")
-        if modelId == "-" then
+        if modelId == "" then
+            self:WarnMissingProjectileModelOnce(weaponId, projectileId)
             return ""
         end
         return modelId
     end
 
+    method void WarnMissingRequiredColumnOnce(string tableName, string columnName, string contextA, string contextB)
+        if self._T.RequiredColumnWarned == nil then
+            self._T.RequiredColumnWarned = {}
+        end
+
+        local key = tostring(tableName) .. "|" .. tostring(columnName) .. "|" .. tostring(contextA) .. "|" .. tostring(contextB)
+        if self._T.RequiredColumnWarned[key] == true then
+            return
+        end
+        self._T.RequiredColumnWarned[key] = true
+
+        log_warning(
+            "[WeaponSwap] missing required column value. table=", tostring(tableName),
+            ", column=", tostring(columnName),
+            ", weaponId=", tostring(contextA),
+            ", context=", tostring(contextB)
+        )
+    end
+
+    method void WarnMissingProjectileModelOnce(string weaponId, string projectileId)
+        if self._T.ProjectileModelMissingWarned == nil then
+            self._T.ProjectileModelMissingWarned = {}
+        end
+
+        local key = tostring(weaponId) .. "|" .. tostring(projectileId)
+        if self._T.ProjectileModelMissingWarned[key] == true then
+            return
+        end
+        self._T.ProjectileModelMissingWarned[key] = true
+
+        log_warning(
+            "[WeaponSwap] ProjectileData.projectile_model missing; fallback path used. weaponId=",
+            tostring(weaponId),
+            ", projectileId=",
+            tostring(projectileId)
+        )
+    end
+
     method string GetRowString(any row, string columnName, string fallbackValue)
+        local fallback = fallbackValue
+        if fallback == nil then
+            fallback = ""
+        end
+
         if row == nil then
-            return fallbackValue
+            return fallback
         end
         if columnName == nil or columnName == "" then
-            return fallbackValue
+            return fallback
         end
 
         local value = nil
@@ -1119,10 +1216,23 @@ script WeaponSwapComponent extends Component
         if readOk == true then
             value = readValue
         end
-        if value == nil or value == "" then
-            return fallbackValue
+        if value == nil then
+            return fallback
         end
-        return tostring(value)
+
+        local text = tostring(value)
+        text = string.gsub(text, "^%s+", "")
+        text = string.gsub(text, "%s+$", "")
+        if text == "" then
+            return fallback
+        end
+
+        local lowered = string.lower(text)
+        if text == "-" or lowered == "null" or lowered == "nil" then
+            return fallback
+        end
+
+        return text
     end
 
     method integer GetRowInteger(any row, string columnName, integer fallbackValue)
