@@ -1,4 +1,4 @@
-﻿# 🔵 진행중
+# 🔵 진행중
 # SPEC_TagSkill — 태그 스킬(Entry Skill) 시스템
 
 ## 1. 개요

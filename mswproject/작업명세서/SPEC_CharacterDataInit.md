@@ -1,4 +1,4 @@
-﻿# 🔵 진행중
+# 🟢 완료
 # SPEC_CharacterDataInit — PlayerbleData 기반 캐릭터 초기화
 
 ## 1. 개요

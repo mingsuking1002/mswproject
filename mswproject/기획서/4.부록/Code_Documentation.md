@@ -1529,3 +1529,96 @@
 | Spawn-time monster flag | `SpawnMonsterByRow` now sets `spawned HPSystem.IsMonster = true` immediately after spawn. |
 | Boss/common coverage | Same spawn path applies to both normal monsters and boss rows. |
 | Intent | Guarantee combat-side monster identification regardless of row schema or model composition. |
+
+## 2026-02-25 Combat+Growth Data Table Alignment (Backward Compatible)
+
+### WeaponSwapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Required WeaponData contract checks | Added one-time warnings for `fire_type`, `projectile_id`, `summon_id`, `fire_rate`, `reload_time`, `max_basic_resource`, `dmg_raito`, `start_level`, `max_level`, `required_exp`. |
+| Backward-compatible damage ratio | Keeps `dmg_raito` as primary and accepts `dmg_ratio` only as optional alias fallback. |
+| Summon binding priority | Fixed explicit load order for `SummonData.projectile_id/fire_rate/duration/cooldown/turret_model` and projection to runtime slot snapshot. |
+| Projectile model diagnostics | Missing `projectile_model` now logs once with `weaponId` and `projectileId`. |
+| CSV empty token normalization | `GetRowString` now treats `""`, `"-"`, `"null"`, `"nil"` as empty values before fallback. |
+
+### FireSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| WeaponSwap snapshot trust | Fire path remains table-independent and consumes only live snapshot values from WeaponSwap/slot apply. |
+| Detailed fire-block diagnostics | Added context-rich warnings including `CurrentWeaponId`, `CurrentProjectileId`, `CurrentSummonId`, `CurrentFireType`, `CurrentProjectileType`. |
+| Type normalization guards | Added normalization for `CurrentFireType`/`CurrentProjectileType` and invalid type fallback logs. |
+| Area projectile guard | `area_projectile` with invalid splash radius is downgraded to `single_projectile` with warning. |
+
+### WeaponLevelUpComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponLevelUpComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponLevelUpComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| WeaponData contract checks | Added one-time missing checks for `start_level`, `max_level`, `required_exp`. |
+| WeaponLevelData contract checks | Validates `level_1..level_10`; if missing, logs once and preserves fallback (`level_1` then `1.0`). |
+| Reapply timing hardening | Added map-enter reapply path to enforce `ApplyWeaponPowerToFireServer` consistency after init/swap/tag transitions. |
+| CSV empty token normalization | `GetRowString` now handles `""`, `"-"`, `"null"`, `"nil"` as empty values. |
+
+### CharacterDataInitComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/CharacterDataInitComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/CharacterDataInitComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| PlayerbleData contract checks | Added one-time checks for `player_hp`, `player_atk`, `movespeed`, `weaponslot1~4`, `tag_skill`. |
+| Init sequence stabilization | After slot initialization from PlayerbleData, force weapon power reapply through `WeaponLevelUpComponent`. |
+| Current slot compatibility | Keeps existing policy: empty `current_weaponslot` does not overwrite runtime slot. |
+| CSV empty token normalization | `GetRowString` now handles placeholder-empty tokens consistently. |
+
+### TagSkillComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/TagSkillComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/TagSkillComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Character-skill contract checks | Added one-time warning when `PlayerbleData.tag_skill` is missing for current character row. |
+| Skill buff exclusivity guard | Explicitly validates mutual exclusivity of `plus_speed` vs `plus_dmg` and logs invalid dual/none rows once. |
+| Cooldown traceability | Cooldown-block logs include remaining time for easier runtime verification (`tag_skill_a/b` separation). |
+| CSV empty token normalization | `GetRowString` now treats empty placeholders as fallback. |
+
+### WeaponModelComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Unified table parsing compatibility | Hardened row string extraction to normalize placeholder-empty tokens without changing existing transform/muzzle flow. |
+| Missing-column noise control | Preserves fallback behavior while avoiding repeated invalid value propagation from placeholder tokens. |
+
+### MonsterSpawnComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| SpawnConfig contract checks | Added required-column validation for `InnerRadius`, `OuterRadius`, `SpawnInterval`, `SpawnPerTick` with one-time warnings. |
+| Monster table contract checks | Added required-column validation for `MonsterData`/`ModeMonsterData` with mode-compatible `model_type` fallback handling. |
+| Mode speed-up compatibility | `ResolveMonsterStatValues` accepts `mon_spd_up` primary and `mode_mon_spd_up` alias fallback. |
+| Monster identity continuity | Keeps spawn-time `HPSystem.IsMonster=true` application and validates runtime linkage for projectile target filtering. |
+| CSV empty token normalization | `GetRowString` now handles placeholder-empty tokens consistently. |
