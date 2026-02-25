@@ -1622,3 +1622,41 @@
 | Mode speed-up compatibility | `ResolveMonsterStatValues` accepts `mon_spd_up` primary and `mode_mon_spd_up` alias fallback. |
 | Monster identity continuity | Keeps spawn-time `HPSystem.IsMonster=true` application and validates runtime linkage for projectile target filtering. |
 | CSV empty token normalization | `GetRowString` now handles placeholder-empty tokens consistently. |
+## 2026-02-25 Placed Entity DataSet Auto-Binding
+
+### MonsterSpawnComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Static monster auto-bind pass | Added delayed one-shot scan for map-placed monsters (`AutoBindPlacedMonsterEntities`). |
+| Candidate guard | Excludes player entities and already spawned/runtime-tracked entities; binds explicit/monster-signature entities only. |
+| Row resolution priority | `HPSystem.MonsterDataId` -> entity name as row id -> default earliest non-mode normal row fallback. |
+| Reuse of spawn pipeline | Reuses chase/trigger/collider/stat application path so placed monsters and spawned monsters share data-driven behavior. |
+
+### ProjectileComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ProjectileComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ProjectileComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| New binding fields | Added `ProjectileDataTableName`, `ProjectileDataId`, `EnablePlacedProjectileDataBinding`. |
+| Static projectile auto-bind | Added delayed one-shot bind for map-placed projectiles using explicit id or normalized entity name fallback. |
+| Runtime safety guard | Fired projectiles are skipped (`IsInitialized` / `OwnerEntity` guard) so launch snapshot values are preserved. |
+| Applied columns | Binds `projectile_type`, `bulletspeed`, `splash_size` from `ProjectileData`. |
+
+### HPSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Optional row-id property | Added `MonsterDataId` (string) for precise static monster table row binding. |
+| Backward compatibility | Empty default keeps existing runtime behavior unchanged unless explicit id is provided. |

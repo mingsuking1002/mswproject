@@ -16,6 +16,8 @@ script MonsterSpawnComponent extends Component
     property number StateMonitorInterval = 0.2
     property boolean EnableDebugLogs = false
     property number DebugLogThrottleSeconds = 1.0
+    property boolean AutoBindPlacedMonsterEntities = true
+    property number PlacedMonsterBindDelay = 0.2
 
     -- Server initializes all runtime caches once so spawn flow remains deterministic after hot-reload.
     @ExecSpace("ServerOnly")
@@ -45,6 +47,9 @@ script MonsterSpawnComponent extends Component
         self._T.LastSpawnGateReason = ""
         self._T.LastSpawnGateLogAt = -9999
         self._T.SpawnTickCounter = 0
+        self._T.PlacedMonsterBindTimerId = 0
+        self._T.AutoBoundPlacedMonsters = {}
+        self._T.DefaultPlacedMonsterRow = nil
 
         self.IsSpawnActive = false
         self.IsBossPhase = false
@@ -57,6 +62,7 @@ script MonsterSpawnComponent extends Component
         self:ResolveMonsterParentEntity()
         self:StartStateMonitorTimer()
         self:RefreshSpawnStateServer()
+        self:SchedulePlacedMonsterBindingServer()
     end
 
     -- Map enter re-resolves parent entity because map transition can invalidate previous references.
@@ -65,6 +71,7 @@ script MonsterSpawnComponent extends Component
         self:ResolveMonsterParentEntity()
         self._T.HasMapPhysicsSimulator = nil
         self:RefreshSpawnStateServer()
+        self:SchedulePlacedMonsterBindingServer()
     end
 
     -- EndPlay clears active timers so delayed callbacks never run on recycled entities.
@@ -75,6 +82,10 @@ script MonsterSpawnComponent extends Component
         if self._T.StateMonitorTimerId ~= nil and self._T.StateMonitorTimerId > 0 then
             _TimerService:ClearTimer(self._T.StateMonitorTimerId)
             self._T.StateMonitorTimerId = 0
+        end
+        if self._T.PlacedMonsterBindTimerId ~= nil and self._T.PlacedMonsterBindTimerId > 0 then
+            _TimerService:ClearTimer(self._T.PlacedMonsterBindTimerId)
+            self._T.PlacedMonsterBindTimerId = 0
         end
     end
 
@@ -88,6 +99,10 @@ script MonsterSpawnComponent extends Component
         if self._T.StateMonitorTimerId ~= nil and self._T.StateMonitorTimerId > 0 then
             _TimerService:ClearTimer(self._T.StateMonitorTimerId)
             self._T.StateMonitorTimerId = 0
+        end
+        if self._T.PlacedMonsterBindTimerId ~= nil and self._T.PlacedMonsterBindTimerId > 0 then
+            _TimerService:ClearTimer(self._T.PlacedMonsterBindTimerId)
+            self._T.PlacedMonsterBindTimerId = 0
         end
     end
 
@@ -1480,6 +1495,297 @@ script MonsterSpawnComponent extends Component
         pcall(function()
             targetEntity:AddComponent("MonsterChaseComponent")
         end)
+    end
+
+    -- Delayed pass binds map-placed monsters after table load and entity bootstrap are complete.
+    @ExecSpace("ServerOnly")
+    method void SchedulePlacedMonsterBindingServer()
+        if self.AutoBindPlacedMonsterEntities ~= true then
+            return
+        end
+
+        if self._T.PlacedMonsterBindTimerId ~= nil and self._T.PlacedMonsterBindTimerId > 0 then
+            _TimerService:ClearTimer(self._T.PlacedMonsterBindTimerId)
+            self._T.PlacedMonsterBindTimerId = 0
+        end
+
+        local delay = self.PlacedMonsterBindDelay
+        if delay < 0 then
+            delay = 0
+        end
+
+        local bindFn = function()
+            self._T.PlacedMonsterBindTimerId = 0
+            self:AutoBindPlacedMonstersServer()
+        end
+        self._T.PlacedMonsterBindTimerId = _TimerService:SetTimerOnce(bindFn, delay)
+    end
+
+    -- Static monsters are scanned once and receive the same table-driven stat/collider pipeline as spawned monsters.
+    @ExecSpace("ServerOnly")
+    method integer AutoBindPlacedMonstersServer()
+        if self.AutoBindPlacedMonsterEntities ~= true then
+            return 0
+        end
+
+        if self._T.DataReady ~= true then
+            self:LoadSpawnDataFromTable()
+        end
+        if self._T.MonsterRows == nil or #self._T.MonsterRows <= 0 then
+            return 0
+        end
+
+        local mapEntity = self.Entity.CurrentMap
+        if mapEntity == nil or isvalid(mapEntity) == false then
+            return 0
+        end
+
+        local bindCount = self:BindPlacedMonstersRecursiveServer(mapEntity)
+        if self.EnableDebugLogs == true and bindCount > 0 then
+            log("[MonsterSpawnComponent][DEBUG] placed monster auto-bind count=", bindCount)
+        end
+        return bindCount
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer BindPlacedMonstersRecursiveServer(Entity node)
+        if node == nil or isvalid(node) == false then
+            return 0
+        end
+
+        local bindCount = self:TryBindPlacedMonsterEntityServer(node)
+        local children = node.Children
+        if children == nil then
+            return bindCount
+        end
+
+        for _, child in pairs(children) do
+            if child ~= nil and isvalid(child) == true then
+                bindCount += self:BindPlacedMonstersRecursiveServer(child)
+            end
+        end
+
+        return bindCount
+    end
+
+    -- Candidate selection excludes player/spawned entries and targets explicit or signature-based monster entities only.
+    @ExecSpace("ServerOnly")
+    method integer TryBindPlacedMonsterEntityServer(Entity targetEntity)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return 0
+        end
+        if targetEntity == self.Entity then
+            return 0
+        end
+
+        if self._T.AutoBoundPlacedMonsters == nil then
+            self._T.AutoBoundPlacedMonsters = {}
+        end
+        if self._T.AutoBoundPlacedMonsters[targetEntity] == true then
+            return 0
+        end
+
+        if self._T.SpawnMetaByEntity ~= nil and self._T.SpawnMetaByEntity[targetEntity] ~= nil then
+            self._T.AutoBoundPlacedMonsters[targetEntity] = true
+            return 0
+        end
+        if targetEntity.PlayerComponent ~= nil then
+            return 0
+        end
+
+        local hpSystem = self:ResolveComponentSafe(targetEntity, "HPSystemComponent", "CurrentHP")
+        if hpSystem == nil then
+            return 0
+        end
+
+        local isMonster = false
+        local readMonsterOk, readMonsterValue = pcall(function()
+            return hpSystem.IsMonster
+        end)
+        if readMonsterOk == true and readMonsterValue == true then
+            isMonster = true
+        end
+
+        local chase = self:ResolveComponentSafe(targetEntity, "MonsterChaseComponent", "ThinkInterval")
+        if isMonster ~= true and chase == nil then
+            return 0
+        end
+
+        local row = self:ResolvePlacedMonsterRowServer(targetEntity, hpSystem)
+        if row == nil then
+            return 0
+        end
+
+        self:AttachMonsterChaseIfNeeded(targetEntity)
+        self:EnsureMonsterTriggerComponent(targetEntity)
+        self:DisablePhysicsColliderIfMapHasNoSimulator(targetEntity)
+        self:ApplyMonsterVisualIfAvailable(targetEntity, row)
+        self:ApplyMonsterColliderIfAvailable(targetEntity, row)
+        self:ApplyMonsterStatsIfAvailable(targetEntity, row)
+
+        pcall(function()
+            hpSystem.IsMonster = true
+        end)
+        pcall(function()
+            hpSystem.IsDead = false
+        end)
+        pcall(function()
+            hpSystem.IsInvincible = false
+        end)
+
+        self._T.AutoBoundPlacedMonsters[targetEntity] = true
+        return 1
+    end
+
+    -- Row resolution priority: explicit HPSystem.MonsterDataId -> entity name as row id -> default non-mode normal row.
+    @ExecSpace("ServerOnly")
+    method UserDataRow ResolvePlacedMonsterRowServer(Entity targetEntity, Component hpSystem)
+        if self._T.MonsterRows == nil or #self._T.MonsterRows <= 0 then
+            return nil
+        end
+
+        local explicitId = self:GetPlacedMonsterDataIdFromHPServer(hpSystem)
+        if explicitId ~= "" then
+            local explicitRow = self:GetMonsterRowByIdServer(explicitId)
+            if explicitRow ~= nil then
+                return explicitRow
+            end
+        end
+
+        local entityName = ""
+        if targetEntity ~= nil and isvalid(targetEntity) == true then
+            local readOk, readValue = pcall(function()
+                return targetEntity.Name
+            end)
+            if readOk == true and readValue ~= nil then
+                entityName = tostring(readValue)
+            end
+        end
+        local nameAsId = self:NormalizeMonsterRowIdToken(entityName)
+        if nameAsId ~= "" then
+            local nameRow = self:GetMonsterRowByIdServer(nameAsId)
+            if nameRow ~= nil then
+                return nameRow
+            end
+        end
+
+        return self:GetDefaultPlacedMonsterRowServer()
+    end
+
+    @ExecSpace("ServerOnly")
+    method string GetPlacedMonsterDataIdFromHPServer(Component hpSystem)
+        if hpSystem == nil then
+            return ""
+        end
+
+        local value = ""
+        local readOk, readValue = pcall(function()
+            return hpSystem.MonsterDataId
+        end)
+        if readOk == true and readValue ~= nil then
+            value = tostring(readValue)
+        end
+
+        return self:NormalizeMonsterRowIdToken(value)
+    end
+
+    @ExecSpace("ServerOnly")
+    method UserDataRow GetMonsterRowByIdServer(string rowId)
+        local normalizedId = self:NormalizeMonsterRowIdToken(rowId)
+        if normalizedId == "" then
+            return nil
+        end
+        if self._T.MonsterRows == nil then
+            return nil
+        end
+
+        for _, row in pairs(self._T.MonsterRows) do
+            if row == nil then
+                continue
+            end
+            local currentId = self:NormalizeMonsterRowIdToken(self:GetRowString(row, "id", ""))
+            if currentId == normalizedId then
+                return row
+            end
+        end
+
+        return nil
+    end
+
+    -- Default fallback picks earliest non-mode normal row so static monsters stay deterministic without explicit id.
+    @ExecSpace("ServerOnly")
+    method UserDataRow GetDefaultPlacedMonsterRowServer()
+        if self._T.DefaultPlacedMonsterRow ~= nil then
+            return self._T.DefaultPlacedMonsterRow
+        end
+        if self._T.MonsterRows == nil or #self._T.MonsterRows <= 0 then
+            return nil
+        end
+
+        local firstAny = nil
+        local firstNormal = nil
+        local firstNormalAtZero = nil
+        for _, row in pairs(self._T.MonsterRows) do
+            if row == nil then
+                continue
+            end
+
+            local rowId = self:GetRowString(row, "id", "")
+            if rowId == "" then
+                continue
+            end
+
+            if firstAny == nil then
+                firstAny = row
+            end
+
+            local monType = string.lower(self:GetRowString(row, "mon_type", ""))
+            if string.sub(monType, 1, 5) == "mode_" then
+                continue
+            end
+            if monType ~= "normal" then
+                continue
+            end
+
+            if firstNormal == nil then
+                firstNormal = row
+            end
+
+            local spawnMin = self:GetSpawnMinuteFromRow(row)
+            if spawnMin <= 0 and firstNormalAtZero == nil then
+                firstNormalAtZero = row
+            end
+        end
+
+        local selected = firstNormalAtZero
+        if selected == nil then
+            selected = firstNormal
+        end
+        if selected == nil then
+            selected = firstAny
+        end
+
+        self._T.DefaultPlacedMonsterRow = selected
+        return selected
+    end
+
+    method string NormalizeMonsterRowIdToken(string value)
+        if value == nil then
+            return ""
+        end
+
+        local text = tostring(value)
+        text = string.gsub(text, "^%s+", "")
+        text = string.gsub(text, "%s+$", "")
+        text = string.lower(text)
+        if text == "" then
+            return ""
+        end
+        if text == "-" or text == "null" or text == "nil" then
+            return ""
+        end
+
+        return text
     end
 
     -- Public read API exposes spawn metadata without coupling callers to internal cache structure.

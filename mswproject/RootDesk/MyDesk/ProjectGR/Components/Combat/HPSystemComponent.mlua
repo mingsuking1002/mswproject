@@ -10,6 +10,7 @@ script HPSystemComponent extends Component
     @Sync
     property boolean IsDead = false
     property boolean IsMonster = false
+    property string MonsterDataId = ""
 
     property number CriticalHPRatio = 0.3
     property integer FallbackDamage = 1

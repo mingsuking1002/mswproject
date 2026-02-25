@@ -13,6 +13,9 @@ script ProjectileComponent extends Component
     property Vector2 MoveDirection = Vector2.right
     property Vector2 StartPosition = Vector2.zero
     property Entity OwnerEntity = nil
+    property boolean EnablePlacedProjectileDataBinding = true
+    property string ProjectileDataTableName = "ProjectileData"
+    property string ProjectileDataId = ""
 
     -- Server initializes lifecycle guards to make destroy path idempotent.
     @ExecSpace("ServerOnly")
@@ -20,8 +23,36 @@ script ProjectileComponent extends Component
         self._T.ElapsedLifeTime = 0
         self._T.IsInitialized = false
         self._T.IsDestroyed = false
+        self._T.ProjectileRowsLoaded = false
+        self._T.ProjectileRowById = {}
+        self._T.PlacedProjectileBindTimerId = 0
+        self._T.MissingPlacedProjectileRowWarned = {}
         self.ExplosionTriggered = false
         self:EnsureGRUtil()
+    end
+
+    -- Placed projectiles can auto-bind ProjectileData once after map load; runtime-fired projectiles are skipped.
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self:SchedulePlacedProjectileBindServer()
+    end
+
+    -- EndPlay clears delayed bind timer so callbacks do not run on recycled projectile entities.
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self._T.PlacedProjectileBindTimerId ~= nil and self._T.PlacedProjectileBindTimerId > 0 then
+            _TimerService:ClearTimer(self._T.PlacedProjectileBindTimerId)
+            self._T.PlacedProjectileBindTimerId = 0
+        end
+    end
+
+    -- Destroy repeats timer cleanup as final safety net.
+    @ExecSpace("ServerOnly")
+    method void OnDestroy()
+        if self._T.PlacedProjectileBindTimerId ~= nil and self._T.PlacedProjectileBindTimerId > 0 then
+            _TimerService:ClearTimer(self._T.PlacedProjectileBindTimerId)
+            self._T.PlacedProjectileBindTimerId = 0
+        end
     end
 
     -- Spawn initialization captures immutable launch snapshot values.
@@ -296,6 +327,273 @@ script ProjectileComponent extends Component
         end
 
         return false
+    end
+
+    -- Delayed bind avoids racing with runtime spawn initialization on freshly fired projectiles.
+    @ExecSpace("ServerOnly")
+    method void SchedulePlacedProjectileBindServer()
+        if self.EnablePlacedProjectileDataBinding ~= true then
+            return
+        end
+        if self._T.IsDestroyed == true then
+            return
+        end
+
+        if self._T.PlacedProjectileBindTimerId ~= nil and self._T.PlacedProjectileBindTimerId > 0 then
+            _TimerService:ClearTimer(self._T.PlacedProjectileBindTimerId)
+            self._T.PlacedProjectileBindTimerId = 0
+        end
+
+        local bindFn = function()
+            self._T.PlacedProjectileBindTimerId = 0
+            self:TryBindPlacedProjectileDataServer()
+        end
+        self._T.PlacedProjectileBindTimerId = _TimerService:SetTimerOnce(bindFn, 0.05)
+    end
+
+    -- Static map-placed projectiles read ProjectileData by id/name; runtime-fired projectiles keep snapshot values.
+    @ExecSpace("ServerOnly")
+    method void TryBindPlacedProjectileDataServer()
+        if self.EnablePlacedProjectileDataBinding ~= true then
+            return
+        end
+        if self._T.IsDestroyed == true then
+            return
+        end
+        if self._T.IsInitialized == true then
+            return
+        end
+        if self.OwnerEntity ~= nil and isvalid(self.OwnerEntity) == true then
+            return
+        end
+
+        local projectileId = self:ResolvePlacedProjectileDataIdServer()
+        if projectileId == "" then
+            return
+        end
+
+        local row = self:GetProjectileRowByIdServer(projectileId)
+        if row == nil then
+            self:WarnMissingPlacedProjectileRowOnce(projectileId)
+            return
+        end
+
+        self.ProjectileDataId = projectileId
+
+        local projectileType = string.lower(self:GetRowString(row, "projectile_type", self.ProjectileType))
+        if projectileType ~= "" then
+            self.ProjectileType = projectileType
+        end
+
+        local speed = self:GetRowNumber(row, "bulletspeed", self.Speed)
+        if speed > 0 then
+            self.Speed = speed
+        end
+
+        local splashSize = self:GetRowNumber(row, "splash_size", self.SplashSize)
+        if splashSize >= 0 then
+            self.SplashSize = splashSize
+        end
+
+        local trigger = self:ResolveComponentSafe(self.Entity, "TriggerComponent", "IsPassive")
+        if trigger ~= nil then
+            pcall(function()
+                trigger.IsPassive = false
+            end)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method table GetProjectileRowByIdServer(string projectileId)
+        local normalizedId = self:NormalizePlacedProjectileToken(projectileId)
+        if normalizedId == "" then
+            return nil
+        end
+
+        if self._T.ProjectileRowsLoaded ~= true then
+            self:LoadProjectileRowsServer()
+        end
+        if self._T.ProjectileRowById == nil then
+            return nil
+        end
+
+        return self._T.ProjectileRowById[normalizedId]
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadProjectileRowsServer()
+        self._T.ProjectileRowsLoaded = false
+        self._T.ProjectileRowById = {}
+
+        local tableName = self.ProjectileDataTableName
+        if tableName == nil or tableName == "" then
+            return
+        end
+
+        local dataTable = nil
+        local loadOk, loadValue = pcall(function()
+            return _DataService:GetTable(tableName)
+        end)
+        if loadOk == true then
+            dataTable = loadValue
+        end
+        if dataTable == nil then
+            return
+        end
+
+        local rows = nil
+        local rowsOk, rowsValue = pcall(function()
+            return dataTable:GetAllRow()
+        end)
+        if rowsOk == true then
+            rows = rowsValue
+        end
+        if rows == nil then
+            return
+        end
+
+        local cache = {}
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+
+            local id = self:NormalizePlacedProjectileToken(self:GetRowString(row, "id", ""))
+            if id == "" then
+                continue
+            end
+            cache[id] = row
+        end
+
+        self._T.ProjectileRowById = cache
+        self._T.ProjectileRowsLoaded = true
+    end
+
+    @ExecSpace("ServerOnly")
+    method string ResolvePlacedProjectileDataIdServer()
+        local explicitId = self:NormalizePlacedProjectileToken(self.ProjectileDataId)
+        if explicitId ~= "" and self:GetProjectileRowByIdServer(explicitId) ~= nil then
+            return explicitId
+        end
+
+        local entityName = ""
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            local readOk, readValue = pcall(function()
+                return self.Entity.Name
+            end)
+            if readOk == true and readValue ~= nil then
+                entityName = tostring(readValue)
+            end
+        end
+
+        local normalizedName = self:NormalizePlacedProjectileToken(entityName)
+        if normalizedName == "" then
+            return ""
+        end
+
+        local candidates = {}
+        table.insert(candidates, normalizedName)
+
+        local withoutParen = self:NormalizePlacedProjectileToken(string.gsub(normalizedName, "%b()", ""))
+        if withoutParen ~= "" then
+            table.insert(candidates, withoutParen)
+        end
+
+        local baseName = normalizedName
+        if withoutParen ~= "" then
+            baseName = withoutParen
+        end
+        local withoutIndex = self:NormalizePlacedProjectileToken(string.gsub(baseName, "[_%-]?%d+$", ""))
+        if withoutIndex ~= "" then
+            table.insert(candidates, withoutIndex)
+        end
+
+        for _, candidate in pairs(candidates) do
+            if self:GetProjectileRowByIdServer(candidate) ~= nil then
+                return candidate
+            end
+        end
+
+        return ""
+    end
+
+    method void WarnMissingPlacedProjectileRowOnce(string projectileId)
+        if self._T.MissingPlacedProjectileRowWarned == nil then
+            self._T.MissingPlacedProjectileRowWarned = {}
+        end
+
+        local key = tostring(projectileId)
+        if self._T.MissingPlacedProjectileRowWarned[key] == true then
+            return
+        end
+        self._T.MissingPlacedProjectileRowWarned[key] = true
+
+        log_warning("[ProjectileComponent] placed projectile auto-bind failed. ProjectileData row not found. id=", projectileId)
+    end
+
+    method string NormalizePlacedProjectileToken(string value)
+        if value == nil then
+            return ""
+        end
+
+        local text = tostring(value)
+        text = string.gsub(text, "^%s+", "")
+        text = string.gsub(text, "%s+$", "")
+        text = string.lower(text)
+        if text == "" then
+            return ""
+        end
+        if text == "-" or text == "null" or text == "nil" then
+            return ""
+        end
+        return text
+    end
+
+    method string GetRowString(any row, string columnName, string fallbackValue)
+        if row == nil then
+            return fallbackValue
+        end
+        if columnName == nil or columnName == "" then
+            return fallbackValue
+        end
+
+        local value = nil
+        local readOk, readValue = pcall(function()
+            return row:GetItem(columnName)
+        end)
+        if readOk == true then
+            value = readValue
+        end
+        if value == nil then
+            return fallbackValue
+        end
+
+        local text = tostring(value)
+        text = string.gsub(text, "^%s+", "")
+        text = string.gsub(text, "%s+$", "")
+        if text == "" then
+            return fallbackValue
+        end
+
+        local lowered = string.lower(text)
+        if text == "-" or lowered == "null" or lowered == "nil" then
+            return fallbackValue
+        end
+
+        return text
+    end
+
+    method number GetRowNumber(any row, string columnName, number fallbackValue)
+        local text = self:GetRowString(row, columnName, "")
+        if text == "" then
+            return fallbackValue
+        end
+
+        local parsed = tonumber(text)
+        if parsed == nil then
+            return fallbackValue
+        end
+        return parsed
     end
 
     -- Centralized destroy path prevents duplicate Destroy calls from multiple triggers.

@@ -2,8 +2,8 @@ id,name,fire_type,projectile_id,fire_rate,duration,cooldown,start_level,max_leve
 a_turret,포탑 - 미니건,projectile,minigun_bullet,0.25,8,6,1,10,,,,SummonData 자료형 정의,,,
 b_turret,포탑 - 저격탑,projectile,sniper_bullet,1,15,10,1,10,,,,컬럼명,역할,자료형,설명
 ,,,,,,,,,,,,id,무기 테이블 ID,STRING,
-,,,100,,,,,,,,,name,무기 이름,STRING,
-,,,400,,,,,,,,,fire_type,공격 타입,ERUM,
+,,,,,,,,,,,,name,무기 이름,STRING,
+,,,,,,,,,,,,fire_type,공격 타입,ERUM,
 ,,,,,,,,,,,,projectile_id,프로젝트타일 ID,FLOAT,
 ,,,,,,,,,,,,fire_rate,발사 후 딜레이 (초),FLOAT,
 ,,,,,,,,,,,,duration,사거리,FLOAT,

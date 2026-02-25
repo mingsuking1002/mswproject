@@ -1,6 +1,5 @@
-아이디값,구분,등급,설명,중복 등장 여부,캐릭터 A 스탯,캐릭터 B 스탯,능력치 증가량,,,,,
 id,name,grade,description,is_stackable,player_a_stat,player_a_stat,pass_value,,,,,
-pass_com_01,상시 패시브 1,common,체력 증가,TRUE,player_hp,player_hp,5,5,,,,
+pass_com_01,상시 패시브 1,common,체력 증가,TRUE,player_hp,player_hp,5,,,,,
 pass_com_02,상시 패시브 2,common,무기 공격력 증가 1,TRUE,player_atk,player_atk,0.05,,,,,
 pass_com_03,상시 패시브 3,common,무기 공격력 증가 2,TRUE,player_atk,player_atk,0.1,,,,,
 pass_com_04,상시 패시브 4,common,무기 공격력 증가 3,TRUE,player_atk,player_atk,0.15,,,,,
