@@ -1,0 +1,179 @@
+# 📊 데이터 테이블 기반 시스템 연동 및 Mismatch 조율 리포트
+
+게임 내 핵심 [.csv](file:///c:/Users/ksh00/Documents/GitHub/mswproject/mswproject/RootDesk/MyDesk/ProjectGR/Data/SkillData.csv) 데이터 테이블 구조를 분석하고, 앞서 발견한 **코드 Mismatch(누락/오류) 사항**들이 데이터의 흐름과 어떻게 어긋나고 있는지 연계하여 정리한 통합 리포트입니다.
+
+---
+
+## 1. 🗂️ 테이블 간 데이터 흐름과 시스템 연결도 (System-Data Map)
+
+게임 내 주요 시스템(Component)들이 각 [.csv](file:///c:/Users/ksh00/Documents/GitHub/mswproject/mswproject/RootDesk/MyDesk/ProjectGR/Data/SkillData.csv) 테이블의 어떤 데이터를 참조하는지 거시적인 흐름(Macro Flow)을 구상한 플로우 차트입니다.
+
+```mermaid
+graph LR
+    classDef dataBox fill:#e2f0cb,stroke:#85b95c,stroke-width:2px;
+    classDef sysBox fill:#cce5ff,stroke:#007bff,stroke-width:2px;
+    classDef outputBox fill:#fff2cc,stroke:#d6b656,stroke-width:2px;
+
+    %% Data Tables
+    subgraph Data Sheets
+        D_Player["PlayerData.csv<br>- player_atk<br>- movespeed<br>- tag_skill"]
+        D_Weapon["WeaponData.csv<br>- dmg_ratio<br>- fire_rate, reload_time<br>- max_basic_resource"]
+        D_Proj["ProjectileData.csv<br>- bulletspeed<br>- splash_size"]
+        D_Sum["SummonData.csv<br>- duration, cooldown"]
+        D_Skill["SkillData.csv<br>- plus_dmg<br>- plus_speed"]
+    end
+
+    %% Systems (Components)
+    subgraph Game Systems
+        Sys_Core["TagManagerComponent<br># Character Life & Swap"]
+        Sys_Swap["WeaponSwapComponent<br># Load & Switch Weapons"]
+        Sys_Fire["FireSystemComponent<br># Attack Logic"]
+        Sys_Reload["ReloadComponent<br># Ammo & Timers"]
+    end
+
+    %% Execution & Outputs
+    subgraph Outputs
+        Out_Damage["Calculated Damage"]
+        Out_Move["Movement Speed"]
+        Out_Visual["UI / Timers"]
+    end
+
+    %% Connections
+    D_Player -->|"Load Char Data"| Sys_Core
+    D_Skill -->|"Apply Tag Buffs"| Sys_Core
+    D_Player -.->|"player_atk (Base)"| Sys_Swap
+    D_Weapon -->|"Weapon Stats"| Sys_Swap
+    
+    Sys_Swap -->|"Init Ammo & Cooldown"| Sys_Reload
+    Sys_Swap -->|"Apply Fire Stats"| Sys_Fire
+    
+    D_Proj -->|"Projectile Specs"| Sys_Fire
+    D_Sum -->|"Turret Specs"| Sys_Fire
+
+    Sys_Core -->|"Speed & Tag Buff"| Out_Move
+    Sys_Fire -->|"Final Atk Math"| Out_Damage
+    Sys_Reload -->|"Ammo Display"| Out_Visual
+    
+    class D_Player,D_Weapon,D_Proj,D_Sum,D_Skill dataBox;
+    class Sys_Core,Sys_Swap,Sys_Fire,Sys_Reload sysBox;
+    class Out_Damage,Out_Move,Out_Visual outputBox;
+```
+
+---
+
+## 2. 🚨 데이터 흐름과 코드 간의 치명적 Mismatch 조율 분석
+
+### ① 데미지 계산 공식의 근본적 단절 (Fire System & Weapon Swap)
+
+현재 `WeaponSwapComponent`가 `PlayerData`의 실제 공격력을 무시하고 하드코딩된 기본값(`10`)에 무기 배율만 곱하는 심각한 오류가 있습니다.
+
+#### [As-Is] 현재 잘못된 데이터 연동 구조
+```mermaid
+graph TD
+    classDef dataBox fill:#e2f0cb,stroke:#85b95c,stroke-width:2px;
+    classDef logicBox fill:#ffcccc,stroke:#cc0000,stroke-width:2px;
+
+    subgraph Data Tables
+        P["PlayerData<br>player_atk: 100"]
+        W["WeaponData<br>dmg_ratio: 1.5"]
+        S["SkillData<br>Buff: +60% Atk"]
+    end
+
+    subgraph Component Logic
+        WS["WeaponSwap<br>Loads WeaponData"]
+        HD["Hardcoded DefaultDamage: 10"]
+        FS["FireSystem<br>BaseWeaponAttack"]
+        Spawn["Projectile Output"]
+    end
+
+    W -.->|"dmg_ratio 1.5"| WS
+    HD -->|"10 * 1.5 = 15"| WS
+    WS -->|"Sets fixed 15"| FS
+    P -.->|"X IGNORED X"| WS
+    S -.->|"X IGNORED X"| FS
+    FS -->|"Fixed Damage: 15"| Spawn
+    
+    class HD,FS logicBox;
+    class P,W,S dataBox;
+```
+
+#### [To-Be] 올바른 데이터 연동 조율 방향 (Refactoring)
+```mermaid
+graph TD
+    classDef dataBox fill:#e2f0cb,stroke:#85b95c,stroke-width:2px;
+    classDef logicBox fill:#cce5ff,stroke:#007bff,stroke-width:2px;
+
+    subgraph Data Sources
+        P["PlayerData<br>Base: 100"]
+        W["WeaponData<br>Ratio: 1.5"]
+        S["SkillData<br>Buff: 60%"]
+    end
+
+    subgraph Fire Component Refactored
+        FS_Calc("CalculateFinalDamage")
+        Spawn["Projectile Output"]
+    end
+
+    W -->|"Ratio: 1.5"| FS_Calc
+    P -->|"Base: 100"| FS_Calc
+    S -->|"Buff: 1.6"| FS_Calc
+    
+    FS_Calc -->|"100 * 1.5 * 1.6"| Spawn
+    Spawn -->|"Real Damage: 240"| Target
+    
+    class P,W,S dataBox;
+    class FS_Calc logicBox;
+```
+
+### ② 백그라운드 재장전 누락 (Tag System & Reload System)
+
+현재 구조에서는 태그 시 캐릭터의 탄약(`Ammo`) 개수만 저장하고 타이머를 완전히 정지시켜버립니다.
+
+#### [To-Be] 백그라운드 타이머 연계 조율안
+```mermaid
+sequenceDiagram
+    autonumber
+    participant P as Player
+    participant TM as TagManager
+    participant RC as ReloadComponent
+
+    P->>TM: Tab (A방출 ➡️ B출격)
+    TM->>RC: A 캐릭터 잔탄 숫자 백업
+    rect rgb(255, 200, 200)
+    Note over RC: [현재 문제] 여기서 타이머가 영구 정지됨
+    end
+    rect rgb(200, 255, 200)
+    Note over TM,RC: [조율 방안] A가 대기열로 갈 때 현재 서버 시간(Time_Out) 기록
+    end
+    P->>P: B 캐릭터로 5초간 전투
+    P->>TM: Tab (B방출 ➡️ A복귀)
+    rect rgb(200, 255, 200)
+    Note over TM,RC: [조율 방안] (현재시간 - Time_Out) > WeaponData.reload_time 계산
+    RC-->>TM: 3초(무기 장전 시간) 초과 시 A탄창 MAX 회복 지급
+    end
+```
+
+### ③ 태그 스킬 버프 발동 시 실시간 스탯 미반영 (Skill Data)
+- **데이터 기획 의도**: [SkillData.csv](file:///c:/Users/ksh00/Documents/GitHub/mswproject/mswproject/RootDesk/MyDesk/ProjectGR/Data/SkillData.csv) 에는 `tag_skill_b` (카르테 초집중: 6초간 공격력 60% 증가) 등의 버프 수치가 들어있습니다.
+- **현재 코드의 문제점**:
+  위 ①번 문제와 연계되어, 무기 장착 시점에 데미지가 정수형(Integer)으로 고정 부착됩니다. 태그 스킬이 발동하여 `player_atk`가 60% 올라도, 이미 과거에 계산된 `FireSystemComponent.BaseWeaponAttack` 은 변하지 않아 딜 상승 효과를 보지 못할 가능성이 매우 큽니다.
+- **조율 방안**:
+  총알(Projectile)을 발사하는 순간(`SpawnProjectileServer`), 고정 데미지가 아닌 **현재 캐릭터의 실시간 `player_atk` * 무기의 `dmg_raito`** 를 즉석 연산하여 `ProjectileComponent` 에 데미지를 넘겨주도록 발사부를 리팩토링해야 합니다.
+
+### ④ 빈 탄창 피드백 (UX & Fire System)
+- **데이터 기획 의도**: `WeaponData`의 `max_basic_resource`가 0일 경우, "틱" 하는 사운드 발동.
+- **조율 방안**:
+  데이터 테이블 구조 상에는 문제 없으나, `FireSystemComponent`에서 서버가 발사 거부(return false)를 때리기 직전에 클라이언트로 **[발사 실패 이벤트(NoAmmo/쿨타임)]** 를 쏴주고, 클라이언트가 UI와 `틱` 사운드를 재생하는 방향으로 스크립트 연결이 필요합니다.
+
+---
+
+## 🎯 총 조율 및 수정 우선순위 (Action Items)
+
+데이터 연결 다이어그램을 기반으로 다음 3단계 코드 수정(Refactoring)을 강력히 권장합니다.
+
+1. **[우선순위 1위] 데미지 실시간 연산화 (FireSystem, WeaponSwap)**
+   - 발사 시점에 `PlayerData` 공격력 상수와 `WeaponData` 스탯 배율, `SkillData` 버프를 가져와 곱연산하도록 변경.
+2. **[우선순위 2위] 백그라운드 재장전 구현 (TagManager, Reload)**
+   - `TagManager`에서 서버 시간을 기록해두고, 해당 캐릭터가 교체되어 소환(`ExecuteTagSwapServer`)될 때, 백그라운드 경과 시간이 `reload_time`을 넘었으면 잔탄을 채워줌.
+3. **[우선순위 3위] 빈 탄창 에러 피드백 구축 (FireSystem)**
+   - 발사 실패 시 클라이언트를 핑(Ping)하여 `재장전 필요` UI 및 사운드 출력.

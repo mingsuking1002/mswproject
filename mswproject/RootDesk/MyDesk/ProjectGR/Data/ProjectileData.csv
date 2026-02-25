@@ -1,4 +1,4 @@
-﻿id,name,projectile_type,projectile_atk,bulletspeed,splash_size,projectile_ model,-copy7,-copy8,-copy9,-copy10,-copy11
+﻿id,name,projectile_type,projectile_atk,bulletspeed,splash_size,projectile_model,-copy7,-copy8,-copy9,-copy10,-copy11
 arrow,화살,single_projectile,player_atk*bow,20,,model://fd5e89be-2ec9-44e1-b48f-0cd66fe6f4ce,,ProjectileData자료형 정의,,,
 cannonball,대포알,area_projectile,player_atk*cannon,35,4,model://c82e61e8-ef66-420c-839f-9d020b5455da,,컬럼명,역할,자료형,설명
 minigun_bullet,미니건 총알,single_projectile,player_atk*turret_minigun,35,,model://24c57c57-ad5a-41bb-8900-70f6ec1e04a1,,id,투사체 테이블 ID,STRING,

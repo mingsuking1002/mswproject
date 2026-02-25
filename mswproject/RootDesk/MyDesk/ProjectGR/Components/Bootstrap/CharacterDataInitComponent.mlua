@@ -114,6 +114,20 @@ script CharacterDataInitComponent extends Component
             return false
         end
 
+        local currentId = ""
+        local currentOk, currentValue = pcall(function()
+            return self.CurrentCharacterId
+        end)
+        if currentOk == true and currentValue ~= nil then
+            currentId = tostring(currentValue)
+        end
+
+        local normalizedTarget = tostring(charId)
+        if isInitialApply == true and self._T.InitialCharacterApplyDone == true and currentId == normalizedTarget then
+            -- Bootstrap periodic reconciliation can call this repeatedly; skip no-op reapply to avoid weapon jitter.
+            return true
+        end
+
         local hpValue = math.max(1, self:GetRowInteger(row, "player_hp", 100))
         local atkValue = math.max(0, self:GetRowInteger(row, "player_atk", 0))
         local moveSpeed = self:GetRowNumber(row, "movespeed", 1.0)

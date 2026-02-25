@@ -22,6 +22,7 @@ script WeaponSwapComponent extends Component
     property string WeaponDataTableName = "WeaponData"
     property string ProjectileDataTableName = "ProjectileData"
     property string SummonDataTableName = "SummonData"
+    property boolean EnableProjectileModelLookup = true
 
     -- Server initializes deterministic slot state so tag/swap can load valid data even before first fire.
     @ExecSpace("ServerOnly")
@@ -1091,14 +1092,12 @@ script WeaponSwapComponent extends Component
         if row == nil then
             return ""
         end
+        if self.EnableProjectileModelLookup ~= true then
+            return ""
+        end
 
+        -- Primary column only. Alias probes are intentionally skipped to avoid missing-column log spam.
         local modelId = self:GetRowString(row, "projectile_model", "")
-        if modelId == "" then
-            modelId = self:GetRowString(row, "projectile_ model", "")
-        end
-        if modelId == "" then
-            modelId = self:GetRowString(row, "projectile_model_id", "")
-        end
         if modelId == "-" then
             return ""
         end

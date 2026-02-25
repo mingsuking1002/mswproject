@@ -243,7 +243,7 @@
           "name": "Shop_East",
           "path": "/maps/games/Shop_East",
           "nameEditable": true,
-          "enable": true,
+          "enable": false,
           "visible": true,
           "localize": false,
           "displayOrder": 4,
@@ -259,8 +259,8 @@
                 "z": 0.0
               },
               "Position": {
-                "x": -0.04713154,
-                "y": 0.0325202942,
+                "x": 2.99220085,
+                "y": 1.04293823,
                 "z": 0.0
               },
               "QuaternionRotation": {
@@ -340,8 +340,8 @@
                 "z": 0.0
               },
               "Position": {
-                "x": 0.0,
-                "y": 0.0,
+                "x": 0.309884727,
+                "y": -0.315134972,
                 "z": 0.0
               },
               "QuaternionRotation": {
@@ -388,9 +388,9 @@
             {
               "@type": "MOD.Core.TransformComponent",
               "Position": {
-                "x": 0.005392456,
-                "y": 0.00135912886,
-                "z": -0.001
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
               },
               "QuaternionRotation": {
                 "x": 0.0,
@@ -398,12 +398,19 @@
                 "z": 0.0,
                 "w": 1.0
               },
+              "Scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
               "Enable": true
             },
             {
               "@type": "MOD.Core.SpriteRendererComponent",
               "ActionSheet": {},
               "EndFrameIndex": 2147483647,
+              "FlipX": true,
+              "FlipY": true,
               "RenderSetting": 0,
               "StartFrameIndex": 0,
               "Enable": true

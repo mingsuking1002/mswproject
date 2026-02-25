@@ -1295,3 +1295,170 @@
 | Detached holder follow | Added server/client position sync for non-child WeaponHolder. |
 | New properties | FollowDetachedWeaponHolder, DetachedWeaponHolderOffset, DetachedHolderFollowInterval. |
 | Resolve order | WeaponHolderEntityRef -> WeaponHolderEntityPath -> child-name fallback. |
+
+## 2026-02-25 Weapon Sprite Swap Reliability Hotfix
+
+### WeaponModelComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.codeblock
+- **Updated:** 2026-02-25
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Weapon ID normalization | Trim + case-insensitive lookup for `WeaponData.id` on swap. |
+| Cache refresh on miss | If row lookup fails once, force reload `WeaponData` cache and retry. |
+| sprite_ruid fallback | Reads `sprite_ruid` first, then alias columns (`spriteRuid`, `sprite`). |
+| Diagnostic logs | Added swap-fail/success logs to identify holder/row/column issues quickly. |
+
+## 2026-02-25 Weapon Model Visual + Muzzle Offset Hotfix
+
+### WeaponModelComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.codeblock
+- **Updated:** 2026-02-25
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Model-first visual swap | `weapon_model` (and aliases) is used first; if missing, fallback to `sprite_ruid`. |
+| Weapon visual lifecycle | Previous weapon visual entity is destroyed before spawning next one to avoid stacking. |
+| Holder sprite policy | Added option to hide holder sprite while model visual is active. |
+| Per-weapon muzzle config | Reads optional `muzzle_distance`, `muzzle_offset_x/y` (aliases `muzzle_x/y`) from `WeaponData`. |
+| Fire origin integration | `GetMuzzlePosition()` now applies weapon-specific distance/offset at runtime. |
+
+## 2026-02-25 Weapon Visual Scale/Offset Data Hook
+
+### WeaponModelComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.codeblock
+- **Updated:** 2026-02-25
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| New WeaponData columns | Added runtime parsing for `weapon_scale_x`, `weapon_scale_y`, `weapon_offset_x`, `weapon_offset_y` (aliases `scale_x/y`, `offset_x/y`). |
+| Holder transform apply | On weapon swap, holder transform scale/offset is updated from data before visual swap. |
+| Detached holder support | For detached holder mode, weapon offset is combined into world-follow offset every sync tick. |
+| Defaults | Added defaults `DefaultWeaponScaleX/Y`, `DefaultWeaponOffsetX/Y` and runtime caches for stable fallback. |
+
+## 2026-02-25 Weapon Rotation Offset Data Hook
+
+### WeaponModelComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.codeblock
+- **Updated:** 2026-02-25
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| New WeaponData column | Added runtime parsing for `weapon_rotation_offset` (aliases `rotation_offset`, `angle_offset`). |
+| Aim rotation integrate | Holder aim angle now applies per-weapon rotation offset (degree) before writing `ZRotation`. |
+| Defaults | Added `DefaultWeaponRotationOffset` and per-weapon runtime cache for fallback safety. |
+
+## 2026-02-25 Missing Column Log Suppression (WeaponModel)
+
+### WeaponModelComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.codeblock
+- **Updated:** 2026-02-25
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Alias fallback gate | `EnableAliasColumnFallback=false` by default, so legacy alias columns are not queried unless explicitly enabled. |
+| Optional rotation column gate | `UseWeaponRotationOffsetColumn=false` by default, preventing `weapon_rotation_offset` missing-column logs when schema is not updated yet. |
+| Runtime impact | Prevents `LEA-3011 NotFound` spam from optional/legacy column probes in WeaponModel swap path. |
+
+## 2026-02-25 Sprite-Only Mode Guards (Weapon/Projectile)
+
+### WeaponModelComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.codeblock
+- **Updated:** 2026-02-25
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Sprite-only default | `PreferWeaponModelVisual=false` and `UseWeaponModelColumn=false` by default. |
+| Muzzle column gate | `UseWeaponMuzzleColumns=false` default; missing `muzzle_*` columns no longer produce NotFound logs. |
+
+### WeaponSwapComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.codeblock
+- **Updated:** 2026-02-25
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Projectile model gate | `EnableProjectileModelLookup=false` default to suppress missing `projectile_model*` column probes. |
+
+## 2026-02-25 WeaponModel-Only Disable Adjustment
+
+### WeaponModelComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.codeblock
+- **Updated:** 2026-02-25
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Scope correction | Kept only `weapon_model` path disabled (`PreferWeaponModelVisual=false`, `UseWeaponModelColumn=false`). |
+| Muzzle column restore | Re-enabled `muzzle_distance`, `muzzle_offset_x`, `muzzle_offset_y` read path in `ApplyMuzzleConfigByRowServer()`. |
+| Runtime default | `UseWeaponMuzzleColumns=true` default so WeaponData muzzle columns are used immediately. |
+
+### WeaponSwapComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.codeblock
+- **Updated:** 2026-02-25
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Projectile model restore | Re-enabled `projectile_model` read path in `GetProjectileModelIdFromProjectileRow()`. |
+| Runtime default | `EnableProjectileModelLookup=true` default. |
+| Log safety | Alias probes are skipped intentionally; only primary `projectile_model` is queried to reduce missing-column log noise. |
+
+## 2026-02-25 Weapon Draw Order Over Player
+
+### WeaponModelComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.codeblock
+- **Updated:** 2026-02-25
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| New properties | `MatchOwnerSortingLayer`, `WeaponOrderOffset`, `FallbackWeaponOrderInLayer` 추가. |
+| Draw-order apply | `SwapModel()` 완료 시 `ApplyWeaponDrawOrderServer()` 호출로 무기 스프라이트 `OrderInLayer`를 플레이어보다 높게 강제. |
+| Layer match | 옵션 활성 시 플레이어 `SortingLayer`를 무기에도 동일 적용. |
+
+## 2026-02-25 Detached WeaponHolder Follow Smoothing
+
+### WeaponModelComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.codeblock
+- **Updated:** 2026-02-25
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Follow interval | `DetachedHolderFollowInterval` 기본값을 `0.02`로 조정해 서버 추종 빈도 상향. |
+| Client smoothing | `EnableClientDetachedFollowSmoothing`, `ClientDetachedFollowSmoothingSpeed` 프로퍼티 추가. |
+| Follow path | `OnUpdate()`에서 `SyncDetachedHolderPositionClient(holder, delta)`를 사용해 클라이언트 보간 추종 적용. |
+
+## 2026-02-25 WeaponData Transform Column Integration
+
+### WeaponModelComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.codeblock
+- **Updated:** 2026-02-25
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Unified schema flag | `UseUnifiedWeaponTransformColumns=true` 기본값 추가. |
+| Scale integration | `weapon_scale` 단일 컬럼으로 `weapon_scale_x/y`를 통합 처리. |
+| Muzzle integration | `muzzle_forward_offset`, `muzzle_side_offset` 컬럼으로 기존 `muzzle_distance`, `muzzle_offset_x/y` 경로를 통합 처리. |
+| Base offset policy | 통합 모드에서는 `muzzle_base_offset_x/y`를 테이블에서 읽지 않고 기본값(프로퍼티)만 사용. |
+| Legacy compatibility | 필요 시 `UseUnifiedWeaponTransformColumns=false`로 기존 분리 컬럼 읽기 경로 사용 가능. |

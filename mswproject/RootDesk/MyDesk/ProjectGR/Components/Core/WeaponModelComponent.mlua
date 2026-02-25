@@ -3,25 +3,77 @@ script WeaponModelComponent extends Component
 
     @Sync
     property string CurrentWeaponId = ""
+    @Sync
+    property string CurrentWeaponModelId = ""
 
     property Entity WeaponHolderEntityRef = nil
     property string WeaponHolderName = "WeaponHolder"
     property string WeaponHolderEntityPath = ""
+    property boolean AutoSpawnWeaponHolderIfMissing = true
+    property string WeaponHolderModelId = "mapempty"
+    property string WeaponHolderFallbackModelId = "mapempty"
+    property boolean DisableAutoSpawnAfterModelMissing = true
+    property boolean AllowPathWeaponHolderFallback = false
     property string WeaponDataTableName = "WeaponData"
     property number FlipThreshold = 0
     property number MuzzleDistance = 0.6
+    property number DefaultWeaponScaleX = 1
+    property number DefaultWeaponScaleY = 1
+    property number DefaultWeaponOffsetX = 0
+    property number DefaultWeaponOffsetY = 0
+    property boolean LockWeaponPivotToPlayerOrigin = false
+    property number DefaultWeaponRotationOffset = 0
+    property number DefaultMuzzleOffsetX = 0
+    property number DefaultMuzzleOffsetY = 0
+    property number DefaultMuzzleBaseOffsetX = 0
+    property number DefaultMuzzleBaseOffsetY = 0
+    property boolean DecoupleSpriteOffsetFromMuzzle = true
+    property boolean PreferWeaponModelVisual = false
+    property boolean HideHolderSpriteWhenModelVisual = true
+    property string WeaponVisualSpawnName = "WeaponVisual"
+    property boolean UseWeaponModelColumn = false
+    property boolean UseWeaponMuzzleColumns = true
+    property boolean UseUnifiedWeaponTransformColumns = true
+    property boolean EnableAliasColumnFallback = false
+    property boolean UseWeaponRotationOffsetColumn = false
     property boolean FollowDetachedWeaponHolder = true
+    property boolean EnableServerDetachedHolderFollow = true
     property Vector2 DetachedWeaponHolderOffset = Vector2.zero
-    property number DetachedHolderFollowInterval = 0.05
+    property number DetachedHolderFollowInterval = 0.02
+    property boolean EnableClientDetachedFollowSmoothing = false
+    property number ClientDetachedFollowSmoothingSpeed = 30
+    property boolean MatchOwnerSortingLayer = true
+    property integer WeaponOrderOffset = 1
+    property integer FallbackWeaponOrderInLayer = 10
+    property boolean EnableWeaponSwapLog = true
+    property boolean KeepWeaponHolderUnflippedFromOwner = true
+    property boolean FlipWeaponSpriteByCursor = true
+    property boolean WeaponFlipWhenCursorRight = true
 
     -- Server initializes utility and data cache for weapon-id lookup.
     @ExecSpace("ServerOnly")
     method void OnInitialize()
         self:EnsureGRUtil()
+        -- Runtime policy: weapon_model path is disabled, sprite path is authoritative.
+        self.PreferWeaponModelVisual = false
+        self.UseWeaponModelColumn = false
+        self.EnableAliasColumnFallback = false
         self._T.WeaponRowById = {}
         self._T.WeaponRowsLoaded = false
         self._T.ServerHolderFollowTimerId = 0
-        self:StartDetachedHolderFollowServerTimer()
+        self._T.CurrentWeaponVisualEntity = nil
+        self._T.CurrentWeaponScale = Vector2(self.DefaultWeaponScaleX, self.DefaultWeaponScaleY)
+        self._T.CurrentWeaponOffset = Vector2(self.DefaultWeaponOffsetX, self.DefaultWeaponOffsetY)
+        self._T.CurrentWeaponRotationOffset = self.DefaultWeaponRotationOffset
+        self._T.CurrentMuzzleDistance = math.max(0, self.MuzzleDistance)
+        self._T.CurrentMuzzleOffset = Vector2(self.DefaultMuzzleOffsetX, self.DefaultMuzzleOffsetY)
+        self._T.CurrentMuzzleBaseOffset = Vector2(self.DefaultMuzzleBaseOffsetX, self.DefaultMuzzleBaseOffsetY)
+        self._T.WeaponHolderAutoSpawnDisabled = false
+        self.CurrentWeaponModelId = ""
+        self:EnsureWeaponHolderChildServer()
+        if self.EnableServerDetachedHolderFollow == true then
+            self:StartDetachedHolderFollowServerTimer()
+        end
     end
 
     -- Client resolves holder after begin play so aim/facing can start immediately.
@@ -40,18 +92,23 @@ script WeaponModelComponent extends Component
     -- EndPlay clears server follow timer so detached holder sync never runs on stale entity.
     @ExecSpace("ServerOnly")
     method void OnEndPlay()
+        self:DestroyCurrentWeaponVisualServer()
         self:StopDetachedHolderFollowServerTimer()
     end
 
     -- Destroy repeats timer cleanup as final safety net.
     @ExecSpace("ServerOnly")
     method void OnDestroy()
+        self:DestroyCurrentWeaponVisualServer()
         self:StopDetachedHolderFollowServerTimer()
     end
 
     -- Detached holder position is synced on server so muzzle query stays authoritative for fire origin.
     @ExecSpace("ServerOnly")
     method void StartDetachedHolderFollowServerTimer()
+        if self.EnableServerDetachedHolderFollow ~= true then
+            return
+        end
         if self._T.ServerHolderFollowTimerId ~= nil and self._T.ServerHolderFollowTimerId > 0 then
             return
         end
@@ -87,7 +144,10 @@ script WeaponModelComponent extends Component
             return
         end
 
-        self:SyncDetachedHolderPositionCommon(holder)
+        -- When detached holder is server-followed, client position writes cause transform tug-of-war jitter.
+        if self.EnableServerDetachedHolderFollow ~= true then
+            self:SyncDetachedHolderPositionClient(holder, delta)
+        end
 
         local cursorScreen = nil
         local cursorOk, cursorValue = pcall(function()
@@ -105,34 +165,67 @@ script WeaponModelComponent extends Component
             return
         end
 
+        self:ApplyPlayerFlipClient(targetWorld)
+        self:ApplyHolderCounterFlipScaleClient(holder)
+        self:ApplyWeaponSpriteFlipClient(holder, targetWorld)
         self:ApplyHolderRotationClient(holder, targetWorld)
-        self:ApplyPlayerFlipClient(cursorScreen)
     end
 
-    -- Server swaps visual sprite by weapon id while keeping holder entity persistent.
+    -- Server swaps visual by weapon id: weapon_model first, sprite_ruid fallback.
     @ExecSpace("ServerOnly")
     method void SwapModel(string weaponId)
         if weaponId == nil then
             weaponId = ""
         end
 
-        local normalizedId = tostring(weaponId)
+        local normalizedId = self:NormalizeText(tostring(weaponId))
         if normalizedId == "" then
+            self:LogSwapWarning("SwapModel skipped: weaponId is empty.")
             return
         end
 
         local holder = self:ResolveWeaponHolderEntity(true)
         if holder == nil or isvalid(holder) == false then
+            self:EnsureWeaponHolderChildServer()
+            holder = self:ResolveWeaponHolderEntity(true)
+        end
+        if holder == nil or isvalid(holder) == false then
+            self:LogSwapWarning("SwapModel failed: WeaponHolder not found. weaponId=", normalizedId, ", holderPath=", self.WeaponHolderEntityPath)
             return
         end
 
         local row = self:GetWeaponRowByIdServer(normalizedId)
         if row == nil then
+            self:LoadWeaponRowsServer(true)
+            row = self:GetWeaponRowByIdServer(normalizedId)
+        end
+        if row == nil then
+            self:LogSwapWarning("SwapModel failed: WeaponData row not found. weaponId=", normalizedId)
             return
         end
 
-        local spriteRuid = self:GetRowString(row, "sprite_ruid", "")
+        self:ApplyWeaponVisualConfigByRowServer(row)
+        self:ApplyHolderTransformByWeaponConfigServer(holder)
+        self:ApplyMuzzleConfigByRowServer(row)
+        local modelApplied = self:ApplyWeaponModelVisualServer(holder, row, normalizedId)
+        if modelApplied == true then
+            self.CurrentWeaponId = normalizedId
+            self:LogSwapInfo("SwapModel applied by weapon_model. weaponId=", normalizedId, ", modelId=", self.CurrentWeaponModelId)
+            return
+        end
+
+        self:DestroyCurrentWeaponVisualServer()
+        self.CurrentWeaponModelId = ""
+
+        local spriteRuid = self:NormalizeText(self:GetRowString(row, "sprite_ruid", ""))
+        if spriteRuid == "" and self.EnableAliasColumnFallback == true then
+            spriteRuid = self:NormalizeText(self:GetRowString(row, "spriteRuid", ""))
+        end
+        if spriteRuid == "" and self.EnableAliasColumnFallback == true then
+            spriteRuid = self:NormalizeText(self:GetRowString(row, "sprite", ""))
+        end
         if spriteRuid == "" then
+            self:LogSwapWarning("SwapModel failed: weapon_model/sprite_ruid both empty. weaponId=", normalizedId)
             return
         end
 
@@ -154,6 +247,7 @@ script WeaponModelComponent extends Component
             end
         end
         if spriteRenderer == nil then
+            self:LogSwapWarning("SwapModel failed: SpriteRendererComponent missing. weaponId=", normalizedId)
             return
         end
 
@@ -167,8 +261,231 @@ script WeaponModelComponent extends Component
             holder.Enable = true
             holder.Visible = true
         end)
+        self:ApplyWeaponDrawOrderServer(spriteRenderer)
 
         self.CurrentWeaponId = normalizedId
+        self:LogSwapInfo("SwapModel applied. weaponId=", normalizedId, ", sprite_ruid=", spriteRuid)
+    end
+
+    -- Weapon sprite must stay visually above player body, so order is derived from owner renderer + offset.
+    @ExecSpace("ServerOnly")
+    method void ApplyWeaponDrawOrderServer(any weaponSpriteRenderer)
+        if weaponSpriteRenderer == nil then
+            return
+        end
+
+        local targetOrder = self.FallbackWeaponOrderInLayer
+        local ownerSprite = self:ResolveComponentSafe(self.Entity, "SpriteRendererComponent", nil)
+        if ownerSprite ~= nil then
+            local readOrderOk, ownerOrder = pcall(function()
+                return ownerSprite.OrderInLayer
+            end)
+            if readOrderOk == true and ownerOrder ~= nil then
+                local offset = math.max(1, math.floor(self.WeaponOrderOffset))
+                targetOrder = math.floor(ownerOrder) + offset
+            end
+
+            if self.MatchOwnerSortingLayer == true then
+                local readLayerOk, ownerLayer = pcall(function()
+                    return ownerSprite.SortingLayer
+                end)
+                if readLayerOk == true and ownerLayer ~= nil and tostring(ownerLayer) ~= "" then
+                    pcall(function()
+                        weaponSpriteRenderer.SortingLayer = tostring(ownerLayer)
+                    end)
+                end
+            end
+        end
+
+        pcall(function()
+            weaponSpriteRenderer.OrderInLayer = targetOrder
+        end)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyWeaponVisualConfigByRowServer(any row)
+        local scaleX = self.DefaultWeaponScaleX
+        local scaleY = self.DefaultWeaponScaleY
+
+        if self.UseUnifiedWeaponTransformColumns == true then
+            -- Unified schema: one scale value controls both X/Y.
+            local unifiedScale = self:GetRowNumber(row, "weapon_scale", self.DefaultWeaponScaleX)
+            if unifiedScale > 0 then
+                scaleX = unifiedScale
+                scaleY = unifiedScale
+            end
+        else
+            -- Legacy schema: independent X/Y columns.
+            scaleX = self:GetRowNumber(row, "weapon_scale_x", self.DefaultWeaponScaleX)
+            if self.EnableAliasColumnFallback == true then
+                scaleX = self:GetRowNumber(row, "scale_x", scaleX)
+            end
+            scaleY = self:GetRowNumber(row, "weapon_scale_y", self.DefaultWeaponScaleY)
+            if self.EnableAliasColumnFallback == true then
+                scaleY = self:GetRowNumber(row, "scale_y", scaleY)
+            end
+        end
+        if scaleX <= 0 then
+            scaleX = self.DefaultWeaponScaleX
+        end
+        if scaleY <= 0 then
+            scaleY = self.DefaultWeaponScaleY
+        end
+
+        local offsetX = self:GetRowNumber(row, "weapon_offset_x", self.DefaultWeaponOffsetX)
+        if self.EnableAliasColumnFallback == true then
+            offsetX = self:GetRowNumber(row, "offset_x", offsetX)
+        end
+        local offsetY = self:GetRowNumber(row, "weapon_offset_y", self.DefaultWeaponOffsetY)
+        if self.EnableAliasColumnFallback == true then
+            offsetY = self:GetRowNumber(row, "offset_y", offsetY)
+        end
+        if self.LockWeaponPivotToPlayerOrigin == true then
+            -- Temporarily lock weapon pivot to player origin so alignment can be tuned from a stable baseline.
+            offsetX = 0
+            offsetY = 0
+        end
+
+        local rotationOffset = self.DefaultWeaponRotationOffset
+        if self.UseWeaponRotationOffsetColumn == true then
+            rotationOffset = self:GetRowNumber(row, "weapon_rotation_offset", self.DefaultWeaponRotationOffset)
+            if self.EnableAliasColumnFallback == true then
+                rotationOffset = self:GetRowNumber(row, "rotation_offset", rotationOffset)
+                rotationOffset = self:GetRowNumber(row, "angle_offset", rotationOffset)
+            end
+        end
+
+        self._T.CurrentWeaponScale = Vector2(scaleX, scaleY)
+        self._T.CurrentWeaponOffset = Vector2(offsetX, offsetY)
+        self._T.CurrentWeaponRotationOffset = rotationOffset
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyHolderTransformByWeaponConfigServer(Entity holder)
+        if holder == nil or isvalid(holder) == false then
+            return
+        end
+
+        local transform = holder.TransformComponent
+        if transform == nil or isvalid(transform) == false then
+            return
+        end
+
+        local scaleConfig = self._T.CurrentWeaponScale
+        local scaleX = self.DefaultWeaponScaleX
+        local scaleY = self.DefaultWeaponScaleY
+        if scaleConfig ~= nil then
+            scaleX = scaleConfig.x
+            scaleY = scaleConfig.y
+        end
+        if scaleX <= 0 then
+            scaleX = self.DefaultWeaponScaleX
+        end
+        if scaleY <= 0 then
+            scaleY = self.DefaultWeaponScaleY
+        end
+
+        local currentScale = transform.Scale
+        if currentScale == nil then
+            currentScale = Vector3.one
+        end
+        local targetScale = Vector3(scaleX, scaleY, currentScale.z)
+        pcall(function()
+            transform.Scale = targetScale
+        end)
+
+        if self:IsDetachedHolderEntity(holder) == true then
+            return
+        end
+
+        local offset = self._T.CurrentWeaponOffset
+        local offsetX = self.DefaultWeaponOffsetX
+        local offsetY = self.DefaultWeaponOffsetY
+        if offset ~= nil then
+            offsetX = offset.x
+            offsetY = offset.y
+        end
+
+        local appliedLocal = false
+        local positionOk = pcall(function()
+            transform.Position = Vector3(offsetX, offsetY, 0)
+        end)
+        if positionOk == true then
+            appliedLocal = true
+        end
+
+        if appliedLocal ~= true then
+            pcall(function()
+                transform.LocalPosition = Vector3(offsetX, offsetY, 0)
+            end)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyMuzzleConfigByRowServer(any row)
+        if self.UseWeaponMuzzleColumns ~= true then
+            self._T.CurrentMuzzleDistance = math.max(0, self.MuzzleDistance)
+            self._T.CurrentMuzzleOffset = Vector2(self.DefaultMuzzleOffsetX, self.DefaultMuzzleOffsetY)
+            self._T.CurrentMuzzleBaseOffset = Vector2(self.DefaultMuzzleBaseOffsetX, self.DefaultMuzzleBaseOffsetY)
+            return
+        end
+
+        if self.UseUnifiedWeaponTransformColumns == true then
+            -- Unified schema: forward/side offsets only (base offset columns are removed).
+            local forwardOffset = self:GetRowNumber(row, "muzzle_forward_offset", self.MuzzleDistance)
+            local sideOffset = self:GetRowNumber(row, "muzzle_side_offset", self.DefaultMuzzleOffsetY)
+
+            self._T.CurrentMuzzleDistance = 0
+            self._T.CurrentMuzzleOffset = Vector2(forwardOffset, sideOffset)
+            self._T.CurrentMuzzleBaseOffset = Vector2(self.DefaultMuzzleBaseOffsetX, self.DefaultMuzzleBaseOffsetY)
+            return
+        end
+
+        local distance = self:GetRowNumber(row, "muzzle_distance", self.MuzzleDistance)
+        if distance < 0 then
+            distance = 0
+        end
+
+        local offsetX = self:GetRowNumber(row, "muzzle_offset_x", self.DefaultMuzzleOffsetX)
+        local offsetY = self:GetRowNumber(row, "muzzle_offset_y", self.DefaultMuzzleOffsetY)
+        local baseOffsetX = self:GetRowNumber(row, "muzzle_base_offset_x", self.DefaultMuzzleBaseOffsetX)
+        local baseOffsetY = self:GetRowNumber(row, "muzzle_base_offset_y", self.DefaultMuzzleBaseOffsetY)
+
+        self._T.CurrentMuzzleDistance = distance
+        self._T.CurrentMuzzleOffset = Vector2(offsetX, offsetY)
+        self._T.CurrentMuzzleBaseOffset = Vector2(baseOffsetX, baseOffsetY)
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean ApplyWeaponModelVisualServer(Entity holder, any row, string weaponId)
+        -- Model visual route is disabled by project decision (sprite-only weapon rendering).
+        return false
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SetHolderSpriteVisibleServer(Entity holder, boolean visible)
+        if holder == nil or isvalid(holder) == false then
+            return
+        end
+
+        local spriteRenderer = self:ResolveComponentSafe(holder, "SpriteRendererComponent", "SpriteRUID")
+        if spriteRenderer == nil then
+            return
+        end
+
+        pcall(function()
+            spriteRenderer.Enable = visible
+        end)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void DestroyCurrentWeaponVisualServer()
+        if self._T.CurrentWeaponVisualEntity ~= nil and isvalid(self._T.CurrentWeaponVisualEntity) == true then
+            pcall(function()
+                _EntityService:Destroy(self._T.CurrentWeaponVisualEntity)
+            end)
+        end
+        self._T.CurrentWeaponVisualEntity = nil
     end
 
     -- FireSystem queries muzzle position in world space from holder transform and configured muzzle distance.
@@ -192,6 +509,54 @@ script WeaponModelComponent extends Component
             return Vector2.zero
         end
 
+        local muzzleBaseX = worldPos.x
+        local muzzleBaseY = worldPos.y
+
+        if self.DecoupleSpriteOffsetFromMuzzle == true then
+            local ownerTransform = self.Entity.TransformComponent
+            if ownerTransform ~= nil and isvalid(ownerTransform) == true then
+                local ownerPos = ownerTransform.WorldPosition
+                if ownerPos ~= nil then
+                    local detachedOffset = self.DetachedWeaponHolderOffset
+                    local detachedX = 0
+                    local detachedY = 0
+                    if detachedOffset ~= nil then
+                        detachedX = detachedOffset.x
+                        detachedY = detachedOffset.y
+                    end
+                    muzzleBaseX = ownerPos.x + detachedX
+                    muzzleBaseY = ownerPos.y + detachedY
+                end
+            end
+        end
+
+        if self:IsDetachedHolderEntity(holder) == true and self.EnableServerDetachedHolderFollow ~= true then
+            local ownerTransform = self.Entity.TransformComponent
+            if ownerTransform ~= nil and isvalid(ownerTransform) == true then
+                local ownerPos = ownerTransform.WorldPosition
+                if ownerPos ~= nil then
+                    local offset = self.DetachedWeaponHolderOffset
+                    local offsetX = 0
+                    local offsetY = 0
+                    if offset ~= nil then
+                        offsetX = offset.x
+                        offsetY = offset.y
+                    end
+
+                    local weaponOffset = self._T.CurrentWeaponOffset
+                    if weaponOffset ~= nil then
+                        if self.DecoupleSpriteOffsetFromMuzzle ~= true then
+                            offsetX += weaponOffset.x
+                            offsetY += weaponOffset.y
+                        end
+                    end
+
+                    muzzleBaseX = ownerPos.x + offsetX
+                    muzzleBaseY = ownerPos.y + offsetY
+                end
+            end
+        end
+
         local radian = math.rad(holderTransform.ZRotation)
         local forward = Vector2(math.cos(radian), math.sin(radian))
         if forward:SqrMagnitude() <= 0 then
@@ -201,11 +566,31 @@ script WeaponModelComponent extends Component
         end
 
         local distance = self.MuzzleDistance
+        if self._T.CurrentMuzzleDistance ~= nil then
+            distance = self._T.CurrentMuzzleDistance
+        end
         if distance < 0 then
             distance = 0
         end
 
-        return Vector2(worldPos.x, worldPos.y) + (forward * distance)
+        local offset = self._T.CurrentMuzzleOffset
+        local offsetX = 0
+        local offsetY = 0
+        if offset ~= nil then
+            offsetX = offset.x
+            offsetY = offset.y
+        end
+        local baseOffset = self._T.CurrentMuzzleBaseOffset
+        if baseOffset ~= nil then
+            muzzleBaseX += baseOffset.x
+            muzzleBaseY += baseOffset.y
+        end
+
+        local side = Vector2(-forward.y, forward.x)
+        local muzzlePos = Vector2(muzzleBaseX, muzzleBaseY)
+        muzzlePos = muzzlePos + (forward * (distance + offsetX))
+        muzzlePos = muzzlePos + (side * offsetY)
+        return muzzlePos
     end
 
     -- FireSystem uses this API to align shot direction with holder-based aim instead of body rotation.
@@ -261,29 +646,167 @@ script WeaponModelComponent extends Component
         end
 
         local angle = math.deg(math.atan(direction.y, direction.x))
+
+        local ownerTransform = self.Entity.TransformComponent
+        local ownerFacingSign = 1
+        if ownerTransform ~= nil and isvalid(ownerTransform) == true then
+            local ownerScale = ownerTransform.Scale
+            if ownerScale ~= nil and ownerScale.x < 0 then
+                ownerFacingSign = -1
+            end
+        end
+
+        -- Clamp holder rotation to a 180-degree arc based on current player facing.
+        if ownerFacingSign >= 0 then
+            if angle > 90 then
+                angle = 90
+            end
+            if angle < -90 then
+                angle = -90
+            end
+        else
+            if angle >= 0 then
+                if angle < 90 then
+                    angle = 90
+                end
+            else
+                if angle > -90 then
+                    angle = -90
+                end
+            end
+        end
+
+        local rotationOffset = self._T.CurrentWeaponRotationOffset
+        if rotationOffset == nil then
+            rotationOffset = self.DefaultWeaponRotationOffset
+        end
+        angle += rotationOffset
         pcall(function()
             holderTransform.ZRotation = angle
         end)
     end
 
+    -- Counter-flip holder scale so player left/right flip does not invert weapon holder transform itself.
     @ExecSpace("ClientOnly")
-    method void ApplyPlayerFlipClient(Vector2 cursorScreen)
-        if cursorScreen == nil then
+    method void ApplyHolderCounterFlipScaleClient(Entity holder)
+        if self.KeepWeaponHolderUnflippedFromOwner ~= true then
+            return
+        end
+        if holder == nil or isvalid(holder) == false then
+            return
+        end
+        if self.Entity == nil or isvalid(self.Entity) == false then
             return
         end
 
-        local screenWidth = _UILogic.ScreenWidth
-        if screenWidth == nil or screenWidth <= 0 then
+        local holderTransform = holder.TransformComponent
+        if holderTransform == nil or isvalid(holderTransform) == false then
+            return
+        end
+        local ownerTransform = self.Entity.TransformComponent
+        if ownerTransform == nil or isvalid(ownerTransform) == false then
             return
         end
 
-        local threshold = (screenWidth * 0.5) + self.FlipThreshold
-        local flipLeft = (cursorScreen.x < threshold)
+        local ownerScale = ownerTransform.Scale
+        local ownerSignX = 1
+        if ownerScale ~= nil and ownerScale.x < 0 then
+            ownerSignX = -1
+        end
+
+        local scaleConfig = self._T.CurrentWeaponScale
+        local baseScaleX = self.DefaultWeaponScaleX
+        local baseScaleY = self.DefaultWeaponScaleY
+        if scaleConfig ~= nil then
+            baseScaleX = math.abs(scaleConfig.x)
+            baseScaleY = math.abs(scaleConfig.y)
+        end
+        if baseScaleX <= 0 then
+            baseScaleX = math.abs(self.DefaultWeaponScaleX)
+        end
+        if baseScaleX <= 0 then
+            baseScaleX = 1
+        end
+        if baseScaleY <= 0 then
+            baseScaleY = math.abs(self.DefaultWeaponScaleY)
+        end
+        if baseScaleY <= 0 then
+            baseScaleY = 1
+        end
+
+        local holderScale = holderTransform.Scale
+        local currentZ = 1
+        if holderScale ~= nil then
+            currentZ = holderScale.z
+        end
+        local targetScale = Vector3(baseScaleX * ownerSignX, baseScaleY, currentZ)
+        pcall(function()
+            holderTransform.Scale = targetScale
+        end)
+    end
+
+    -- Weapon sprite FlipX is driven by cursor side so weapon facing can differ from player body facing.
+    @ExecSpace("ClientOnly")
+    method void ApplyWeaponSpriteFlipClient(Entity holder, Vector2 targetWorld)
+        if self.FlipWeaponSpriteByCursor ~= true then
+            return
+        end
+        if holder == nil or isvalid(holder) == false then
+            return
+        end
+        if targetWorld == nil then
+            return
+        end
+
+        local ownerTransform = self.Entity.TransformComponent
+        if ownerTransform == nil or isvalid(ownerTransform) == false then
+            return
+        end
+        local ownerWorld = ownerTransform.WorldPosition
+        if ownerWorld == nil then
+            return
+        end
+
+        local thresholdX = ownerWorld.x + self.FlipThreshold
+        local cursorRight = (targetWorld.x >= thresholdX)
+
+        local flipX = false
+        if self.WeaponFlipWhenCursorRight == true then
+            flipX = cursorRight
+        else
+            flipX = not cursorRight
+        end
+
+        local spriteRenderer = self:ResolveComponentSafe(holder, "SpriteRendererComponent", "FlipX")
+        if spriteRenderer == nil then
+            return
+        end
+
+        pcall(function()
+            spriteRenderer.FlipX = flipX
+        end)
+        pcall(function()
+            spriteRenderer.FlipY = false
+        end)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ApplyPlayerFlipClient(Vector2 targetWorld)
+        if targetWorld == nil then
+            return
+        end
 
         local transform = self.Entity.TransformComponent
         if transform == nil or isvalid(transform) == false then
             return
         end
+
+        local ownerWorld = transform.WorldPosition
+        if ownerWorld == nil then
+            return
+        end
+        local thresholdX = ownerWorld.x + self.FlipThreshold
+        local flipLeft = (targetWorld.x < thresholdX)
 
         local scale = transform.Scale
         if scale == nil then
@@ -349,8 +872,94 @@ script WeaponModelComponent extends Component
             offsetY = offset.y
         end
 
+        local weaponOffset = self._T.CurrentWeaponOffset
+        if weaponOffset ~= nil then
+            offsetX += weaponOffset.x
+            offsetY += weaponOffset.y
+        end
+
         pcall(function()
             holderTransform.WorldPosition = Vector3(ownerPos.x + offsetX, ownerPos.y + offsetY, targetZ)
+        end)
+    end
+
+    -- Client follow uses smoothing to reduce visible jitter from detached holder network corrections.
+    @ExecSpace("ClientOnly")
+    method void SyncDetachedHolderPositionClient(Entity holder, number delta)
+        if self.EnableServerDetachedHolderFollow == true then
+            return
+        end
+        if self.FollowDetachedWeaponHolder ~= true then
+            return
+        end
+        if holder == nil or isvalid(holder) == false then
+            return
+        end
+        if self:IsDetachedHolderEntity(holder) ~= true then
+            return
+        end
+        if self.Entity == nil or isvalid(self.Entity) == false then
+            return
+        end
+
+        local ownerTransform = self.Entity.TransformComponent
+        if ownerTransform == nil or isvalid(ownerTransform) == false then
+            return
+        end
+        local holderTransform = holder.TransformComponent
+        if holderTransform == nil or isvalid(holderTransform) == false then
+            return
+        end
+
+        local ownerPos = ownerTransform.WorldPosition
+        if ownerPos == nil then
+            return
+        end
+
+        local holderPos = holderTransform.WorldPosition
+        local targetZ = ownerPos.z
+        if holderPos ~= nil then
+            targetZ = holderPos.z
+        end
+
+        local offset = self.DetachedWeaponHolderOffset
+        local offsetX = 0
+        local offsetY = 0
+        if offset ~= nil then
+            offsetX = offset.x
+            offsetY = offset.y
+        end
+
+        local weaponOffset = self._T.CurrentWeaponOffset
+        if weaponOffset ~= nil then
+            offsetX += weaponOffset.x
+            offsetY += weaponOffset.y
+        end
+
+        local targetWorld = Vector3(ownerPos.x + offsetX, ownerPos.y + offsetY, targetZ)
+        if self.EnableClientDetachedFollowSmoothing ~= true or holderPos == nil then
+            pcall(function()
+                holderTransform.WorldPosition = targetWorld
+            end)
+            return
+        end
+
+        local smoothSpeed = self.ClientDetachedFollowSmoothingSpeed
+        if smoothSpeed <= 0 then
+            smoothSpeed = 30
+        end
+        local lerpT = delta * smoothSpeed
+        if lerpT < 0 then
+            lerpT = 0
+        end
+        if lerpT > 1 then
+            lerpT = 1
+        end
+
+        local nextX = holderPos.x + ((targetWorld.x - holderPos.x) * lerpT)
+        local nextY = holderPos.y + ((targetWorld.y - holderPos.y) * lerpT)
+        pcall(function()
+            holderTransform.WorldPosition = Vector3(nextX, nextY, targetWorld.z)
         end)
     end
 
@@ -369,6 +978,36 @@ script WeaponModelComponent extends Component
     end
 
     method Entity ResolveWeaponHolderEntity(boolean forceRefresh)
+        -- Child holder is always authoritative when present: detached path/reference causes visible follow jitter.
+        local childHolder = self:ResolveWeaponHolderByChildName()
+        if childHolder ~= nil and isvalid(childHolder) == true then
+            if self.WeaponHolderEntityRef ~= childHolder then
+                self.WeaponHolderEntityRef = childHolder
+            end
+            return childHolder
+        end
+
+        if self.WeaponHolderEntityRef ~= nil and isvalid(self.WeaponHolderEntityRef) == true then
+            if self.AllowPathWeaponHolderFallback ~= true and self:IsDetachedHolderEntity(self.WeaponHolderEntityRef) == true then
+                self.WeaponHolderEntityRef = nil
+            else
+                return self.WeaponHolderEntityRef
+            end
+        end
+
+        if self.AutoSpawnWeaponHolderIfMissing == true then
+            self:EnsureWeaponHolderChildServer()
+            local retryChild = self:ResolveWeaponHolderByChildName()
+            if retryChild ~= nil and isvalid(retryChild) == true then
+                self.WeaponHolderEntityRef = retryChild
+                return retryChild
+            end
+        end
+
+        if self.AllowPathWeaponHolderFallback ~= true then
+            return nil
+        end
+
         if self.WeaponHolderEntityRef ~= nil and isvalid(self.WeaponHolderEntityRef) == true then
             return self.WeaponHolderEntityRef
         end
@@ -398,6 +1037,9 @@ script WeaponModelComponent extends Component
     end
 
     method Entity ResolveWeaponHolderByPath()
+        if self.AllowPathWeaponHolderFallback ~= true then
+            return nil
+        end
         if self.WeaponHolderEntityPath == nil or self.WeaponHolderEntityPath == "" then
             return nil
         end
@@ -442,11 +1084,95 @@ script WeaponModelComponent extends Component
         return holder
     end
 
+    -- Maker DefaultPlayer child editing can be restricted; server creates missing WeaponHolder child as fallback.
+    @ExecSpace("ServerOnly")
+    method void EnsureWeaponHolderChildServer()
+        if self.AutoSpawnWeaponHolderIfMissing ~= true then
+            return
+        end
+        if self.Entity == nil or isvalid(self.Entity) == false then
+            return
+        end
+        if self._T.WeaponHolderAutoSpawnDisabled == true then
+            return
+        end
+
+        local existing = self:ResolveWeaponHolderByChildName()
+        if existing ~= nil and isvalid(existing) == true then
+            self.WeaponHolderEntityRef = existing
+            return
+        end
+
+        local primaryModelId = self:NormalizeText(self.WeaponHolderModelId)
+        local fallbackModelId = self:NormalizeText(self.WeaponHolderFallbackModelId)
+
+        local spawnPosition = Vector3.zero
+        local ownerTransform = self.Entity.TransformComponent
+        if ownerTransform ~= nil and isvalid(ownerTransform) == true then
+            local ownerPos = ownerTransform.WorldPosition
+            if ownerPos ~= nil then
+                spawnPosition = Vector3(ownerPos.x, ownerPos.y, ownerPos.z)
+            end
+        end
+
+        local spawnName = self.WeaponHolderName
+        if spawnName == nil or spawnName == "" then
+            spawnName = "WeaponHolder"
+        end
+
+        local candidateModelIds = {}
+        if primaryModelId ~= "" then
+            candidateModelIds[#candidateModelIds + 1] = primaryModelId
+        end
+        if fallbackModelId ~= "" and fallbackModelId ~= primaryModelId then
+            candidateModelIds[#candidateModelIds + 1] = fallbackModelId
+        end
+        if #candidateModelIds == 0 then
+            if self.DisableAutoSpawnAfterModelMissing == true then
+                self._T.WeaponHolderAutoSpawnDisabled = true
+            end
+            return
+        end
+
+        local spawned = nil
+        local usedModelId = ""
+        for _, modelId in pairs(candidateModelIds) do
+            local spawnOk, spawnResult = pcall(function()
+                return _SpawnService:SpawnByModelId(modelId, spawnName, spawnPosition, self.Entity)
+            end)
+            if spawnOk == true and spawnResult ~= nil and isvalid(spawnResult) == true then
+                spawned = spawnResult
+                usedModelId = modelId
+                break
+            end
+        end
+
+        if spawned == nil or isvalid(spawned) == false then
+            if self.DisableAutoSpawnAfterModelMissing == true then
+                self._T.WeaponHolderAutoSpawnDisabled = true
+            end
+            self:LogSwapWarning("EnsureWeaponHolderChildServer failed. primary=", primaryModelId, ", fallback=", fallbackModelId)
+            return
+        end
+
+        self._T.WeaponHolderAutoSpawnDisabled = false
+        if usedModelId ~= "" then
+            self.WeaponHolderModelId = usedModelId
+        end
+        self.WeaponHolderEntityPath = ""
+        self.WeaponHolderEntityRef = spawned
+    end
+
     @ExecSpace("ServerOnly")
     method table GetWeaponRowByIdServer(string weaponId)
         if weaponId == nil or weaponId == "" then
             return nil
         end
+        local key = self:NormalizeText(tostring(weaponId))
+        if key == "" then
+            return nil
+        end
+
         if self._T.WeaponRowsLoaded ~= true then
             self:LoadWeaponRowsServer()
         end
@@ -455,11 +1181,27 @@ script WeaponModelComponent extends Component
             return nil
         end
 
-        return self._T.WeaponRowById[weaponId]
+        local row = self._T.WeaponRowById[key]
+        if row ~= nil then
+            return row
+        end
+
+        local lowerKey = string.lower(key)
+        row = self._T.WeaponRowById[lowerKey]
+        if row ~= nil then
+            return row
+        end
+
+        return nil
     end
 
     @ExecSpace("ServerOnly")
-    method void LoadWeaponRowsServer()
+    method void LoadWeaponRowsServer(boolean forceReload)
+        if forceReload == true then
+            self._T.WeaponRowsLoaded = false
+            self._T.WeaponRowById = {}
+        end
+
         local dataTable = self:LoadTableServer(self.WeaponDataTableName)
         if dataTable == nil then
             return
@@ -482,11 +1224,13 @@ script WeaponModelComponent extends Component
                 continue
             end
 
-            local id = self:GetRowString(row, "id", "")
+            local rawId = self:GetRowString(row, "id", "")
+            local id = self:NormalizeText(rawId)
             if id == "" then
                 continue
             end
             cache[id] = row
+            cache[string.lower(id)] = row
         end
 
         self._T.WeaponRowById = cache
@@ -528,6 +1272,51 @@ script WeaponModelComponent extends Component
         end
 
         return tostring(value)
+    end
+
+    method number GetRowNumber(any row, string columnName, number fallbackValue)
+        local text = self:GetRowString(row, columnName, "")
+        if text == "" then
+            return fallbackValue
+        end
+
+        local numeric = tonumber(text)
+        if numeric == nil then
+            return fallbackValue
+        end
+
+        return numeric
+    end
+
+    method string NormalizeText(string value)
+        if value == nil then
+            return ""
+        end
+
+        local text = tostring(value)
+        if text == "" then
+            return ""
+        end
+
+        local trimmed = string.gsub(text, "^%s+", "")
+        trimmed = string.gsub(trimmed, "%s+$", "")
+        return trimmed
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LogSwapWarning(any messageA, any messageB, any messageC, any messageD, any messageE)
+        if self.EnableWeaponSwapLog ~= true then
+            return
+        end
+        log_warning("[WeaponModelComponent] ", messageA, messageB, messageC, messageD, messageE)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LogSwapInfo(any messageA, any messageB, any messageC, any messageD, any messageE)
+        if self.EnableWeaponSwapLog ~= true then
+            return
+        end
+        log("[WeaponModelComponent] ", messageA, messageB, messageC, messageD, messageE)
     end
 
     -- Utility bootstrap first; fallback local lookup remains when global util is absent.
