@@ -21,7 +21,8 @@
         "MOD.Core.SpriteRendererComponent",
         "MOD.Core.TransformComponent",
         "script.ProjectileComponent",
-        "MOD.Core.TriggerComponent"
+        "MOD.Core.TriggerComponent",
+        "MOD.Core.RigidbodyComponent"
       ],
       "Properties": [],
       "Values": [
@@ -134,7 +135,7 @@
           },
           "Value": {
             "$type": "MOD.Core.Physics.CollisionGroup, MOD.Core",
-            "Id": "GR@PlayerProjectile"
+            "Id": "4557c2e7772d411289de5cd1f6d1f86d"
           }
         },
         {

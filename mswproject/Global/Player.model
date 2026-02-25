@@ -39,7 +39,8 @@
         "script.CharacterDataInitComponent",
         "script.FireSystemComponent",
         "script.ReloadComponent",
-        "script.WeaponModelComponent"
+        "script.WeaponModelComponent",
+        "MOD.Core.PhysicsColliderComponent"
       ],
       "Properties": [
         {
