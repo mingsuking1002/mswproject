@@ -9,6 +9,7 @@ script HPSystemComponent extends Component
     property boolean IsInvincible = false
     @Sync
     property boolean IsDead = false
+    property boolean IsMonster = false
 
     property number CriticalHPRatio = 0.3
     property integer FallbackDamage = 1
@@ -86,13 +87,13 @@ script HPSystemComponent extends Component
         return 0
     end
 
-    -- Damage application uses tag-driven IsInvincible gate, then applies direct raw damage.
+    -- Damage gate keeps player i-frame behavior while monsters always accept overlapping projectile hits.
     @ExecSpace("ServerOnly")
     method void ApplyDamage(integer rawDamage)
         if self.IsDead == true then
             return
         end
-        if self.IsInvincible == true then
+        if self.IsMonster ~= true and self.IsInvincible == true then
             return
         end
         if rawDamage <= 0 then
@@ -103,7 +104,7 @@ script HPSystemComponent extends Component
         self.CurrentHP = math.max(self.CurrentHP - actualDamage, 0)
 
         self:EvaluateDeath()
-        if self.IsDead ~= true then
+        if self.IsDead ~= true and self.IsMonster ~= true then
             self:SetInvincibleWindowServer(self.HitInvincibleDuration)
         end
         self:BroadcastHPState()

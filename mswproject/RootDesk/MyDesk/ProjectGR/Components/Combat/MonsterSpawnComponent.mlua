@@ -944,6 +944,14 @@ script MonsterSpawnComponent extends Component
             return nil
         end
 
+        -- Spawned enemies must be marked at source so combat systems can split monster/player hit rules.
+        local hpSystem = self:ResolveComponentSafe(spawnedEntity, "HPSystemComponent", "CurrentHP")
+        if hpSystem ~= nil then
+            pcall(function()
+                hpSystem.IsMonster = true
+            end)
+        end
+
         self:DisablePhysicsColliderIfMapHasNoSimulator(spawnedEntity)
         self:EnsureMonsterTriggerComponent(spawnedEntity)
 

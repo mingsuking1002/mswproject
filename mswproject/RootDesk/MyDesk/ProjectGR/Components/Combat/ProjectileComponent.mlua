@@ -138,6 +138,11 @@ script ProjectileComponent extends Component
 
         local hpSystem = self:ResolveComponentSafe(hitEntity, "HPSystemComponent", "CurrentHP")
         if hpSystem ~= nil then
+            -- Projectile target is restricted to monster entities so player-vs-player self-hit is blocked.
+            if self:IsMonsterEntity(hitEntity) ~= true then
+                return
+            end
+
             hpSystem:ApplyDamage(self.Damage)
             self:DestroySelf()
             return
@@ -242,6 +247,9 @@ script ProjectileComponent extends Component
         if self.OwnerEntity ~= nil and candidate == self.OwnerEntity then
             return false
         end
+        if self:IsMonsterEntity(candidate) ~= true then
+            return false
+        end
 
         local hpSystem = self:ResolveComponentSafe(candidate, "HPSystemComponent", "CurrentHP")
         if hpSystem == nil then
@@ -260,6 +268,34 @@ script ProjectileComponent extends Component
         end
 
         return true
+    end
+
+    -- Monster filter prioritizes explicit HPSystem flag and falls back to component signature checks.
+    method boolean IsMonsterEntity(Entity target)
+        if target == nil or isvalid(target) == false then
+            return false
+        end
+
+        local hpSystem = self:ResolveComponentSafe(target, "HPSystemComponent", "CurrentHP")
+        if hpSystem ~= nil then
+            local isMonsterOk, isMonsterValue = pcall(function()
+                return hpSystem.IsMonster
+            end)
+            if isMonsterOk == true and isMonsterValue == true then
+                return true
+            end
+        end
+
+        if target.PlayerComponent ~= nil then
+            return false
+        end
+
+        local chaseComponent = self:ResolveComponentSafe(target, "MonsterChaseComponent", "ThinkInterval")
+        if chaseComponent ~= nil then
+            return true
+        end
+
+        return false
     end
 
     -- Centralized destroy path prevents duplicate Destroy calls from multiple triggers.

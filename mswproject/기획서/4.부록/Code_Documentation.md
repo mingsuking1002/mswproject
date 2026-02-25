@@ -1489,3 +1489,43 @@
 |---|---|
 | Holder local scale sign | `ApplyHolderCounterFlipScaleClient()` now applies `scale.x = -abs(x)` when owner faces left (`owner scale.x < 0`). |
 | Intent | Restores requested left-facing local mirror behavior for WeaponHolder. |
+
+## 2026-02-25 Projectile Target Filter + Monster HP Split
+
+### ProjectileComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Combat/ProjectileComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Combat/ProjectileComponent.codeblock
+- **Updated:** 2026-02-25
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Monster target helper | Added `IsMonsterEntity(target)` with priority: `HPSystem.IsMonster` -> `PlayerComponent` exclusion -> `MonsterChaseComponent` fallback. |
+| Single-hit filter | `HandleTriggerEnterEvent` now ignores non-monster HP entities and keeps projectile alive (penetration). |
+| Area filter | `IsDamageTargetCandidate` now excludes non-monster entities before HP/dead checks. |
+| Intent | Prevent friendly/player damage while preserving existing wall/obstacle destroy flow. |
+
+### HPSystemComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.codeblock
+- **Updated:** 2026-02-25
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| New property | Added `IsMonster` (boolean, default `false`) for monster/player damage-rule split. |
+| Invincible gate split | `ApplyDamage` now applies i-frame block only when `IsMonster ~= true`. |
+| Invincible window split | `SetInvincibleWindowServer` hit-window call is now player-only (`IsMonster ~= true`). |
+| Intent | Keep player hit feedback/i-frame, allow monster multi-hit acceptance in dense projectile overlaps. |
+
+### MonsterSpawnComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.codeblock
+- **Updated:** 2026-02-25
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Spawn-time monster flag | `SpawnMonsterByRow` now sets `spawned HPSystem.IsMonster = true` immediately after spawn. |
+| Boss/common coverage | Same spawn path applies to both normal monsters and boss rows. |
+| Intent | Guarantee combat-side monster identification regardless of row schema or model composition. |
