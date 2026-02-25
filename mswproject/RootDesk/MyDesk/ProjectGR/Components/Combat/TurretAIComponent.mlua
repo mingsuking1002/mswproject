@@ -212,6 +212,58 @@ script TurretAIComponent extends Component
             trigger.IsPassive = false
         end
 
+        local physicsCollider = self:FindOrAddComponentSafe(projectileEntity, "PhysicsColliderComponent")
+        if physicsCollider ~= nil and isvalid(physicsCollider) == true then
+            pcall(function()
+                physicsCollider.Enable = true
+            end)
+            if trigger ~= nil and isvalid(trigger) == true then
+                pcall(function()
+                    physicsCollider.BoxSize = trigger.BoxSize
+                end)
+            else
+                pcall(function()
+                    physicsCollider.BoxSize = Vector2(0.3, 0.3)
+                end)
+            end
+            pcall(function()
+                physicsCollider.IsSensor = true
+            end)
+            pcall(function()
+                physicsCollider.EnableContactEvent = true
+            end)
+            if trigger ~= nil and isvalid(trigger) == true then
+                pcall(function()
+                    physicsCollider.CollisionGroup = trigger.CollisionGroup
+                end)
+            end
+        end
+
+        local physicsBody = self:FindOrAddComponentSafe(projectileEntity, "PhysicsRigidbodyComponent")
+        if physicsBody ~= nil and isvalid(physicsBody) == true then
+            pcall(function()
+                physicsBody.Enable = true
+            end)
+            pcall(function()
+                physicsBody.BodyType = BodyType.Dynamic
+            end)
+            pcall(function()
+                physicsBody.CollisionDetectionMode = PhysicsCollisionDetectionMode.Continuous
+            end)
+            pcall(function()
+                physicsBody.SleepingMode = PhysicsSleepingMode.NeverSleep
+            end)
+            pcall(function()
+                physicsBody.GravityScale = 0
+            end)
+            pcall(function()
+                physicsBody.FixedRotation = true
+            end)
+            pcall(function()
+                physicsBody:SetServerAsPhysicsOwner()
+            end)
+        end
+
         local projectile = self:FindOrAddComponentSafe(projectileEntity, "ProjectileComponent")
         if projectile == nil then
             _EntityService:Destroy(projectileEntity)

@@ -92,7 +92,7 @@
 
 ## HPSystemComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.mlua`
-- **수정일:** `2026-02-24`
+- **수정일:** `2026-02-25`
 
 ### Properties
 | 이름 | 타입 | 설명 |
@@ -113,7 +113,9 @@
 | `OnInitialize` | void | void | HP/사망/무적 초기화 |
 | `OnBeginPlay` | void | void | 초기 HP 상태 브로드캐스트 |
 | `HandleTriggerEnterEvent` | `event: TriggerEnterEvent` | void | 충돌 기반 피해 진입점 |
-| `ResolveIncomingDamage` | `sourceEntity: Entity` | integer | 투사체/몬스터 공격력 해석 |
+| `ResolveIncomingDamage` | `sourceEntity: Entity` | integer | 투사체/몬스터 공격력 해석 + 자기 충돌/아군 투사체 차단 |
+| `ShouldIgnoreProjectileDamage` | `sourceEntity: Entity, projectileComponent: Component` | boolean | 플레이어는 몬스터 소유 투사체만 허용하도록 팀 기반 판정 |
+| `ResolveCombatTeam` | `targetEntity: Entity` | string | `player/monster/unknown` 전투팀 분류 |
 | `ApplyDamage` | `rawDamage: integer` | void | `IsInvincible`일 때 무시, 피해 적용 후 생존 시 피격 무적 윈도우 시작 |
 | `ApplyPenaltyDamage` | `rawDamage: integer` | void | 패널티 피해 적용 (동일 직접 차감 경로) |
 | `SetInvincibleWindowServer` | `duration: number` | void | 무적 종료 시각 기반으로 무적 윈도우를 설정/연장 |
@@ -1660,3 +1662,328 @@
 |---|---|
 | Optional row-id property | Added `MonsterDataId` (string) for precise static monster table row binding. |
 | Backward compatibility | Empty default keeps existing runtime behavior unchanged unless explicit id is provided. |
+
+## [FireSystemComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.mlua`
+- **수정일:** `2026-02-25`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `-` | `-` | 이번 수정에서 Property 변경 없음 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `TryFireServer` | `targetWorldPosition: Vector2` | void | 서버 발사 시작 시 총구 계산에 타깃 월드 좌표를 전달 |
+| `ResolveMuzzlePositionServer` | `targetWorldPosition: Vector2` | `Vector2` | `WeaponModelComponent:GetMuzzlePosition(targetWorldPosition)` 호출로 서버 조준 정합성 보정 |
+
+## [WeaponModelComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.mlua`
+- **수정일:** `2026-02-25`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `-` | `-` | 이번 수정에서 Property 변경 없음 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `GetMuzzlePosition` | `targetWorldPos: Vector2` | `Vector2` | optional 타깃 좌표가 있으면 서버에서 holder 회전값 대신 `(target - pivot)` 방향으로 총구 계산 |
+| `GetAimDirection` | `targetWorldPos: Vector2` | `Vector2` | 보정된 `GetMuzzlePosition(targetWorldPos)`를 기준으로 발사 방향 계산 |
+
+## [ProjectileComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ProjectileComponent.mlua`
+- **수정일:** `2026-02-25`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `-` | `-` | 이번 수정에서 Property 변경 없음 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `OnUpdate` | `delta: number` | void | `Rigidbody.MoveVelocity` 의존을 제거하고, Rigidbody가 있을 때 `SetWorldPosition` 기반으로 이동시켜 화살 정지 문제를 방지 |
+
+## 2026-02-25 Projectile Player-Hit Guard Hardening
+
+### HPSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Root cause | Projectile-side monster filter alone was insufficient because receiver-side `HPSystemComponent.ResolveIncomingDamage()` still accepted projectile collisions. |
+| Friendly-fire guard | Added `ShouldIgnoreProjectileDamage()` in receiver path to reject self/team projectile damage before damage resolve. |
+| Team resolution | Added `ResolveCombatTeam()` using `PlayerComponent`/`HPSystem.IsMonster`/`MonsterChaseComponent` fallback. |
+| Player safety policy | Player now accepts projectile damage only when owner team is resolved as `monster`; `player/unknown` owner projectiles are ignored. |
+
+## 2026-02-25 Monster Death Effect + Fade-Out
+
+### MonsterSpawnComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| New death-fade properties | Added `MonsterDeathEffectLeadTime`, `MonsterDeathFadeDuration`, `MonsterDeathFadeTick`. |
+| Death sequence monitor | `StartStateMonitorTimer` now runs `ProcessMonsterDeathSequenceServer()` to detect dead monsters continuously. |
+| One-shot death effect | On death start, resolves `death_effect_ruid` (`SpawnMeta` 우선, `MonsterData` fallback) and applies it once to `SpriteRenderer`. |
+| Dead-contact shutdown | `PrepareDeadMonsterForFadeServer()` disables trigger/contact damage and chase/movement immediately. |
+| Fade + destroy | Alpha fade via `SpriteRenderer.Color` after lead time, then `_EntityService:Destroy(monsterEntity)` when fade completes. |
+| Runtime cleanup | Added runtime timer prune/clear paths for `OnEndPlay`/`OnDestroy` safety. |
+
+### HPSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Monster death route split | `EvaluateDeath()` now returns early when `IsMonster == true` after dead-state finalization, so player game-over flow is not fired by monster death. |
+| Intent | Monsters use visual fade-out lifecycle while only player death triggers run-fail/game-over orchestration. |
+
+## 2026-02-25 Projectile Collision Reliability + Immediate Monster Death + Monster HP Bar
+
+### ProjectileComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ProjectileComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ProjectileComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Physics bootstrap | Added `ConfigureProjectilePhysicsServer()` to force `PhysicsRigidbody` (`Dynamic`, `Continuous`, `NeverSleep`) and enable contact events. |
+| Movement path | `OnUpdate()` now drives physics projectiles with `SetLinearVelocity` first, reducing high-speed arrow tile pass-through. |
+| Contact fallback | `HandlePhysicsContactBeginEvent()` now treats `ContactedBodyEntity=nil` as environment hit and destroys/explodes projectile immediately. |
+| Parent-chain target resolve | Added `ResolveMonsterDamageTargetEntity()` so child collider hits resolve to parent monster `HPSystem`. |
+| Self-hit guard hardening | Added `IsSameOrChildOfEntity()` to ignore owner root/child overlap on spawn frame. |
+
+### FireSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Spawned projectile physics defaults | Projectile `PhysicsRigidbody` now explicitly sets `BodyType.Dynamic`, `CollisionDetectionMode.Continuous`, `SleepingMode.NeverSleep`. |
+| Physics ownership | Added `SetServerAsPhysicsOwner()` for stable server-side contact event handling. |
+| Collision-group sync | Physics collider collision group now mirrors trigger collision group when available. |
+
+### TurretAIComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/TurretAIComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/TurretAIComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Turret projectile physics defaults | Same dynamic/continuous/neversleep rigidbody profile applied to turret-fired projectiles. |
+| Physics ownership | Added `SetServerAsPhysicsOwner()` for consistent server contact callbacks. |
+| Collision-group sync | Physics collider collision group aligns with trigger collision group. |
+
+### HPSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Immediate monster death trigger | `EvaluateDeath()` now calls `NotifyMonsterDeathSequenceServer()` when `IsMonster == true`, avoiding monitor-interval delay. |
+| Spawn resolver | Added `ResolveMonsterSpawnComponentForDeathServer()` fallback scan to locate `MonsterSpawnComponent` in same map context. |
+
+### MonsterSpawnComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Death timing | `MonsterDeathEffectLeadTime` default changed to `0` for immediate dead-state transition. |
+| Monster HP bar | Added NameTag-based HP bar runtime (`EnableMonsterHPBar`, segment/offset/font options) with periodic update and spawn/bind-time setup. |
+| Death + HP bar integration | `BeginMonsterDeathSequenceServer()` now hides HP bar immediately when death sequence starts. |
+| Lifecycle cleanup | Added HP bar runtime clear/prune paths in `OnEndPlay`/`OnDestroy`. |
+
+## 2026-02-25 Monster Overlap No-Stop / No-Friendly-Damage
+
+### MonsterChaseComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterChaseComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterChaseComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Contact-target hard filter | `IsPotentialPlayerTargetServer()` now accepts only real user entities and explicitly excludes `HPSystem.IsMonster == true` targets. |
+| User resolver | Added `IsUserEntityServer()` helper to validate overlap target against `_UserService.UserEntities`. |
+| Effect | Monster-vs-monster overlap no longer enters `ContactTargetPlayer` path, so monsters do not stop each other on contact. |
+
+### HPSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Monster-attack filter | Added `ShouldIgnoreMonsterAttackDamage()` in `ResolveIncomingDamage()` monster-attack branch. |
+| Team rule | Same-team contact/attack damage is ignored (`monster -> monster` blocked). |
+| Effect | Monster overlap/접촉 상황에서 상호 데미지가 누적되지 않음. |
+
+## 2026-02-25 Monster HP Bar Size Downscale (Model Ratio)
+
+### MonsterSpawnComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| HP bar X scale by model | Added `MonsterHPBarModelScaleXMultiplier` and applied model `TransformComponent.Scale.x` to segment count in `ResolveMonsterHPBarLayoutServer()`. |
+| HP bar Y scale by ratio | Added `MonsterHPBarModelScaleYMultiplier` and applied `(scale.y / scale.x)` ratio to computed font size for vertical shrink. |
+| Clamp controls | Added `MonsterHPBarMinSegments`, `MonsterHPBarMinFontSize` to prevent unreadable tiny bars. |
+| Font default downscale | `MonsterHPBarFontSize` default lowered `10 -> 7`, `MonsterHPBarMinFontSize` default lowered `4 -> 2`. |
+| Compact label mode | `MonsterHPBarShowNumeric` default changed to `true`; label now renders `current/max` only for clip-safe readability. |
+| Runtime apply path | `UpdateMonsterHPBarByEntityServer()` now uses per-entity layout (`Segments`, `FontSize`) before writing `NameTagComponent`. |
+
+## 2026-02-25 Ammo Integration + Damage Formula Fix
+
+### ReloadComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ReloadComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ReloadComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Slot max-ammo cache | Added `_T.MaxAmmoBySlot` and initialized per slot in `OnInitialize`. |
+| New API | Added `SetSlotMaxAmmo(slot, maxAmmo)` (server) and clamps slot ammo with current max. |
+| Slot-aware clamp/reload | `StartReloadForSlot`, `CompleteReload`, `GetSlotAmmo`, `SetSlotAmmo` now use slot max ammo instead of global-only `MaxAmmo`. |
+| Swap max sync | `SetCurrentWeaponSlot` now applies target slot max to `MaxAmmo` and clamps restored ammo. |
+
+### WeaponSwapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Slot schema extension | Added `MaxAmmo` normalization field in `NormalizeSlotData()` with numeric clamp. |
+| WeaponData max-ammo parse | `ApplyWeaponRowToSlotDataServer` now stores `max_basic_resource` into `data.MaxAmmo` and seeds slot ammo on row apply. |
+| Runtime snapshot | `CaptureRuntimeToSlot()` now captures `ReloadComponent._T.MaxAmmoBySlot[slot]` into slot data. |
+| Combat apply bridge | `ApplySlotDataToCombat()` now calls `reloadComponent:SetSlotMaxAmmo(finalSlot, data.MaxAmmo)` before slot ammo apply. |
+
+### WeaponLevelUpComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponLevelUpComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponLevelUpComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Final attack formula fix | `ApplyWeaponPowerToFireServer` now computes `BasePlayerAtk * DamageRatio(dmg_raito) * LevelMultiplier`. |
+| Weapon config ratio cache | `LoadWeaponConfigRowsServer` now parses and caches `DamageRatio` from `dmg_raito` with `dmg_ratio` fallback. |
+| Default safety | `EnsureWeaponProgressByIdServer` default config now includes `DamageRatio = 1.0`. |
+
+## 2026-02-25 Damage Formula Runtime Enforcement
+
+### FireSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Fire-time formula sync | Added `SyncWeaponAttackBeforeFireServer()` and call at start of `TryFireServer()`. |
+| Stale attack guard | Every fire attempt now re-applies `WeaponLevelUpComponent.ApplyWeaponPowerToFireServer(CurrentWeaponId)` before damage calculation. |
+
+### WeaponSwapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Swap overwrite guard | `ApplySlotDataToCombat()` now skips direct `BaseWeaponAttack = data.Damage` overwrite when `WeaponLevelUpComponent` is available. |
+| Formula priority | Keeps level-based final attack formula as authoritative path after swap apply. |
+
+## 2026-02-25 dmg_ratio NotFound 제거 + 데미지 공식 강제 경로
+
+### WeaponSwapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Alias 제거 | `dmg_ratio` alias 조회 제거, `dmg_raito`만 사용하도록 정리. |
+| NotFound 방지 | 존재하지 않는 `dmg_ratio` 열 접근으로 발생하던 `[LEA-3011] NotFound` 로그 경로 제거. |
+
+### WeaponLevelUpComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponLevelUpComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponLevelUpComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Alias 제거 | Weapon config load에서 `dmg_ratio` fallback 제거, `dmg_raito` 실패 시 `1.0` 기본값 사용. |
+
+### FireSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| FinalDamage 강제 동기화 | `CalculateFinalDamage()` 시작 시 `ResolveWeaponAttackFromLevelServer()` 호출로 레벨 기반 공격력 우선 적용. |
+| Stale 값 차단 | 발사 직전 동기화 + 최종 데미지 계산 시 재동기화의 이중 경로로 스냅샷 잔존 문제 차단. |
+
+## 2026-02-25 dmg_ratio Alias 복원 + 계산식 강제 적용
+
+### WeaponSwapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Alias fallback 복원 | `EnableDamageRatioAliasFallback=true`에서 `dmg_raito` 실패 시 `dmg_ratio` fallback 다시 사용. |
+
+### WeaponLevelUpComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponLevelUpComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponLevelUpComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Alias fallback 복원 | `EnableDamageRatioAliasFallback=true`에서 `LoadWeaponConfigRowsServer`가 `dmg_ratio` fallback 허용. |
+| 적용 로그 추가 | `EnableDebugLogs=true`일 때 `baseAtk/dmgRatio/levelMul/finalAttack` 계산 로그 출력. |
+
+### FireSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| 계산식 강제 경로 | `CalculateFinalDamage()`가 `ResolveWeaponAttackFromLevelServer()`를 우선 호출해 레벨 공식 공격력을 최우선 적용. |

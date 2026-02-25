@@ -126,7 +126,7 @@
           },
           "Value": true
         },
-                        {
+        {
           "TargetType": "script.ProjectileComponent",
           "Name": "ProjectileDataId",
           "ValueType": {
@@ -178,6 +178,15 @@
             "x": 0.5000001,
             "y": 0.06999993
           }
+        },
+        {
+          "TargetType": "script.ProjectileComponent",
+          "Name": "EnablePlacedProjectileDataBinding",
+          "ValueType": {
+            "$type": "MODNativeType",
+            "type": "System.Boolean, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+          },
+          "Value": false
         }
       ],
       "EventLinks": [],

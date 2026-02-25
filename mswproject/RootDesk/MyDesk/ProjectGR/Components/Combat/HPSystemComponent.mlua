@@ -62,9 +62,16 @@ script HPSystemComponent extends Component
         if sourceEntity == nil or isvalid(sourceEntity) == false then
             return 0
         end
+        if sourceEntity == self.Entity then
+            return 0
+        end
 
         local projectile = self:ResolveComponentSafe(sourceEntity, "ProjectileComponent", "Damage")
         if projectile ~= nil then
+            if self:ShouldIgnoreProjectileDamage(sourceEntity, projectile) == true then
+                return 0
+            end
+
             local valueOk, value = pcall(function()
                 return projectile.Damage
             end)
@@ -76,6 +83,10 @@ script HPSystemComponent extends Component
 
         local monsterAttack = self:ResolveComponentSafe(sourceEntity, "MonsterAttackComponent", "AttackPower")
         if monsterAttack ~= nil then
+            if self:ShouldIgnoreMonsterAttackDamage(sourceEntity, monsterAttack) == true then
+                return 0
+            end
+
             local valueOk, value = pcall(function()
                 return monsterAttack.AttackPower
             end)
@@ -86,6 +97,118 @@ script HPSystemComponent extends Component
         end
 
         return 0
+    end
+
+    -- Projectile damage is ignored when owner team and receiver team are identical (player-player or monster-monster).
+    method boolean ShouldIgnoreProjectileDamage(Entity sourceEntity, Component projectileComponent)
+        if sourceEntity == nil or isvalid(sourceEntity) == false then
+            return true
+        end
+
+        local ownerEntity = nil
+        local ownerOk, ownerValue = pcall(function()
+            return projectileComponent.OwnerEntity
+        end)
+        if ownerOk == true then
+            ownerEntity = ownerValue
+        end
+
+        if ownerEntity ~= nil and isvalid(ownerEntity) == true and ownerEntity == self.Entity then
+            return true
+        end
+        if ownerEntity == nil or isvalid(ownerEntity) == false then
+            ownerEntity = sourceEntity
+        end
+
+        local ownerTeam = self:ResolveCombatTeam(ownerEntity)
+        local targetTeam = self:ResolveCombatTeam(self.Entity)
+
+        -- Player takes projectile damage only from monster-owned shots.
+        if targetTeam == "player" then
+            if ownerTeam ~= "monster" then
+                return true
+            end
+            return false
+        end
+
+        -- Monster ignores same-team projectile to block monster self/friendly splash loops.
+        if targetTeam == "monster" then
+            if ownerTeam == "monster" then
+                return true
+            end
+            return false
+        end
+
+        if ownerTeam ~= "unknown" and targetTeam ~= "unknown" and ownerTeam == targetTeam then
+            return true
+        end
+
+        return false
+    end
+
+    -- Contact/attack damage is ignored on same team so monster overlap never deals monster-to-monster damage.
+    method boolean ShouldIgnoreMonsterAttackDamage(Entity sourceEntity, Component monsterAttackComponent)
+        if sourceEntity == nil or isvalid(sourceEntity) == false then
+            return true
+        end
+
+        local ownerTeam = self:ResolveCombatTeam(sourceEntity)
+        local targetTeam = self:ResolveCombatTeam(self.Entity)
+
+        -- Player takes melee/contact damage only from monster entities.
+        if targetTeam == "player" then
+            if ownerTeam ~= "monster" then
+                return true
+            end
+            return false
+        end
+
+        -- Monster must ignore monster-sourced contact damage.
+        if targetTeam == "monster" and ownerTeam == "monster" then
+            return true
+        end
+
+        if ownerTeam ~= "unknown" and targetTeam ~= "unknown" and ownerTeam == targetTeam then
+            return true
+        end
+
+        return false
+    end
+
+    -- Team resolution prefers explicit PlayerComponent/IsMonster signals and keeps unknown as permissive fallback.
+    method string ResolveCombatTeam(Entity targetEntity)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return "unknown"
+        end
+
+        local hasPlayerComponent = false
+        local playerOk, playerValue = pcall(function()
+            return targetEntity.PlayerComponent
+        end)
+        if playerOk == true and playerValue ~= nil then
+            hasPlayerComponent = true
+        end
+        if hasPlayerComponent == true then
+            return "player"
+        end
+
+        local hpSystem = self:ResolveComponentSafe(targetEntity, "HPSystemComponent", "CurrentHP")
+        if hpSystem ~= nil then
+            local isMonsterOk, isMonsterValue = pcall(function()
+                return hpSystem.IsMonster
+            end)
+            if isMonsterOk == true and isMonsterValue == true then
+                return "monster"
+            end
+            return "player"
+        end
+
+        local chaseComponent = self:ResolveComponentSafe(targetEntity, "MonsterChaseComponent", "ThinkInterval")
+        if chaseComponent ~= nil then
+            return "monster"
+        end
+
+        return "unknown"
     end
 
     -- Damage gate keeps player i-frame behavior while monsters always accept overlapping projectile hits.
@@ -237,7 +360,74 @@ script HPSystemComponent extends Component
         self:ClearInvincibleWindowServer()
 
         self:SetCanMoveSafely(false)
+        if self.IsMonster == true then
+            self:NotifyMonsterDeathSequenceServer()
+            return
+        end
+
         self:NotifyGameOver()
+    end
+
+    -- Monster death visual/destroy sequence is triggered immediately to avoid monitor-interval latency.
+    @ExecSpace("ServerOnly")
+    method void NotifyMonsterDeathSequenceServer()
+        local spawnComponent = self:ResolveMonsterSpawnComponentForDeathServer()
+        if spawnComponent == nil then
+            return
+        end
+        if spawnComponent.TryStartMonsterDeathSequenceServer == nil then
+            return
+        end
+
+        pcall(function()
+            spawnComponent:TryStartMonsterDeathSequenceServer(self.Entity)
+        end)
+    end
+
+    -- Resolver first checks same-entity attach, then falls back to current-map user entities.
+    @ExecSpace("ServerOnly")
+    method Component ResolveMonsterSpawnComponentForDeathServer()
+        local cached = self._T.CachedMonsterSpawnComponent
+        if cached ~= nil and isvalid(cached) == true then
+            return cached
+        end
+
+        local direct = self:ResolveComponentSafe(self.Entity, "MonsterSpawnComponent", "StateMonitorInterval")
+        if direct ~= nil then
+            self._T.CachedMonsterSpawnComponent = direct
+            return direct
+        end
+
+        local currentMap = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            currentMap = self.Entity.CurrentMap
+        end
+
+        local users = _UserService.UserEntities
+        if users == nil then
+            return nil
+        end
+
+        for _, userEntity in pairs(users) do
+            if userEntity == nil or isvalid(userEntity) == false then
+                continue
+            end
+
+            if currentMap ~= nil then
+                local userMap = userEntity.CurrentMap
+                if userMap == nil or isvalid(userMap) == false or userMap ~= currentMap then
+                    continue
+                end
+            end
+
+            local resolved = self:ResolveComponentSafe(userEntity, "MonsterSpawnComponent", "StateMonitorInterval")
+            if resolved ~= nil then
+                self._T.CachedMonsterSpawnComponent = resolved
+                return resolved
+            end
+        end
+
+        return nil
     end
 
     -- Movement lock prefers self._T.GRUtil to keep cross-component access policy centralized.

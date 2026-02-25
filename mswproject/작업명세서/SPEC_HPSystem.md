@@ -56,7 +56,9 @@
 2. 무적 활성화 → 타이머로 해제
 
 ### 5-2. 사망 판정 (서버)
-- CurrentHP ≤ 0 → IsDead = true → CanMove = false → 즉시 게임오버
+- CurrentHP ≤ 0 → IsDead = true → CanMove = false
+- `IsMonster == true`면 `MonsterSpawnComponent.TryStartMonsterDeathSequenceServer(self.Entity)`를 즉시 호출
+- 플레이어(`IsMonster ~= true`)만 게임오버 라우팅 수행
 
 ### 5-3. 클라이언트 연출
 - Sync 감지 → HP바, 깜빡임, 위기 점멸, 게임오버 UI
@@ -93,6 +95,7 @@
 | `TagManagerComponent` | Meta | HP 데이터 스왑 |
 | `FireSystemComponent` | Combat | 데미지 공식의 적 공격력 수신 |
 | `LobbyFlowComponent` | Bootstrap | IsDead → HandleStageFailedServer |
+| `MonsterSpawnComponent` | Combat | 몬스터 사망 시 즉시 death sequence 시작 호출 |
 
 ---
 
@@ -113,6 +116,7 @@
 - [x] **Maker 배치 항목을 백로그로 분리**
 - [x] `기획서/4.부록/Code_Documentation.md` 업데이트
 - [x] 완료 후 상태 `🟢 완료`로 변경
+- [x] 몬스터 사망 시 모니터 주기 대기 없이 death sequence 즉시 시작 경로 반영
 
 ---
 
@@ -130,4 +134,24 @@
 | **담당자** | Codex |
 | **작성일** | 2026-02-18 |
 | **상태** | 🟢 완료 |
+
+---
+
+## 2026-02-25 보완 상태 추적
+
+- 상태 전이: `🟡 분석` -> `🔵 구현` -> `🟢 완료`
+- 보완 대상:
+  - 몬스터 `CurrentHP<=0` 후 death 처리 지연(모니터 주기 의존) 제거
+  - `EvaluateDeath()`에서 몬스터/플레이어 사망 후속 경로 분리 강화
+
+---
+
+## 2026-02-25 몬스터 상호 접촉 무피해 보완
+
+- 상태 전이: `🟡 분석` -> `🔵 구현` -> `🟢 완료`
+- 보완 대상:
+  - 몬스터끼리 Trigger 접촉 시 `MonsterAttackComponent` 경로로 피해가 들어가던 케이스 차단
+- 반영 내용:
+  - `ResolveIncomingDamage()`의 `MonsterAttackComponent` 분기에 `ShouldIgnoreMonsterAttackDamage()` 추가
+  - 몬스터 대상(`targetTeam=monster`)에서 몬스터 소스(`ownerTeam=monster`) 공격은 즉시 무시
 

@@ -18,6 +18,18 @@ script MonsterSpawnComponent extends Component
     property number DebugLogThrottleSeconds = 1.0
     property boolean AutoBindPlacedMonsterEntities = true
     property number PlacedMonsterBindDelay = 0.2
+    property number MonsterDeathEffectLeadTime = 0
+    property number MonsterDeathFadeDuration = 0.25
+    property number MonsterDeathFadeTick = 0.05
+    property boolean EnableMonsterHPBar = true
+    property integer MonsterHPBarSegments = 10
+    property number MonsterHPBarOffsetY = -0.65
+    property number MonsterHPBarFontSize = 7
+    property number MonsterHPBarModelScaleXMultiplier = 0.25
+    property number MonsterHPBarModelScaleYMultiplier = 0.25
+    property integer MonsterHPBarMinSegments = 2
+    property integer MonsterHPBarMinFontSize = 2
+    property boolean MonsterHPBarShowNumeric = true
 
     -- Server initializes all runtime caches once so spawn flow remains deterministic after hot-reload.
     @ExecSpace("ServerOnly")
@@ -50,6 +62,8 @@ script MonsterSpawnComponent extends Component
         self._T.PlacedMonsterBindTimerId = 0
         self._T.AutoBoundPlacedMonsters = {}
         self._T.DefaultPlacedMonsterRow = nil
+        self._T.MonsterDeathRuntimeByEntity = {}
+        self._T.MonsterHPBarByEntity = {}
 
         self.IsSpawnActive = false
         self.IsBossPhase = false
@@ -78,6 +92,8 @@ script MonsterSpawnComponent extends Component
     @ExecSpace("ServerOnly")
     method void OnEndPlay()
         self:StopSpawning()
+        self:ClearMonsterDeathRuntimeTimersServer()
+        self:ClearMonsterHPBarRuntimeServer()
 
         if self._T.StateMonitorTimerId ~= nil and self._T.StateMonitorTimerId > 0 then
             _TimerService:ClearTimer(self._T.StateMonitorTimerId)
@@ -92,6 +108,9 @@ script MonsterSpawnComponent extends Component
     -- Destroy repeats timer cleanup as final safety net for unusual lifecycle paths.
     @ExecSpace("ServerOnly")
     method void OnDestroy()
+        self:ClearMonsterDeathRuntimeTimersServer()
+        self:ClearMonsterHPBarRuntimeServer()
+
         if self._T.SpawnTimerId ~= nil and self._T.SpawnTimerId > 0 then
             _TimerService:ClearTimer(self._T.SpawnTimerId)
             self._T.SpawnTimerId = 0
@@ -585,6 +604,8 @@ script MonsterSpawnComponent extends Component
 
         local callback = function()
             self:RefreshSpawnStateServer()
+            self:UpdateMonsterHPBarsServer()
+            self:ProcessMonsterDeathSequenceServer()
         end
         self._T.StateMonitorTimerId = _TimerService:SetTimerRepeat(callback, interval, 0)
         if self.EnableDebugLogs == true then
@@ -1065,6 +1086,8 @@ script MonsterSpawnComponent extends Component
         self:ApplyMonsterVisualIfAvailable(spawnedEntity, row)
         self:ApplyMonsterColliderIfAvailable(spawnedEntity, row)
         self:ApplyMonsterStatsIfAvailable(spawnedEntity, row)
+        self:EnsureMonsterHPBarServer(spawnedEntity)
+        self:UpdateMonsterHPBarByEntityServer(spawnedEntity)
 
         if isBoss == true then
             self._T.BossSpawnedEntity = spawnedEntity
@@ -1633,6 +1656,9 @@ script MonsterSpawnComponent extends Component
             hpSystem.IsInvincible = false
         end)
 
+        self:EnsureMonsterHPBarServer(targetEntity)
+        self:UpdateMonsterHPBarByEntityServer(targetEntity)
+
         self._T.AutoBoundPlacedMonsters[targetEntity] = true
         return 1
     end
@@ -1788,6 +1814,308 @@ script MonsterSpawnComponent extends Component
         return text
     end
 
+    -- NameTag-based HP bars are updated from server so all clients observe the same monster HP feedback.
+    @ExecSpace("ServerOnly")
+    method void UpdateMonsterHPBarsServer()
+        if self.EnableMonsterHPBar ~= true then
+            return
+        end
+
+        self:PruneMonsterHPBarRuntimeServer()
+        local visited = {}
+
+        if self._T.SpawnedMonsters ~= nil then
+            for _, spawnedEntity in pairs(self._T.SpawnedMonsters) do
+                if spawnedEntity ~= nil and isvalid(spawnedEntity) == true and visited[spawnedEntity] ~= true then
+                    visited[spawnedEntity] = true
+                    self:UpdateMonsterHPBarByEntityServer(spawnedEntity)
+                end
+            end
+        end
+
+        if self._T.AutoBoundPlacedMonsters ~= nil then
+            for boundEntity, isBound in pairs(self._T.AutoBoundPlacedMonsters) do
+                if isBound == true and boundEntity ~= nil and isvalid(boundEntity) == true and visited[boundEntity] ~= true then
+                    visited[boundEntity] = true
+                    self:UpdateMonsterHPBarByEntityServer(boundEntity)
+                end
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void UpdateMonsterHPBarByEntityServer(Entity monsterEntity)
+        if self.EnableMonsterHPBar ~= true then
+            return
+        end
+        if monsterEntity == nil or isvalid(monsterEntity) == false then
+            return
+        end
+
+        local hpSystem = self:ResolveComponentSafe(monsterEntity, "HPSystemComponent", "CurrentHP")
+        if hpSystem == nil then
+            self:HideMonsterHPBarServer(monsterEntity)
+            return
+        end
+
+        local isMonster = false
+        local monsterOk, monsterValue = pcall(function()
+            return hpSystem.IsMonster
+        end)
+        if monsterOk == true and monsterValue == true then
+            isMonster = true
+        end
+        if isMonster ~= true then
+            self:HideMonsterHPBarServer(monsterEntity)
+            return
+        end
+
+        local isDead = false
+        local deadOk, deadValue = pcall(function()
+            return hpSystem.IsDead
+        end)
+        if deadOk == true and deadValue == true then
+            isDead = true
+        end
+        if isDead == true then
+            self:HideMonsterHPBarServer(monsterEntity)
+            return
+        end
+
+        local maxHp = 1
+        local maxOk, maxValue = pcall(function()
+            return hpSystem.MaxHP
+        end)
+        if maxOk == true and maxValue ~= nil then
+            local parsedMax = tonumber(maxValue)
+            if parsedMax ~= nil and parsedMax > 0 then
+                maxHp = math.floor(parsedMax)
+            end
+        end
+
+        local currentHp = 0
+        local currentOk, currentValue = pcall(function()
+            return hpSystem.CurrentHP
+        end)
+        if currentOk == true and currentValue ~= nil then
+            local parsedCurrent = tonumber(currentValue)
+            if parsedCurrent ~= nil then
+                currentHp = math.max(0, math.min(math.floor(parsedCurrent), maxHp))
+            end
+        end
+
+        local hpBar = self:EnsureMonsterHPBarServer(monsterEntity)
+        if hpBar == nil then
+            return
+        end
+
+        local layout = self:ResolveMonsterHPBarLayoutServer(monsterEntity)
+        local label = self:BuildMonsterHPBarLabelServer(currentHp, maxHp, layout.Segments, self.MonsterHPBarShowNumeric)
+        pcall(function()
+            hpBar.Name = label
+            hpBar.Enable = true
+            hpBar.OffsetY = self.MonsterHPBarOffsetY
+            hpBar.FontSize = layout.FontSize
+            hpBar.Bold = true
+            hpBar.FontColor = Color(0.2, 0.9, 0.25, 1)
+        end)
+    end
+
+    -- HP bar component is created lazily to support both spawned monsters and map-placed monsters.
+    @ExecSpace("ServerOnly")
+    method Component EnsureMonsterHPBarServer(Entity monsterEntity)
+        if self.EnableMonsterHPBar ~= true then
+            return nil
+        end
+        if monsterEntity == nil or isvalid(monsterEntity) == false then
+            return nil
+        end
+
+        local hpBar = self:ResolveComponentSafe(monsterEntity, "NameTagComponent", "Name")
+        if hpBar == nil then
+            local addOkA, addResultA = pcall(function()
+                return monsterEntity:AddComponent("MOD.Core.NameTagComponent")
+            end)
+            if addOkA == true then
+                hpBar = addResultA
+            end
+        end
+        if hpBar == nil then
+            local addOkB, addResultB = pcall(function()
+                return monsterEntity:AddComponent("NameTagComponent")
+            end)
+            if addOkB == true then
+                hpBar = addResultB
+            end
+        end
+        if hpBar == nil then
+            return nil
+        end
+
+        if self._T.MonsterHPBarByEntity == nil then
+            self._T.MonsterHPBarByEntity = {}
+        end
+        self._T.MonsterHPBarByEntity[monsterEntity] = hpBar
+        return hpBar
+    end
+
+    -- HP bar width/height follows model scale (x) and y/x ratio so oversized tags shrink with sprite size.
+    method table ResolveMonsterHPBarLayoutServer(Entity monsterEntity)
+        local layout = {}
+        layout.Segments = math.max(self.MonsterHPBarSegments, 2)
+        layout.FontSize = math.max(self.MonsterHPBarFontSize, 1)
+
+        local modelScaleX = 1
+        local modelScaleY = 1
+        if monsterEntity ~= nil and isvalid(monsterEntity) == true then
+            local transform = monsterEntity.TransformComponent
+            if transform ~= nil and isvalid(transform) == true then
+                local scaleOk, scaleValue = pcall(function()
+                    return transform.Scale
+                end)
+                if scaleOk == true and scaleValue ~= nil then
+                    local sx = tonumber(scaleValue.x)
+                    local sy = tonumber(scaleValue.y)
+                    if sx ~= nil and math.abs(sx) > 0 then
+                        modelScaleX = math.abs(sx)
+                    end
+                    if sy ~= nil and math.abs(sy) > 0 then
+                        modelScaleY = math.abs(sy)
+                    end
+                end
+            end
+        end
+
+        local scaledX = modelScaleX * math.max(self.MonsterHPBarModelScaleXMultiplier, 0.01)
+        local ratioY = 1
+        if modelScaleX > 0 then
+            ratioY = modelScaleY / modelScaleX
+        end
+        local scaledY = scaledX * ratioY * math.max(self.MonsterHPBarModelScaleYMultiplier, 0.01)
+
+        local maxSegments = math.max(self.MonsterHPBarSegments, 2)
+        local minSegments = math.max(self.MonsterHPBarMinSegments, 1)
+        if minSegments > maxSegments then
+            minSegments = maxSegments
+        end
+        local calculatedSegments = math.floor(maxSegments * scaledX)
+        if calculatedSegments < minSegments then
+            calculatedSegments = minSegments
+        end
+        if calculatedSegments > maxSegments then
+            calculatedSegments = maxSegments
+        end
+        layout.Segments = calculatedSegments
+
+        local minFont = math.max(self.MonsterHPBarMinFontSize, 1)
+        local calculatedFontSize = math.floor(self.MonsterHPBarFontSize * scaledY)
+        if calculatedFontSize < minFont then
+            calculatedFontSize = minFont
+        end
+        if calculatedFontSize > self.MonsterHPBarFontSize then
+            calculatedFontSize = self.MonsterHPBarFontSize
+        end
+        layout.FontSize = calculatedFontSize
+
+        return layout
+    end
+
+    -- Keep numeric-only mode compact as `current/max` to avoid clipping on small monster UI.
+    method string BuildMonsterHPBarLabelServer(integer currentHp, integer maxHp, integer segmentOverride, boolean includeNumeric)
+        local safeMax = math.max(1, maxHp)
+        local safeCurrent = math.max(0, math.min(currentHp, safeMax))
+        if includeNumeric == true then
+            return tostring(safeCurrent) .. "/" .. tostring(safeMax)
+        end
+
+        local segments = math.floor(segmentOverride)
+        if segments <= 0 then
+            segments = math.floor(self.MonsterHPBarSegments)
+        end
+        if segments < 1 then
+            segments = 1
+        end
+        if segments > 20 then
+            segments = 20
+        end
+
+        local ratio = safeCurrent / safeMax
+        local filled = math.floor(ratio * segments + 0.0001)
+        if safeCurrent > 0 and filled <= 0 then
+            filled = 1
+        end
+        if filled > segments then
+            filled = segments
+        end
+
+        local filledText = ""
+        for index = 1, filled do
+            filledText ..= "#"
+        end
+
+        local emptyText = ""
+        for index = (filled + 1), segments do
+            emptyText ..= "-"
+        end
+
+        return "[" .. filledText .. emptyText .. "]"
+    end
+
+    @ExecSpace("ServerOnly")
+    method void HideMonsterHPBarServer(Entity monsterEntity)
+        if self._T.MonsterHPBarByEntity == nil then
+            self._T.MonsterHPBarByEntity = {}
+        end
+        if monsterEntity == nil then
+            return
+        end
+
+        local hpBar = self._T.MonsterHPBarByEntity[monsterEntity]
+        if hpBar == nil then
+            hpBar = self:ResolveComponentSafe(monsterEntity, "NameTagComponent", "Name")
+        end
+        if hpBar ~= nil then
+            pcall(function()
+                hpBar.Name = ""
+                hpBar.Enable = false
+            end)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void PruneMonsterHPBarRuntimeServer()
+        if self._T.MonsterHPBarByEntity == nil then
+            self._T.MonsterHPBarByEntity = {}
+            return
+        end
+
+        local pruned = {}
+        for targetEntity, hpBar in pairs(self._T.MonsterHPBarByEntity) do
+            if targetEntity ~= nil and isvalid(targetEntity) == true and hpBar ~= nil and isvalid(hpBar) == true then
+                pruned[targetEntity] = hpBar
+            end
+        end
+        self._T.MonsterHPBarByEntity = pruned
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ClearMonsterHPBarRuntimeServer()
+        if self._T.MonsterHPBarByEntity == nil then
+            self._T.MonsterHPBarByEntity = {}
+            return
+        end
+
+        for _, hpBar in pairs(self._T.MonsterHPBarByEntity) do
+            if hpBar ~= nil and isvalid(hpBar) == true then
+                pcall(function()
+                    hpBar.Name = ""
+                    hpBar.Enable = false
+                end)
+            end
+        end
+        self._T.MonsterHPBarByEntity = {}
+    end
+
     -- Public read API exposes spawn metadata without coupling callers to internal cache structure.
     method table GetSpawnMetaByEntity(Entity targetEntity)
         if targetEntity == nil or isvalid(targetEntity) == false then
@@ -1803,6 +2131,393 @@ script MonsterSpawnComponent extends Component
         end
 
         return self:CloneTable(sourceMeta)
+    end
+
+    -- Dead monsters start one-shot death-effect playback and timed fade-out before destroy.
+    @ExecSpace("ServerOnly")
+    method void ProcessMonsterDeathSequenceServer()
+        self:PruneMonsterDeathRuntimeServer()
+
+        if self._T.SpawnedMonsters ~= nil then
+            for _, spawnedEntity in pairs(self._T.SpawnedMonsters) do
+                self:TryStartMonsterDeathSequenceServer(spawnedEntity)
+            end
+        end
+
+        if self._T.AutoBoundPlacedMonsters ~= nil then
+            for boundEntity, isBound in pairs(self._T.AutoBoundPlacedMonsters) do
+                if isBound == true then
+                    self:TryStartMonsterDeathSequenceServer(boundEntity)
+                end
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TryStartMonsterDeathSequenceServer(Entity monsterEntity)
+        if monsterEntity == nil or isvalid(monsterEntity) == false then
+            return
+        end
+
+        if self._T.MonsterDeathRuntimeByEntity ~= nil and self._T.MonsterDeathRuntimeByEntity[monsterEntity] ~= nil then
+            return
+        end
+
+        if self:IsDeadMonsterEntityServer(monsterEntity) ~= true then
+            return
+        end
+
+        self:BeginMonsterDeathSequenceServer(monsterEntity)
+    end
+
+    -- Server checks both IsDead flag and HP value to tolerate mixed legacy death writers.
+    method boolean IsDeadMonsterEntityServer(Entity monsterEntity)
+        if monsterEntity == nil or isvalid(monsterEntity) == false then
+            return false
+        end
+        if monsterEntity.PlayerComponent ~= nil then
+            return false
+        end
+
+        local hpSystem = self:ResolveComponentSafe(monsterEntity, "HPSystemComponent", "CurrentHP")
+        if hpSystem == nil then
+            return false
+        end
+
+        local isMonster = false
+        local isMonsterOk, isMonsterValue = pcall(function()
+            return hpSystem.IsMonster
+        end)
+        if isMonsterOk == true and isMonsterValue == true then
+            isMonster = true
+        end
+        if isMonster ~= true then
+            return false
+        end
+
+        local deadOk, deadValue = pcall(function()
+            return hpSystem.IsDead
+        end)
+        if deadOk == true and deadValue == true then
+            return true
+        end
+
+        local hpOk, hpValue = pcall(function()
+            return hpSystem.CurrentHP
+        end)
+        if hpOk == true and hpValue ~= nil then
+            local parsedHp = tonumber(hpValue)
+            if parsedHp ~= nil and parsedHp <= 0 then
+                return true
+            end
+        end
+
+        return false
+    end
+
+    -- Death setup freezes combat interaction first, then applies death effect sprite and starts fade timer.
+    @ExecSpace("ServerOnly")
+    method void BeginMonsterDeathSequenceServer(Entity monsterEntity)
+        if monsterEntity == nil or isvalid(monsterEntity) == false then
+            return
+        end
+
+        if self._T.MonsterDeathRuntimeByEntity == nil then
+            self._T.MonsterDeathRuntimeByEntity = {}
+        end
+        if self._T.MonsterDeathRuntimeByEntity[monsterEntity] ~= nil then
+            return
+        end
+
+        self:PrepareDeadMonsterForFadeServer(monsterEntity)
+        self:HideMonsterHPBarServer(monsterEntity)
+
+        local runtime = {}
+        runtime.ElapsedSeconds = 0
+        runtime.LeadTime = math.max(self.MonsterDeathEffectLeadTime, 0)
+        runtime.FadeDuration = math.max(self.MonsterDeathFadeDuration, 0.01)
+        runtime.TickInterval = self.MonsterDeathFadeTick
+        if runtime.TickInterval <= 0 then
+            runtime.TickInterval = 0.05
+        end
+        runtime.TimerId = 0
+        runtime.BaseR = 1
+        runtime.BaseG = 1
+        runtime.BaseB = 1
+        runtime.BaseA = 1
+
+        local spriteRenderer = self:ResolveComponentSafe(monsterEntity, "SpriteRendererComponent", "SpriteRUID")
+        if spriteRenderer ~= nil then
+            local colorOk, colorValue = pcall(function()
+                return spriteRenderer.Color
+            end)
+            if colorOk == true and colorValue ~= nil then
+                local readR = tonumber(colorValue.r)
+                local readG = tonumber(colorValue.g)
+                local readB = tonumber(colorValue.b)
+                local readA = tonumber(colorValue.a)
+                if readR ~= nil then
+                    runtime.BaseR = readR
+                end
+                if readG ~= nil then
+                    runtime.BaseG = readG
+                end
+                if readB ~= nil then
+                    runtime.BaseB = readB
+                end
+                if readA ~= nil and readA > 0 then
+                    runtime.BaseA = readA
+                end
+            end
+
+            local deathEffectRuid = self:ResolveMonsterDeathEffectRuidServer(monsterEntity)
+            if deathEffectRuid ~= nil and deathEffectRuid ~= "" then
+                pcall(function()
+                    spriteRenderer.SpriteRUID = deathEffectRuid
+                    spriteRenderer.PlayRate = 1
+                    spriteRenderer.StartFrameIndex = 0
+                    spriteRenderer.EndFrameIndex = 2147483647
+                end)
+            end
+        end
+
+        self._T.MonsterDeathRuntimeByEntity[monsterEntity] = runtime
+
+        local tickFn = function()
+            self:TickMonsterDeathFadeServer(monsterEntity)
+        end
+        local timerId = _TimerService:SetTimerRepeat(tickFn, runtime.TickInterval, 0)
+        runtime.TimerId = timerId
+        self._T.MonsterDeathRuntimeByEntity[monsterEntity] = runtime
+    end
+
+    -- Contact damage and chase movement are disabled immediately so dead monsters cannot keep dealing damage.
+    @ExecSpace("ServerOnly")
+    method void PrepareDeadMonsterForFadeServer(Entity monsterEntity)
+        if monsterEntity == nil or isvalid(monsterEntity) == false then
+            return
+        end
+
+        local trigger = self:ResolveComponentSafe(monsterEntity, "TriggerComponent", "IsPassive")
+        if trigger ~= nil then
+            pcall(function()
+                trigger.IsPassive = true
+            end)
+        end
+
+        local rigidbody = self:ResolveComponentSafe(monsterEntity, "RigidbodyComponent", "MoveVelocity")
+        if rigidbody ~= nil then
+            pcall(function()
+                rigidbody.MoveVelocity = Vector2.zero
+            end)
+        end
+
+        local movement = self:ResolveComponentSafe(monsterEntity, "MovementComponent", "CanMove")
+        if movement ~= nil then
+            pcall(function()
+                movement.CanMove = false
+            end)
+            pcall(function()
+                movement.UsePlayerInput = false
+            end)
+            if movement.SetMoveDirectionServer ~= nil then
+                pcall(function()
+                    movement:SetMoveDirectionServer(Vector2.zero)
+                end)
+            end
+            pcall(function()
+                movement._T.ServerInputDirection = Vector2.zero
+            end)
+        end
+
+        local chase = self:ResolveComponentSafe(monsterEntity, "MonsterChaseComponent", "ThinkInterval")
+        if chase ~= nil then
+            if chase.ClearThinkTimerServer ~= nil then
+                pcall(function()
+                    chase:ClearThinkTimerServer()
+                end)
+            end
+            pcall(function()
+                chase.Enable = false
+            end)
+        end
+    end
+
+    -- Death effect lead time is followed by alpha fade, then the entity is destroyed exactly once.
+    @ExecSpace("ServerOnly")
+    method void TickMonsterDeathFadeServer(Entity monsterEntity)
+        if self._T.MonsterDeathRuntimeByEntity == nil then
+            return
+        end
+
+        local runtime = self._T.MonsterDeathRuntimeByEntity[monsterEntity]
+        if runtime == nil then
+            return
+        end
+
+        if monsterEntity == nil or isvalid(monsterEntity) == false then
+            self:ClearMonsterDeathRuntimeServer(monsterEntity)
+            return
+        end
+
+        local tickInterval = runtime.TickInterval
+        if tickInterval == nil or tickInterval <= 0 then
+            tickInterval = 0.05
+        end
+
+        runtime.ElapsedSeconds += tickInterval
+        local leadTime = runtime.LeadTime
+        if leadTime == nil then
+            leadTime = 0
+        end
+
+        if runtime.ElapsedSeconds < leadTime then
+            self._T.MonsterDeathRuntimeByEntity[monsterEntity] = runtime
+            return
+        end
+
+        local fadeDuration = runtime.FadeDuration
+        if fadeDuration == nil or fadeDuration <= 0 then
+            fadeDuration = 0.01
+        end
+
+        local elapsedFade = runtime.ElapsedSeconds - leadTime
+        local ratio = elapsedFade / fadeDuration
+        if ratio < 0 then
+            ratio = 0
+        end
+        if ratio > 1 then
+            ratio = 1
+        end
+
+        local remainAlpha = (1 - ratio) * runtime.BaseA
+        if remainAlpha < 0 then
+            remainAlpha = 0
+        end
+        self:ApplyMonsterFadeAlphaServer(monsterEntity, runtime.BaseR, runtime.BaseG, runtime.BaseB, remainAlpha)
+
+        if ratio >= 1 then
+            self:ClearMonsterDeathRuntimeServer(monsterEntity)
+            if monsterEntity ~= nil and isvalid(monsterEntity) == true then
+                _EntityService:Destroy(monsterEntity)
+            end
+            return
+        end
+
+        self._T.MonsterDeathRuntimeByEntity[monsterEntity] = runtime
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyMonsterFadeAlphaServer(Entity monsterEntity, number baseR, number baseG, number baseB, number alpha)
+        if monsterEntity == nil or isvalid(monsterEntity) == false then
+            return
+        end
+
+        local spriteRenderer = self:ResolveComponentSafe(monsterEntity, "SpriteRendererComponent", "SpriteRUID")
+        if spriteRenderer == nil then
+            return
+        end
+
+        pcall(function()
+            spriteRenderer.Color = Color(baseR, baseG, baseB, alpha)
+        end)
+    end
+
+    -- Uses cached spawn metadata first, then row fallback for placed/bound monsters.
+    @ExecSpace("ServerOnly")
+    method string ResolveMonsterDeathEffectRuidServer(Entity monsterEntity)
+        if monsterEntity == nil or isvalid(monsterEntity) == false then
+            return ""
+        end
+
+        if self._T.SpawnMetaByEntity ~= nil then
+            local spawnMeta = self._T.SpawnMetaByEntity[monsterEntity]
+            if spawnMeta ~= nil and spawnMeta.DeathEffectRuid ~= nil then
+                local text = tostring(spawnMeta.DeathEffectRuid)
+                if text ~= "" then
+                    return text
+                end
+            end
+        end
+
+        local hpSystem = self:ResolveComponentSafe(monsterEntity, "HPSystemComponent", "CurrentHP")
+        if hpSystem == nil then
+            return ""
+        end
+
+        local rowId = self:GetPlacedMonsterDataIdFromHPServer(hpSystem)
+        if rowId == nil or rowId == "" then
+            return ""
+        end
+
+        local row = self:GetMonsterRowByIdServer(rowId)
+        if row == nil then
+            return ""
+        end
+
+        return self:GetRowString(row, "death_effect_ruid", "")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ClearMonsterDeathRuntimeServer(Entity monsterEntity)
+        if self._T.MonsterDeathRuntimeByEntity == nil then
+            return
+        end
+        if monsterEntity == nil then
+            return
+        end
+
+        local runtime = self._T.MonsterDeathRuntimeByEntity[monsterEntity]
+        if runtime == nil then
+            return
+        end
+
+        local timerId = runtime.TimerId
+        if timerId ~= nil and timerId > 0 then
+            _TimerService:ClearTimer(timerId)
+        end
+
+        self._T.MonsterDeathRuntimeByEntity[monsterEntity] = nil
+    end
+
+    -- Runtime prune clears stale timer records when entities are externally removed first.
+    @ExecSpace("ServerOnly")
+    method void PruneMonsterDeathRuntimeServer()
+        if self._T.MonsterDeathRuntimeByEntity == nil then
+            self._T.MonsterDeathRuntimeByEntity = {}
+            return
+        end
+
+        local pruned = {}
+        for trackedEntity, runtime in pairs(self._T.MonsterDeathRuntimeByEntity) do
+            if trackedEntity ~= nil and isvalid(trackedEntity) == true then
+                pruned[trackedEntity] = runtime
+                continue
+            end
+
+            if runtime ~= nil and runtime.TimerId ~= nil and runtime.TimerId > 0 then
+                _TimerService:ClearTimer(runtime.TimerId)
+            end
+        end
+
+        self._T.MonsterDeathRuntimeByEntity = pruned
+    end
+
+    -- Endplay/destroy both call this to stop all per-monster death fade timers.
+    @ExecSpace("ServerOnly")
+    method void ClearMonsterDeathRuntimeTimersServer()
+        if self._T.MonsterDeathRuntimeByEntity == nil then
+            self._T.MonsterDeathRuntimeByEntity = {}
+            return
+        end
+
+        for _, runtime in pairs(self._T.MonsterDeathRuntimeByEntity) do
+            if runtime ~= nil and runtime.TimerId ~= nil and runtime.TimerId > 0 then
+                _TimerService:ClearTimer(runtime.TimerId)
+            end
+        end
+
+        self._T.MonsterDeathRuntimeByEntity = {}
     end
 
     -- Pruning keeps field cap checks accurate even when external systems destroy spawned entities.

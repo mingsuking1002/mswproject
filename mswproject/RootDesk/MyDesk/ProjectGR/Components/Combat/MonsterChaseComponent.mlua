@@ -233,10 +233,13 @@ script MonsterChaseComponent extends Component
         return (targetMap == currentMap)
     end
 
-    -- Player-target filter accepts entities that expose PlayerComponent or HPSystemComponent marker.
+    -- Contact target must be a real user-player entity; monster/other HP actors are excluded.
     @ExecSpace("ServerOnly")
     method boolean IsPotentialPlayerTargetServer(Entity targetEntity)
         if targetEntity == nil or isvalid(targetEntity) == false then
+            return false
+        end
+        if targetEntity == self.Entity then
             return false
         end
 
@@ -244,12 +247,58 @@ script MonsterChaseComponent extends Component
             return targetEntity.PlayerComponent
         end)
         if playerComponentOk == true and playerComponent ~= nil and isvalid(playerComponent) == true then
+            if self:IsUserEntityServer(targetEntity) ~= true then
+                return false
+            end
             return true
         end
 
         local hpSystem = self:ResolveComponentSafe(targetEntity, "HPSystemComponent", "CurrentHP")
-        if hpSystem ~= nil then
-            return true
+        if hpSystem == nil then
+            return false
+        end
+
+        local isMonster = false
+        local readOk, readValue = pcall(function()
+            return hpSystem.IsMonster
+        end)
+        if readOk == true and readValue == true then
+            isMonster = true
+        end
+        if isMonster == true then
+            return false
+        end
+
+        return self:IsUserEntityServer(targetEntity)
+    end
+
+    -- UserEntity check prevents monster-vs-monster overlap from being treated as player contact.
+    @ExecSpace("ServerOnly")
+    method boolean IsUserEntityServer(Entity targetEntity)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return false
+        end
+
+        local users = _UserService.UserEntities
+        if users == nil then
+            return false
+        end
+
+        for userId, userEntity in pairs(users) do
+            local candidate = userEntity
+            if candidate == nil or isvalid(candidate) == false then
+                local userIdText = tostring(userId)
+                local resolveOk, resolveResult = pcall(function()
+                    return _UserService:GetUserEntityByUserId(userIdText)
+                end)
+                if resolveOk == true then
+                    candidate = resolveResult
+                end
+            end
+
+            if candidate ~= nil and isvalid(candidate) == true and candidate == targetEntity then
+                return true
+            end
         end
 
         return false

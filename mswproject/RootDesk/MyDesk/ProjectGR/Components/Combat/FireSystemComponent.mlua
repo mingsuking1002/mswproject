@@ -90,11 +90,13 @@ script FireSystemComponent extends Component
     -- Server executes final fire gate checks and mutates ammo/cooldown state.
     @ExecSpace("ServerOnly")
     method void TryFireServer(Vector2 targetWorldPosition)
+        -- Reapply level-based weapon attack right before each fire attempt to avoid stale swap snapshots.
+        self:SyncWeaponAttackBeforeFireServer()
         if self:CanFireServer() == false then
             return
         end
 
-        local shooterPosition2D = self:ResolveMuzzlePositionServer()
+        local shooterPosition2D = self:ResolveMuzzlePositionServer(targetWorldPosition)
         local fireDirection = nil
 
         local weaponModel = self:ResolveComponentSafe(self.Entity, "WeaponModelComponent", "CurrentWeaponId")
@@ -135,6 +137,30 @@ script FireSystemComponent extends Component
 
         self:NotifyWeaponExpGainServer(self.CurrentWeaponId, 1)
         self:StartFireCooldown()
+    end
+
+    -- Weapon level formula is refreshed on each fire attempt so BaseWeaponAttack cannot stay stale.
+    @ExecSpace("ServerOnly")
+    method void SyncWeaponAttackBeforeFireServer()
+        local levelComponent = self:ResolveComponentSafe(self.Entity, "WeaponLevelUpComponent", "WeaponDataTableName")
+        if levelComponent == nil or levelComponent.ApplyWeaponPowerToFireServer == nil then
+            return
+        end
+
+        local weaponId = self.CurrentWeaponId
+        if weaponId == nil then
+            weaponId = ""
+        end
+
+        local applyOk, applyResult = pcall(function()
+            return levelComponent:ApplyWeaponPowerToFireServer(tostring(weaponId))
+        end)
+        if applyOk == true and applyResult ~= nil then
+            local parsedAttack = tonumber(applyResult)
+            if parsedAttack ~= nil then
+                self.BaseWeaponAttack = math.max(0, math.floor(parsedAttack))
+            end
+        end
     end
 
     -- Fire-type branch keeps one entrypoint while allowing projectile/smite/summon behaviors.
@@ -339,11 +365,11 @@ script FireSystemComponent extends Component
 
     -- Server resolves muzzle directly from WeaponModelComponent, and falls back to shooter center when missing.
     @ExecSpace("ServerOnly")
-    method Vector2 ResolveMuzzlePositionServer()
+    method Vector2 ResolveMuzzlePositionServer(Vector2 targetWorldPosition)
         local weaponModel = self:ResolveComponentSafe(self.Entity, "WeaponModelComponent", "CurrentWeaponId")
         if weaponModel ~= nil and weaponModel.GetMuzzlePosition ~= nil then
             local muzzleOk, muzzleValue = pcall(function()
-                return weaponModel:GetMuzzlePosition()
+                return weaponModel:GetMuzzlePosition(targetWorldPosition)
             end)
             if muzzleOk == true and muzzleValue ~= nil then
                 return Vector2(muzzleValue.x, muzzleValue.y)
@@ -403,6 +429,58 @@ script FireSystemComponent extends Component
         if triggerComponent ~= nil and isvalid(triggerComponent) == true then
             triggerComponent.BoxSize = Vector2(0.3, 0.3)
             triggerComponent.IsPassive = false
+        end
+
+        local physicsCollider = self:FindOrAddComponentSafe(projectileEntity, "PhysicsColliderComponent")
+        if physicsCollider ~= nil and isvalid(physicsCollider) == true then
+            pcall(function()
+                physicsCollider.Enable = true
+            end)
+            if triggerComponent ~= nil and isvalid(triggerComponent) == true then
+                pcall(function()
+                    physicsCollider.BoxSize = triggerComponent.BoxSize
+                end)
+            else
+                pcall(function()
+                    physicsCollider.BoxSize = Vector2(0.3, 0.3)
+                end)
+            end
+            pcall(function()
+                physicsCollider.IsSensor = true
+            end)
+            pcall(function()
+                physicsCollider.EnableContactEvent = true
+            end)
+            if triggerComponent ~= nil and isvalid(triggerComponent) == true then
+                pcall(function()
+                    physicsCollider.CollisionGroup = triggerComponent.CollisionGroup
+                end)
+            end
+        end
+
+        local physicsBody = self:FindOrAddComponentSafe(projectileEntity, "PhysicsRigidbodyComponent")
+        if physicsBody ~= nil and isvalid(physicsBody) == true then
+            pcall(function()
+                physicsBody.Enable = true
+            end)
+            pcall(function()
+                physicsBody.BodyType = BodyType.Dynamic
+            end)
+            pcall(function()
+                physicsBody.CollisionDetectionMode = PhysicsCollisionDetectionMode.Continuous
+            end)
+            pcall(function()
+                physicsBody.SleepingMode = PhysicsSleepingMode.NeverSleep
+            end)
+            pcall(function()
+                physicsBody.GravityScale = 0
+            end)
+            pcall(function()
+                physicsBody.FixedRotation = true
+            end)
+            pcall(function()
+                physicsBody:SetServerAsPhysicsOwner()
+            end)
         end
 
         local projectileComponent = self:FindOrAddComponentSafe(projectileEntity, "ProjectileComponent")
@@ -657,7 +735,10 @@ script FireSystemComponent extends Component
     -- Final damage formula is server-side to prevent packet-level damage spoofing.
     @ExecSpace("ServerOnly")
     method integer CalculateFinalDamage()
-        local baseDamage = self.BaseWeaponAttack
+        local baseDamage = self:ResolveWeaponAttackFromLevelServer()
+        if baseDamage <= 0 then
+            baseDamage = self.BaseWeaponAttack
+        end
         if baseDamage == nil then
             baseDamage = 0
         end
@@ -669,6 +750,37 @@ script FireSystemComponent extends Component
         local passiveMultiplier = 1 + (self.PassiveIncreasePercent * 0.01)
         local finalDamage = baseDamage * buffMultiplier * passiveMultiplier
         return math.max(math.floor(finalDamage), 0)
+    end
+
+    -- Final-damage path also refreshes level-based weapon attack so no stale snapshot can survive.
+    @ExecSpace("ServerOnly")
+    method integer ResolveWeaponAttackFromLevelServer()
+        local levelComponent = self:ResolveComponentSafe(self.Entity, "WeaponLevelUpComponent", "WeaponDataTableName")
+        if levelComponent == nil or levelComponent.ApplyWeaponPowerToFireServer == nil then
+            return 0
+        end
+
+        local weaponId = self.CurrentWeaponId
+        if weaponId == nil then
+            weaponId = ""
+        end
+
+        local applyOk, applyResult = pcall(function()
+            return levelComponent:ApplyWeaponPowerToFireServer(tostring(weaponId))
+        end)
+        if applyOk ~= true or applyResult == nil then
+            return 0
+        end
+
+        local parsedAttack = tonumber(applyResult)
+        if parsedAttack == nil then
+            return 0
+        end
+        local finalAttack = math.max(0, math.floor(parsedAttack))
+        if finalAttack > 0 then
+            self.BaseWeaponAttack = finalAttack
+        end
+        return finalAttack
     end
 
     -- Weapon exp is granted only for successful fire/install events.

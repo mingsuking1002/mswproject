@@ -36,6 +36,18 @@
 | `SpawnWaveTableName` | `string` | `None` | `""` | 구버전 호환 별칭(비어있지 않으면 fallback로 사용) |
 | `MonsterContainerName` | `string` | `None` | `"MonsterContainer"` | 맵 내 몬스터 부모 엔티티 이름 |
 | `StateMonitorInterval` | `number` | `None` | `0.2` | 스폰 가능 상태 재평가 주기(초) |
+| `MonsterDeathEffectLeadTime` | `number` | `None` | `0` | 사망 이펙트 재생 후 페이드 시작 대기 시간(초) |
+| `MonsterDeathFadeDuration` | `number` | `None` | `0.25` | 사망 페이드 아웃 지속 시간(초) |
+| `MonsterDeathFadeTick` | `number` | `None` | `0.05` | 사망 페이드 타이머 틱 간격(초) |
+| `EnableMonsterHPBar` | `boolean` | `None` | `true` | 몬스터 NameTag 기반 HP바 표시 사용 여부 |
+| `MonsterHPBarSegments` | `integer` | `None` | `10` | HP바 분할 개수 |
+| `MonsterHPBarOffsetY` | `number` | `None` | `-0.65` | 몬스터 기준 HP바 Y 오프셋 |
+| `MonsterHPBarFontSize` | `number` | `None` | `7` | HP바 폰트 크기(기본 축소) |
+| `MonsterHPBarModelScaleXMultiplier` | `number` | `None` | `0.25` | 모델 `scale.x` 기준 HP바 X 축소 배율 |
+| `MonsterHPBarModelScaleYMultiplier` | `number` | `None` | `0.25` | `(scale.y/scale.x)` 비율 기반 HP바 Y 축소 배율 |
+| `MonsterHPBarMinSegments` | `integer` | `None` | `2` | HP바 최소 분할 수 |
+| `MonsterHPBarMinFontSize` | `integer` | `None` | `2` | HP바 최소 폰트 크기 |
+| `MonsterHPBarShowNumeric` | `boolean` | `None` | `true` | `현재/최대` 숫자 표기(숫자 전용 라벨) 표시 여부 |
 
 ### 3-2. 런타임 상태
 
@@ -68,7 +80,7 @@
 
 ### 5-2. 스폰 상태 전환
 - `RefreshSpawnStateServer()`가 단일 게이트 역할 수행
-- 조건: 데이터 준비 완료, 보스 페이즈 아님, `MonsterContainer` 존재, 로비/상점 아님
+- 조건: 데이터 준비 완료, 보스 페이즈 아님, `MonsterContainer` 존재, 로비 아님
 - 조건 만족 시 `StartSpawning()`, 불만족 시 `StopSpawning()`
 
 ### 5-3. SpawnTick
@@ -81,6 +93,14 @@
 ### 5-4. 좌표/유효성
 - 도넛 반경(`InnerRadius~OuterRadius`) 랜덤 좌표 생성
 - v1.1 기준 기본 반경 검증만 수행(NavMesh 고급 검증 미구현)
+
+### 5-5. 몬스터 사망 연출/정리
+1. `HPSystemComponent.EvaluateDeath()`가 몬스터 사망 시 즉시 `TryStartMonsterDeathSequenceServer()`를 호출하고, 상태 모니터 루프는 누락 케이스를 보완
+2. `PrepareDeadMonsterForFadeServer()`에서 `TriggerComponent.IsPassive=true`, 이동/추격 타이머를 즉시 비활성화해 사망 후 접촉 피해를 차단
+3. `MonsterData.death_effect_ruid`를 1회 재생하도록 `SpriteRenderer.SpriteRUID`를 교체
+4. 사망 시작 시 NameTag 기반 몬스터 HP바를 즉시 숨김 처리
+5. `MonsterDeathEffectLeadTime` 경과 후 `SpriteRenderer.Color.a`를 `MonsterDeathFadeDuration` 동안 0까지 감쇠
+6. 페이드 완료 시 `_EntityService:Destroy`로 엔티티를 제거
 
 ---
 
@@ -129,7 +149,8 @@
 | `Map01BootstrapComponent` | `AttachRequiredComponentsServer` 필수 목록에 `MonsterSpawnComponent` 추가 |
 | `SpeedrunTimerComponent` | `CurrentStageId`, `ElapsedTime` 읽어 스폰 시점 판정 |
 | `LobbyFlowComponent` | `IsLobbyActive=true`면 스폰 정지 |
-| `ShopManagerComponent` | `IsShopOpen=true`면 스폰 정지 |
+| `ShopManagerComponent` | 상점 상태 디버그 조회(현재 스폰 게이트에는 미반영) |
+| `HPSystemComponent` | 몬스터 사망 판정(`IsMonster`, `IsDead`, `CurrentHP`) 기준으로 사망 연출/정리 트리거 |
 | `GRUtilModule` | 안전한 컴포넌트 조회/연동 유틸 부트스트랩 |
 
 ---
@@ -144,8 +165,12 @@
 - [x] DataTable 누락/부모 엔티티 누락 방어 로그 및 안전 정지 처리
 - [x] `spawn_stage`, `spawn_time (min)` 기반 필터 로직 구현
 - [x] 보스 시간대 진입 시 일반 스폰 중단 로직 구현
-- [x] 로비/상점 상태 기반 스폰 정지/재개 로직 구현
+- [x] 로비 상태 기반 스폰 정지/재개 로직 구현
 - [x] `GetSpawnMetaByEntity` 조회 API 제공
+- [x] 몬스터 사망 시 `death_effect_ruid` 1회 재생 후 페이드 아웃 제거 구현
+- [x] 몬스터 사망 시 접촉 피해/추격 비활성화 및 엔티티 정리 타이머 구현
+- [x] 몬스터 사망 즉시(모니터 주기 대기 없이) death sequence 시작 경로 구현
+- [x] 몬스터 하단 NameTag 기반 HP바 실시간 갱신/사망 시 숨김 처리 구현
 - [x] `기획서/4.부록/Code_Documentation.md` 갱신
 
 ---
@@ -168,3 +193,23 @@
 | **담당자** | Codex |
 | **작성일** | 2026-02-20 |
 | **상태** | 🟢 완료 |
+
+---
+
+## 2026-02-25 보완 상태 추적
+
+- 상태 전이: `🟡 분석` -> `🔵 구현` -> `🟢 완료`
+- 현재 상태: `🟢 완료` (몬스터 HP UI 축소 반영 포함)
+- 보완 대상:
+  - 화살 충돌/데미지 연동 지연에 따른 사망 연출 지연 제거
+  - 몬스터 하단 HP바 표시 및 사망 시 숨김 일관화
+  - 몬스터끼리 접촉 시 상호 데미지/정지 발생 버그 제거
+  - 몬스터 HP UI 과대 크기 축소(`model scale.x` + `y/x` 비율 기반)
+
+### 추가 반영 사항
+
+- `MonsterChaseComponent.IsPotentialPlayerTargetServer()`를 사용자 엔티티 기준으로 엄격화해 몬스터를 접촉 타깃으로 잡지 않도록 수정
+- 결과적으로 몬스터-몬스터 충돌/겹침 상황에서 `ContactTargetPlayer` 경로가 열리지 않아 이동 정지와 접촉 데미지가 발생하지 않음
+- `ResolveMonsterHPBarLayoutServer()`에서 모델 스케일을 읽어 HP바 폭(X)을 축소하고, `scale.y/scale.x` 비율로 폰트(Y)를 추가 축소하도록 반영
+- `MonsterHPBarShowNumeric=true` 기본값으로 `현재/최대` 숫자만 출력해 정보 가독성을 확보
+- `MonsterHPBarFontSize=7`, `MonsterHPBarMinFontSize=2`로 기본/최소 글자 크기를 추가 축소

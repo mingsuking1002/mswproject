@@ -19,6 +19,7 @@ script WeaponSwapComponent extends Component
     property integer DefaultDamage = 10
     property number DefaultFireCooldown = 0.5
     property number DefaultReloadTime = 1.5
+    property boolean EnableDamageRatioAliasFallback = true
     property string WeaponDataTableName = "WeaponData"
     property string ProjectileDataTableName = "ProjectileData"
     property string SummonDataTableName = "SummonData"
@@ -332,8 +333,16 @@ script WeaponSwapComponent extends Component
         if self:GetRowString(row, "max_basic_resource", "") == "" then
             self:WarnMissingRequiredColumnOnce(self.WeaponDataTableName, "max_basic_resource", data.WeaponId, "")
         end
-        local maxAmmo = self:GetRowInteger(row, "max_basic_resource", data.Ammo)
+        if data.MaxAmmo == nil then
+            local defaultMaxAmmo = math.max(self.DefaultAmmo, 1)
+            if defaultMaxAmmo <= 0 then
+                defaultMaxAmmo = 30
+            end
+            data.MaxAmmo = defaultMaxAmmo
+        end
+        local maxAmmo = self:GetRowInteger(row, "max_basic_resource", data.MaxAmmo)
         if maxAmmo > 0 then
+            data.MaxAmmo = maxAmmo
             data.Ammo = maxAmmo
         end
 
@@ -368,11 +377,15 @@ script WeaponSwapComponent extends Component
             if self:GetRowString(row, "dmg_raito", "") == "" then
                 self:WarnMissingRequiredColumnOnce(self.WeaponDataTableName, "dmg_raito", data.WeaponId, "")
             end
-            -- Keep dmg_raito as primary contract and accept dmg_ratio only as optional compatibility alias.
-            local aliasRatio = self:GetRowNumber(row, "dmg_ratio", -1)
-            if aliasRatio > 0 then
-                damageRatio = aliasRatio
+            if self.EnableDamageRatioAliasFallback == true then
+                local aliasRatio = self:GetRowNumber(row, "dmg_ratio", -1)
+                if aliasRatio > 0 then
+                    damageRatio = aliasRatio
+                end
             end
+        end
+        if damageRatio <= 0 then
+            damageRatio = 1
         end
         if damageRatio > 0 then
             local defaultDamage = math.max(self.DefaultDamage, 1)
@@ -490,9 +503,25 @@ script WeaponSwapComponent extends Component
         if data.WeaponId == nil or data.WeaponId == "" then
             data.WeaponId = "Weapon" .. tostring(slot)
         end
-        if data.Ammo == nil then
-            data.Ammo = self.DefaultAmmo
+        if data.MaxAmmo == nil then
+            data.MaxAmmo = self.DefaultAmmo
         end
+        local parsedMaxAmmo = tonumber(data.MaxAmmo)
+        if parsedMaxAmmo == nil or parsedMaxAmmo <= 0 then
+            parsedMaxAmmo = self.DefaultAmmo
+        end
+        if parsedMaxAmmo == nil or parsedMaxAmmo <= 0 then
+            parsedMaxAmmo = 30
+        end
+        data.MaxAmmo = math.max(1, math.floor(parsedMaxAmmo))
+        if data.Ammo == nil then
+            data.Ammo = data.MaxAmmo
+        end
+        local parsedAmmo = tonumber(data.Ammo)
+        if parsedAmmo == nil then
+            parsedAmmo = data.MaxAmmo
+        end
+        data.Ammo = math.max(0, math.min(math.floor(parsedAmmo), data.MaxAmmo))
         if data.IsReloading == nil then
             data.IsReloading = false
         end
@@ -571,6 +600,22 @@ script WeaponSwapComponent extends Component
                 ammoValue = ammoResult
             end
             data.Ammo = math.max(0, math.floor(ammoValue))
+
+            local maxAmmoValue = data.MaxAmmo
+            local maxOk, maxResult = pcall(function()
+                if reloadComponent._T == nil or reloadComponent._T.MaxAmmoBySlot == nil then
+                    return nil
+                end
+                return reloadComponent._T.MaxAmmoBySlot[finalSlot]
+            end)
+            if maxOk == true and maxResult ~= nil then
+                maxAmmoValue = maxResult
+            end
+            local parsedMaxAmmo = tonumber(maxAmmoValue)
+            if parsedMaxAmmo ~= nil and parsedMaxAmmo > 0 then
+                data.MaxAmmo = math.max(1, math.floor(parsedMaxAmmo))
+                data.Ammo = math.max(0, math.min(data.Ammo, data.MaxAmmo))
+            end
 
             local reloadOk, reloadState = pcall(function()
                 return reloadComponent.IsReloading
@@ -711,6 +756,8 @@ script WeaponSwapComponent extends Component
         local finalSlot = self:ClampSlot(slot)
         local data = self:NormalizeSlotData(self:GetSlotDataBySlot(finalSlot), finalSlot)
         self:SetSlotDataBySlot(finalSlot, data)
+        local weaponLevel = self:ResolveComponentSafe(self.Entity, "WeaponLevelUpComponent", "WeaponDataTableName")
+        local useLevelAttackFormula = (weaponLevel ~= nil and weaponLevel.ApplyWeaponPowerToFireServer ~= nil)
 
         local reloadComponent = self:ResolveComponentSafe(self.Entity, "ReloadComponent", "CurrentAmmo")
         if reloadComponent ~= nil then
@@ -720,6 +767,9 @@ script WeaponSwapComponent extends Component
                 end)
             end
 
+            pcall(function()
+                reloadComponent:SetSlotMaxAmmo(finalSlot, data.MaxAmmo)
+            end)
             pcall(function()
                 reloadComponent:SetCurrentWeaponSlot(finalSlot)
             end)
@@ -736,9 +786,11 @@ script WeaponSwapComponent extends Component
 
         local fireComponent = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "BaseWeaponAttack")
         if fireComponent ~= nil then
-            pcall(function()
-                fireComponent.BaseWeaponAttack = data.Damage
-            end)
+            if useLevelAttackFormula ~= true then
+                pcall(function()
+                    fireComponent.BaseWeaponAttack = data.Damage
+                end)
+            end
             pcall(function()
                 fireComponent.FireCooldown = data.FireCooldown
             end)
@@ -799,7 +851,6 @@ script WeaponSwapComponent extends Component
             end)
         end
 
-        local weaponLevel = self:ResolveComponentSafe(self.Entity, "WeaponLevelUpComponent", "WeaponDataTableName")
         if weaponLevel ~= nil and weaponLevel.ApplyWeaponPowerToFireServer ~= nil then
             pcall(function()
                 weaponLevel:ApplyWeaponPowerToFireServer(tostring(data.WeaponId))

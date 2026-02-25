@@ -1,4 +1,4 @@
-# 🟡 대기중
+# 🟢 완료
 
 ---
 **[Codex용 작업 명세서]**
@@ -61,3 +61,12 @@ method Vector2 GetMuzzlePosition(Vector2 targetWorldPos)
 * **주의/최적화 포인트:**
   - `GetAimDirection`도 내부에서 `GetMuzzlePosition()`을 호출하므로 같이 수정 필요.
   - 기존 `GetMuzzlePosition()` 파라미터 없이 호출하는 곳(클라이언트)은 기존 동작 유지됨(nil 전달 시 ZRotation 사용).
+
+---
+
+## § 완료 처리 (2026-02-25)
+
+- [x] `WeaponModelComponent.GetMuzzlePosition(Vector2 targetWorldPos)` optional 파라미터 적용
+- [x] `FireSystemComponent.ResolveMuzzlePositionServer(Vector2 targetWorldPosition)` 호출 체인 반영
+- [x] `GetAimDirection(targetWorldPos)`가 보정된 muzzle 기준 계산을 사용하도록 반영
+- [x] `.mlua` + `.codeblock(Target mLua)` 동기화 완료

@@ -491,7 +491,8 @@ script WeaponModelComponent extends Component
     end
 
     -- FireSystem queries muzzle position in world space from holder transform and configured muzzle distance.
-    method Vector2 GetMuzzlePosition()
+    -- targetWorldPos is optional; server can pass click position to compensate holder rotation not replicated on server.
+    method Vector2 GetMuzzlePosition(Vector2 targetWorldPos)
         local holder = self:ResolveWeaponHolderEntity(false)
         if holder == nil or isvalid(holder) == false then
             local selfPos = self.Entity.TransformComponent.WorldPosition
@@ -567,6 +568,13 @@ script WeaponModelComponent extends Component
             forward = forward:Normalize()
         end
 
+        if targetWorldPos ~= nil then
+            local serverDirection = targetWorldPos - Vector2(muzzleBaseX, muzzleBaseY)
+            if serverDirection:SqrMagnitude() > 0 then
+                forward = serverDirection:Normalize()
+            end
+        end
+
         local distance = self.MuzzleDistance
         if self._T.CurrentMuzzleDistance ~= nil then
             distance = self._T.CurrentMuzzleDistance
@@ -597,7 +605,7 @@ script WeaponModelComponent extends Component
 
     -- FireSystem uses this API to align shot direction with holder-based aim instead of body rotation.
     method Vector2 GetAimDirection(Vector2 targetWorldPos)
-        local muzzle = self:GetMuzzlePosition()
+        local muzzle = self:GetMuzzlePosition(targetWorldPos)
         if targetWorldPos == nil then
             return self:GetForwardDirectionFromHolder()
         end

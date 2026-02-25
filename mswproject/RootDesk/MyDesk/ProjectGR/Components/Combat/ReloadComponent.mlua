@@ -21,12 +21,14 @@ script ReloadComponent extends Component
         self.CurrentWeaponSlot = math.max(1, self.CurrentWeaponSlot)
 
         self._T.AmmoBySlot = {}
+        self._T.MaxAmmoBySlot = {}
         self._T.ReloadTimerBySlot = {}
         self._T.ReloadEndTimeBySlot = {}
         self._T.NextFireReadyTimeBySlot = {}
 
         local slotCount = math.max(self.WeaponSlotCount, 1)
         for slot = 1, slotCount do
+            self._T.MaxAmmoBySlot[slot] = self.MaxAmmo
             self._T.AmmoBySlot[slot] = self.MaxAmmo
             self._T.ReloadTimerBySlot[slot] = 0
             self._T.ReloadEndTimeBySlot[slot] = 0
@@ -73,13 +75,21 @@ script ReloadComponent extends Component
         if self:IsValidSlot(slot) == false then
             return
         end
+
+        local currentMax = self._T.MaxAmmoBySlot[slot]
+        if currentMax == nil then
+            currentMax = self.MaxAmmo
+            self._T.MaxAmmoBySlot[slot] = currentMax
+        end
+        currentMax = math.max(1, math.floor(currentMax))
+
         if self:IsReloadingInSlot(slot) == false then
             local ammo = self._T.AmmoBySlot[slot]
             if ammo == nil then
-                ammo = self.MaxAmmo
+                ammo = currentMax
                 self._T.AmmoBySlot[slot] = ammo
             end
-            if ammo >= self.MaxAmmo then
+            if ammo >= currentMax then
                 return
             end
         else
@@ -107,12 +117,20 @@ script ReloadComponent extends Component
             return
         end
 
+        local currentMax = self._T.MaxAmmoBySlot[slot]
+        if currentMax == nil then
+            currentMax = self.MaxAmmo
+            self._T.MaxAmmoBySlot[slot] = currentMax
+        end
+        currentMax = math.max(1, math.floor(currentMax))
+
         self._T.ReloadTimerBySlot[slot] = 0
         self._T.ReloadEndTimeBySlot[slot] = 0
-        self._T.AmmoBySlot[slot] = self.MaxAmmo
+        self._T.AmmoBySlot[slot] = currentMax
 
         if slot == self.CurrentWeaponSlot then
-            self.CurrentAmmo = self.MaxAmmo
+            self.MaxAmmo = currentMax
+            self.CurrentAmmo = currentMax
             self.IsReloading = false
         end
     end
@@ -158,11 +176,22 @@ script ReloadComponent extends Component
 
         self:CancelReloadForSlot(prevSlot)
 
+        local targetMax = self._T.MaxAmmoBySlot[slot]
+        if targetMax == nil then
+            targetMax = self.MaxAmmo
+            self._T.MaxAmmoBySlot[slot] = targetMax
+        end
+        targetMax = math.max(1, math.floor(targetMax))
+
         self.CurrentWeaponSlot = slot
+        self.MaxAmmo = targetMax
         self.CurrentAmmo = self._T.AmmoBySlot[slot]
         if self.CurrentAmmo == nil then
-            self.CurrentAmmo = self.MaxAmmo
-            self._T.AmmoBySlot[slot] = self.MaxAmmo
+            self.CurrentAmmo = targetMax
+            self._T.AmmoBySlot[slot] = targetMax
+        else
+            self.CurrentAmmo = math.max(0, math.min(math.floor(self.CurrentAmmo), targetMax))
+            self._T.AmmoBySlot[slot] = self.CurrentAmmo
         end
 
         self.IsReloading = self:IsReloadingInSlot(slot)
@@ -218,12 +247,19 @@ script ReloadComponent extends Component
             return 0
         end
 
+        local slotMax = self._T.MaxAmmoBySlot[slot]
+        if slotMax == nil then
+            slotMax = self.MaxAmmo
+            self._T.MaxAmmoBySlot[slot] = slotMax
+        end
+        slotMax = math.max(1, math.floor(slotMax))
+
         local ammo = self._T.AmmoBySlot[slot]
         if ammo == nil then
-            ammo = self.MaxAmmo
+            ammo = slotMax
         end
 
-        return ammo
+        return math.max(0, math.min(math.floor(ammo), slotMax))
     end
 
     -- External writers use this setter to keep clamp logic centralized.
@@ -233,10 +269,52 @@ script ReloadComponent extends Component
             return
         end
 
-        local clampedAmmo = math.max(0, math.min(ammo, self.MaxAmmo))
+        local slotMax = self._T.MaxAmmoBySlot[slot]
+        if slotMax == nil then
+            slotMax = self.MaxAmmo
+            self._T.MaxAmmoBySlot[slot] = slotMax
+        end
+        slotMax = math.max(1, math.floor(slotMax))
+
+        local parsedAmmo = tonumber(ammo)
+        if parsedAmmo == nil then
+            parsedAmmo = 0
+        end
+        local clampedAmmo = math.max(0, math.min(math.floor(parsedAmmo), slotMax))
         self._T.AmmoBySlot[slot] = clampedAmmo
 
         if slot == self.CurrentWeaponSlot then
+            self.CurrentAmmo = clampedAmmo
+        end
+    end
+
+    -- Slot-specific max ammo is controlled externally by weapon data integration.
+    @ExecSpace("ServerOnly")
+    method void SetSlotMaxAmmo(integer slot, integer maxAmmo)
+        if self:IsValidSlot(slot) == false then
+            return
+        end
+
+        local parsedMaxAmmo = tonumber(maxAmmo)
+        if parsedMaxAmmo == nil then
+            parsedMaxAmmo = self.MaxAmmo
+        end
+        local finalMax = math.max(1, math.floor(parsedMaxAmmo))
+        self._T.MaxAmmoBySlot[slot] = finalMax
+
+        local ammo = self._T.AmmoBySlot[slot]
+        if ammo == nil then
+            ammo = finalMax
+        end
+        local parsedAmmo = tonumber(ammo)
+        if parsedAmmo == nil then
+            parsedAmmo = finalMax
+        end
+        local clampedAmmo = math.max(0, math.min(math.floor(parsedAmmo), finalMax))
+        self._T.AmmoBySlot[slot] = clampedAmmo
+
+        if slot == self.CurrentWeaponSlot then
+            self.MaxAmmo = finalMax
             self.CurrentAmmo = clampedAmmo
         end
     end

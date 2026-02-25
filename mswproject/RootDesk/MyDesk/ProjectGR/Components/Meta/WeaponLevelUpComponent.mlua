@@ -6,6 +6,7 @@ script WeaponLevelUpComponent extends Component
     property integer DefaultRequiredExp = 10
     property integer DefaultStartLevel = 1
     property integer DefaultMaxLevel = 10
+    property boolean EnableDamageRatioAliasFallback = true
     property boolean EnableDebugLogs = false
 
     -- Server initializes caches so exp/level lookup remains O(1) during combat.
@@ -99,7 +100,7 @@ script WeaponLevelUpComponent extends Component
         end
     end
 
-    -- Applies PlayerbleData.player_atk * WeaponLevelData.level_N to FireSystem.BaseWeaponAttack.
+    -- Applies BasePlayerAtk * WeaponData.dmg_raito * WeaponLevelData.level_N to FireSystem.BaseWeaponAttack.
     @ExecSpace("ServerOnly")
     method integer ApplyWeaponPowerToFireServer(string weaponId)
         local finalWeaponId = weaponId
@@ -128,8 +129,43 @@ script WeaponLevelUpComponent extends Component
             basePlayerAtk = math.max(0, math.floor(readAtkValue))
         end
 
-        local multiplier = self:ResolveLevelMultiplierServer(finalWeaponId, progress.Level)
-        local finalAttack = math.max(0, math.floor(basePlayerAtk * multiplier))
+        local levelMultiplier = self:ResolveLevelMultiplierServer(finalWeaponId, progress.Level)
+        if levelMultiplier == nil or levelMultiplier <= 0 then
+            levelMultiplier = 1.0
+        end
+
+        if self._T.IsWeaponConfigLoaded ~= true then
+            self:LoadWeaponConfigRowsServer()
+        end
+
+        local damageRatio = 1.0
+        if self._T.WeaponConfigById ~= nil then
+            local weaponConfig = self._T.WeaponConfigById[finalWeaponId]
+            if weaponConfig ~= nil and weaponConfig.DamageRatio ~= nil then
+                local parsedDamageRatio = tonumber(weaponConfig.DamageRatio)
+                if parsedDamageRatio ~= nil and parsedDamageRatio > 0 then
+                    damageRatio = parsedDamageRatio
+                end
+            end
+        end
+
+        local finalAttack = math.max(0, math.floor(basePlayerAtk * damageRatio * levelMultiplier))
+        if self.EnableDebugLogs == true then
+            log(
+                "[WeaponLevelUp] Apply weaponId=",
+                tostring(finalWeaponId),
+                ", baseAtk=",
+                tostring(basePlayerAtk),
+                ", dmgRatio=",
+                tostring(damageRatio),
+                ", level=",
+                tostring(progress.Level),
+                ", levelMul=",
+                tostring(levelMultiplier),
+                ", finalAttack=",
+                tostring(finalAttack)
+            )
+        end
 
         pcall(function()
             fire.BaseWeaponAttack = finalAttack
@@ -233,6 +269,7 @@ script WeaponLevelUpComponent extends Component
             config.StartLevel = math.max(1, self.DefaultStartLevel)
             config.MaxLevel = math.max(config.StartLevel, self.DefaultMaxLevel)
             config.RequiredExp = math.max(1, self.DefaultRequiredExp)
+            config.DamageRatio = 1.0
             self._T.WeaponConfigById[weaponId] = config
         end
 
@@ -327,6 +364,21 @@ script WeaponLevelUpComponent extends Component
             config.StartLevel = startLevel
             config.MaxLevel = maxLevel
             config.RequiredExp = requiredExp
+
+            local damageRatio = self:GetRowNumber(row, "dmg_raito", -1)
+            if damageRatio <= 0 then
+                if self.EnableDamageRatioAliasFallback == true then
+                    local aliasRatio = self:GetRowNumber(row, "dmg_ratio", -1)
+                    if aliasRatio > 0 then
+                        damageRatio = aliasRatio
+                    end
+                end
+            end
+            if damageRatio <= 0 then
+                damageRatio = 1.0
+            end
+            config.DamageRatio = damageRatio
+
             cache[id] = config
         end
 

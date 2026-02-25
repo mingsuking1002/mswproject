@@ -9,6 +9,8 @@ script ProjectileComponent extends Component
     property string ProjectileType = "single_projectile"
     property number SplashSize = 0
     property boolean ExplosionTriggered = false
+    property boolean EnableTriggerStayFallback = true
+    property boolean EnablePhysicsContactFallback = true
 
     property Vector2 MoveDirection = Vector2.right
     property Vector2 StartPosition = Vector2.zero
@@ -81,6 +83,8 @@ script ProjectileComponent extends Component
             transform.WorldPosition = Vector3(spawnPosition.x, spawnPosition.y, 0)
             transform.ZRotation = math.deg(math.atan(direction.y, direction.x))
         end
+
+        self:ConfigureProjectilePhysicsServer(spawnPosition, direction)
     end
 
     -- Spread is applied once at spawn to avoid per-frame drift.
@@ -98,6 +102,59 @@ script ProjectileComponent extends Component
         local x = direction.x * cosValue - direction.y * sinValue
         local y = direction.x * sinValue + direction.y * cosValue
         return Vector2(x, y):Normalize()
+    end
+
+    -- Runtime projectile physics is configured to dynamic+continuous so fast arrows do not tunnel through tiles.
+    @ExecSpace("ServerOnly")
+    method void ConfigureProjectilePhysicsServer(Vector2 spawnPosition, Vector2 direction)
+        local physicsCollider = self:ResolveComponentSafe(self.Entity, "PhysicsColliderComponent", "Enable")
+        if physicsCollider ~= nil then
+            pcall(function()
+                physicsCollider.Enable = true
+            end)
+            pcall(function()
+                physicsCollider.IsSensor = true
+            end)
+            pcall(function()
+                physicsCollider.EnableContactEvent = true
+            end)
+        end
+
+        local physicsBody = self:ResolveComponentSafe(self.Entity, "PhysicsRigidbodyComponent", "Enable")
+        if physicsBody == nil then
+            return
+        end
+
+        pcall(function()
+            physicsBody.Enable = true
+        end)
+        pcall(function()
+            physicsBody.BodyType = BodyType.Dynamic
+        end)
+        pcall(function()
+            physicsBody.CollisionDetectionMode = PhysicsCollisionDetectionMode.Continuous
+        end)
+        pcall(function()
+            physicsBody.SleepingMode = PhysicsSleepingMode.NeverSleep
+        end)
+        pcall(function()
+            physicsBody.GravityScale = 0
+        end)
+        pcall(function()
+            physicsBody.FixedRotation = true
+        end)
+        pcall(function()
+            physicsBody:SetServerAsPhysicsOwner()
+        end)
+        pcall(function()
+            physicsBody:SetPosition(spawnPosition)
+        end)
+        pcall(function()
+            physicsBody:SetLinearVelocity(direction * self.Speed)
+        end)
+        pcall(function()
+            physicsBody:Wake()
+        end)
     end
 
     -- Movement, range, and lifetime are server-updated for deterministic hit outcomes.
@@ -122,12 +179,36 @@ script ProjectileComponent extends Component
 
         local moveDelta = self.MoveDirection * self.Speed * delta
 
-        local rigidbody = self.Entity.RigidbodyComponent
-        if rigidbody ~= nil and isvalid(rigidbody) == true then
-            rigidbody.MoveVelocity = self.MoveDirection * self.Speed
-        else
-            local transform = self.Entity.TransformComponent
-            if transform ~= nil and isvalid(transform) == true then
+        local transform = self.Entity.TransformComponent
+        if transform ~= nil and isvalid(transform) == true then
+            local currentPos = transform.WorldPosition
+            if currentPos ~= nil then
+                local nextPosition = Vector2(currentPos.x + moveDelta.x, currentPos.y + moveDelta.y)
+
+                local physicsBody = self:ResolveComponentSafe(self.Entity, "PhysicsRigidbodyComponent", "Enable")
+                if physicsBody ~= nil then
+                    -- PhysicsRigidbody path preserves contact events for tile/collider impact handling.
+                    local movedByPhysicsOk, _ = pcall(function()
+                        physicsBody:SetLinearVelocity(self.MoveDirection * self.Speed)
+                    end)
+                    if movedByPhysicsOk ~= true then
+                        local rigidbody = self.Entity.RigidbodyComponent
+                        if rigidbody ~= nil and isvalid(rigidbody) == true then
+                            rigidbody:SetWorldPosition(nextPosition)
+                        else
+                            transform:Translate(moveDelta.x, moveDelta.y)
+                        end
+                    end
+                else
+                    local rigidbody = self.Entity.RigidbodyComponent
+                    if rigidbody ~= nil and isvalid(rigidbody) == true then
+                        -- Rigidbody-only fallback keeps compatibility with model variants that do not use physics rigidbody.
+                        rigidbody:SetWorldPosition(nextPosition)
+                    else
+                        transform:Translate(moveDelta.x, moveDelta.y)
+                    end
+                end
+            else
                 transform:Translate(moveDelta.x, moveDelta.y)
             end
         end
@@ -149,16 +230,52 @@ script ProjectileComponent extends Component
     @ExecSpace("ServerOnly")
     @EventSender("Self")
     handler HandleTriggerEnterEvent(TriggerEnterEvent event)
-        if self._T.IsDestroyed == true then
+        local hitEntity = event.TriggerBodyEntity
+        self:ProcessImpactEntityServer(hitEntity)
+    end
+
+    -- Stay-event fallback catches overlaps that can miss enter timing on fast projectile/tick combinations.
+    @ExecSpace("ServerOnly")
+    @EventSender("Self")
+    handler HandleTriggerStayEvent(TriggerStayEvent event)
+        if self.EnableTriggerStayFallback ~= true then
             return
         end
 
         local hitEntity = event.TriggerBodyEntity
-        if hitEntity == nil or isvalid(hitEntity) == false then
+        self:ProcessImpactEntityServer(hitEntity)
+    end
+
+    -- Physics-contact fallback covers tile/physics-collider impacts when trigger-only overlap is not produced.
+    @ExecSpace("ServerOnly")
+    @EventSender("Self")
+    handler HandlePhysicsContactBeginEvent(PhysicsContactBeginEvent event)
+        if self.EnablePhysicsContactFallback ~= true then
             return
         end
 
-        if self.OwnerEntity ~= nil and hitEntity == self.OwnerEntity then
+        local hitEntity = event.ContactedBodyEntity
+        if hitEntity == nil or isvalid(hitEntity) == false then
+            if self:IsAreaProjectile() == true then
+                self:ExplodeServer()
+            else
+                self:DestroySelf()
+            end
+            return
+        end
+        self:ProcessImpactEntityServer(hitEntity)
+    end
+
+    -- Central impact resolver keeps trigger/physics event behavior identical and idempotent.
+    @ExecSpace("ServerOnly")
+    method void ProcessImpactEntityServer(Entity hitEntity)
+        if self._T.IsDestroyed == true then
+            return
+        end
+        if hitEntity == nil or isvalid(hitEntity) == false then
+            return
+        end
+        if self.OwnerEntity ~= nil and self:IsSameOrChildOfEntity(hitEntity, self.OwnerEntity) == true then
             return
         end
 
@@ -167,10 +284,14 @@ script ProjectileComponent extends Component
             return
         end
 
-        local hpSystem = self:ResolveComponentSafe(hitEntity, "HPSystemComponent", "CurrentHP")
+        local damageTarget = self:ResolveMonsterDamageTargetEntity(hitEntity)
+        local hpSystem = nil
+        if damageTarget ~= nil then
+            hpSystem = self:ResolveComponentSafe(damageTarget, "HPSystemComponent", "CurrentHP")
+        end
         if hpSystem ~= nil then
             -- Projectile target is restricted to monster entities so player-vs-player self-hit is blocked.
-            if self:IsMonsterEntity(hitEntity) ~= true then
+            if self:IsMonsterEntity(damageTarget) ~= true then
                 return
             end
 
@@ -275,7 +396,7 @@ script ProjectileComponent extends Component
         if candidate == nil or isvalid(candidate) == false then
             return false
         end
-        if self.OwnerEntity ~= nil and candidate == self.OwnerEntity then
+        if self.OwnerEntity ~= nil and self:IsSameOrChildOfEntity(candidate, self.OwnerEntity) == true then
             return false
         end
         if self:IsMonsterEntity(candidate) ~= true then
@@ -301,9 +422,71 @@ script ProjectileComponent extends Component
         return true
     end
 
+    -- Parent-chain check prevents immediate self-hit when projectile overlaps owner child colliders.
+    method boolean IsSameOrChildOfEntity(Entity targetEntity, Entity rootEntity)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return false
+        end
+        if rootEntity == nil or isvalid(rootEntity) == false then
+            return false
+        end
+
+        local cursor = targetEntity
+        local depth = 0
+        while cursor ~= nil and isvalid(cursor) == true and depth <= 8 do
+            if cursor == rootEntity then
+                return true
+            end
+
+            local parentOk, parentValue = pcall(function()
+                return cursor.Parent
+            end)
+            if parentOk ~= true or parentValue == nil or parentValue == cursor then
+                break
+            end
+            cursor = parentValue
+            depth += 1
+        end
+
+        return false
+    end
+
+    -- Damage target resolver walks parent chain so child-collider hits still damage the owning monster entity.
+    method Entity ResolveMonsterDamageTargetEntity(Entity hitEntity)
+        if hitEntity == nil or isvalid(hitEntity) == false then
+            return nil
+        end
+
+        local cursor = hitEntity
+        local depth = 0
+        while cursor ~= nil and isvalid(cursor) == true and depth <= 8 do
+            if self:IsMonsterEntity(cursor) == true then
+                local hpSystem = self:ResolveComponentSafe(cursor, "HPSystemComponent", "CurrentHP")
+                if hpSystem ~= nil then
+                    return cursor
+                end
+            end
+
+            local parentOk, parentValue = pcall(function()
+                return cursor.Parent
+            end)
+            if parentOk ~= true or parentValue == nil or parentValue == cursor then
+                break
+            end
+            cursor = parentValue
+            depth += 1
+        end
+
+        return nil
+    end
+
     -- Monster filter prioritizes explicit HPSystem flag and falls back to component signature checks.
     method boolean IsMonsterEntity(Entity target)
         if target == nil or isvalid(target) == false then
+            return false
+        end
+
+        if target.PlayerComponent ~= nil then
             return false
         end
 
@@ -315,14 +498,27 @@ script ProjectileComponent extends Component
             if isMonsterOk == true and isMonsterValue == true then
                 return true
             end
-        end
 
-        if target.PlayerComponent ~= nil then
-            return false
+            -- Fallback policy: non-player HP entities are treated as hostile targets unless explicitly proven otherwise.
+            local monsterDataIdOk, monsterDataIdValue = pcall(function()
+                return hpSystem.MonsterDataId
+            end)
+            if monsterDataIdOk == true and monsterDataIdValue ~= nil and tostring(monsterDataIdValue) ~= "" then
+                return true
+            end
         end
 
         local chaseComponent = self:ResolveComponentSafe(target, "MonsterChaseComponent", "ThinkInterval")
         if chaseComponent ~= nil then
+            return true
+        end
+
+        local attackComponent = self:ResolveComponentSafe(target, "MonsterAttackComponent", "AttackPower")
+        if attackComponent ~= nil then
+            return true
+        end
+
+        if hpSystem ~= nil then
             return true
         end
 

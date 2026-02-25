@@ -21,8 +21,7 @@
         "MOD.Core.SpriteRendererComponent",
         "MOD.Core.TransformComponent",
         "script.ProjectileComponent",
-        "MOD.Core.TriggerComponent",
-        "MOD.Core.RigidbodyComponent"
+        "MOD.Core.TriggerComponent"
       ],
       "Properties": [],
       "Values": [
@@ -174,7 +173,7 @@
           },
           "Value": true
         },
-                        {
+        {
           "TargetType": "script.ProjectileComponent",
           "Name": "ProjectileDataId",
           "ValueType": {
