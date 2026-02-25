@@ -6,9 +6,13 @@ script WeaponModelComponent extends Component
 
     property Entity WeaponHolderEntityRef = nil
     property string WeaponHolderName = "WeaponHolder"
+    property string WeaponHolderEntityPath = ""
     property string WeaponDataTableName = "WeaponData"
     property number FlipThreshold = 0
     property number MuzzleDistance = 0.6
+    property boolean FollowDetachedWeaponHolder = true
+    property Vector2 DetachedWeaponHolderOffset = Vector2.zero
+    property number DetachedHolderFollowInterval = 0.05
 
     -- Server initializes utility and data cache for weapon-id lookup.
     @ExecSpace("ServerOnly")
@@ -16,6 +20,8 @@ script WeaponModelComponent extends Component
         self:EnsureGRUtil()
         self._T.WeaponRowById = {}
         self._T.WeaponRowsLoaded = false
+        self._T.ServerHolderFollowTimerId = 0
+        self:StartDetachedHolderFollowServerTimer()
     end
 
     -- Client resolves holder after begin play so aim/facing can start immediately.
@@ -31,6 +37,48 @@ script WeaponModelComponent extends Component
         self:ResolveWeaponHolderEntity(true)
     end
 
+    -- EndPlay clears server follow timer so detached holder sync never runs on stale entity.
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        self:StopDetachedHolderFollowServerTimer()
+    end
+
+    -- Destroy repeats timer cleanup as final safety net.
+    @ExecSpace("ServerOnly")
+    method void OnDestroy()
+        self:StopDetachedHolderFollowServerTimer()
+    end
+
+    -- Detached holder position is synced on server so muzzle query stays authoritative for fire origin.
+    @ExecSpace("ServerOnly")
+    method void StartDetachedHolderFollowServerTimer()
+        if self._T.ServerHolderFollowTimerId ~= nil and self._T.ServerHolderFollowTimerId > 0 then
+            return
+        end
+
+        local interval = self.DetachedHolderFollowInterval
+        if interval <= 0 then
+            interval = 0.05
+        end
+        if interval < 0.02 then
+            interval = 0.02
+        end
+
+        local tick = function()
+            local holder = self:ResolveWeaponHolderEntity(false)
+            self:SyncDetachedHolderPositionCommon(holder)
+        end
+        self._T.ServerHolderFollowTimerId = _TimerService:SetTimerRepeat(tick, interval, 0)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void StopDetachedHolderFollowServerTimer()
+        if self._T.ServerHolderFollowTimerId ~= nil and self._T.ServerHolderFollowTimerId > 0 then
+            _TimerService:ClearTimer(self._T.ServerHolderFollowTimerId)
+            self._T.ServerHolderFollowTimerId = 0
+        end
+    end
+
     -- Client-side holder rotation and player flip keeps input responsiveness and avoids server load.
     @ExecSpace("ClientOnly")
     method void OnUpdate(number delta)
@@ -38,6 +86,8 @@ script WeaponModelComponent extends Component
         if holder == nil or isvalid(holder) == false then
             return
         end
+
+        self:SyncDetachedHolderPositionCommon(holder)
 
         local cursorScreen = nil
         local cursorOk, cursorValue = pcall(function()
@@ -256,21 +306,76 @@ script WeaponModelComponent extends Component
         end)
     end
 
-    method Entity ResolveWeaponHolderEntity(boolean forceRefresh)
-        if forceRefresh ~= true then
-            if self.WeaponHolderEntityRef ~= nil and isvalid(self.WeaponHolderEntityRef) == true then
-                return self.WeaponHolderEntityRef
-            end
+    -- Detached holder (not child under player) follows player root every tick with configurable offset.
+    method void SyncDetachedHolderPositionCommon(Entity holder)
+        if self.FollowDetachedWeaponHolder ~= true then
+            return
+        end
+        if holder == nil or isvalid(holder) == false then
+            return
+        end
+        if self:IsDetachedHolderEntity(holder) ~= true then
+            return
+        end
+        if self.Entity == nil or isvalid(self.Entity) == false then
+            return
         end
 
-        local holder = nil
-        if self.Entity ~= nil and isvalid(self.Entity) == true then
-            local findOk, findResult = pcall(function()
-                return self.Entity:GetChildByName(self.WeaponHolderName, true)
-            end)
-            if findOk == true then
-                holder = findResult
-            end
+        local ownerTransform = self.Entity.TransformComponent
+        if ownerTransform == nil or isvalid(ownerTransform) == false then
+            return
+        end
+        local holderTransform = holder.TransformComponent
+        if holderTransform == nil or isvalid(holderTransform) == false then
+            return
+        end
+
+        local ownerPos = ownerTransform.WorldPosition
+        if ownerPos == nil then
+            return
+        end
+
+        local holderPos = holderTransform.WorldPosition
+        local targetZ = ownerPos.z
+        if holderPos ~= nil then
+            targetZ = holderPos.z
+        end
+
+        local offset = self.DetachedWeaponHolderOffset
+        local offsetX = 0
+        local offsetY = 0
+        if offset ~= nil then
+            offsetX = offset.x
+            offsetY = offset.y
+        end
+
+        pcall(function()
+            holderTransform.WorldPosition = Vector3(ownerPos.x + offsetX, ownerPos.y + offsetY, targetZ)
+        end)
+    end
+
+    -- True when current holder is external reference/path binding rather than player-child holder branch.
+    method boolean IsDetachedHolderEntity(Entity holder)
+        if holder == nil or isvalid(holder) == false then
+            return false
+        end
+
+        local childHolder = self:ResolveWeaponHolderByChildName()
+        if childHolder ~= nil and isvalid(childHolder) == true and childHolder == holder then
+            return false
+        end
+
+        return true
+    end
+
+    method Entity ResolveWeaponHolderEntity(boolean forceRefresh)
+        if self.WeaponHolderEntityRef ~= nil and isvalid(self.WeaponHolderEntityRef) == true then
+            return self.WeaponHolderEntityRef
+        end
+
+        local holder = self:ResolveWeaponHolderByPath()
+        if holder == nil then
+            holder = self:ResolveWeaponHolderByChildName()
         end
 
         if holder ~= nil and isvalid(holder) == true then
@@ -278,8 +383,63 @@ script WeaponModelComponent extends Component
             return holder
         end
 
+        if forceRefresh ~= true then
+            return nil
+        end
+
+        holder = self:ResolveWeaponHolderByChildName()
+        if holder ~= nil and isvalid(holder) == true then
+            self.WeaponHolderEntityRef = holder
+            return holder
+        end
+
         self.WeaponHolderEntityRef = nil
         return nil
+    end
+
+    method Entity ResolveWeaponHolderByPath()
+        if self.WeaponHolderEntityPath == nil or self.WeaponHolderEntityPath == "" then
+            return nil
+        end
+
+        local resolved = nil
+        local resolveOk, resolveResult = pcall(function()
+            return _EntityService:GetEntityByPath(self.WeaponHolderEntityPath)
+        end)
+        if resolveOk == true then
+            resolved = resolveResult
+        end
+
+        if resolved == nil or isvalid(resolved) == false then
+            return nil
+        end
+
+        return resolved
+    end
+
+    method Entity ResolveWeaponHolderByChildName()
+        if self.Entity == nil or isvalid(self.Entity) == false then
+            return nil
+        end
+
+        local holderName = self.WeaponHolderName
+        if holderName == nil or holderName == "" then
+            holderName = "WeaponHolder"
+        end
+
+        local holder = nil
+        local findOk, findResult = pcall(function()
+            return self.Entity:GetChildByName(holderName, true)
+        end)
+        if findOk == true then
+            holder = findResult
+        end
+
+        if holder == nil or isvalid(holder) == false then
+            return nil
+        end
+
+        return holder
     end
 
     @ExecSpace("ServerOnly")

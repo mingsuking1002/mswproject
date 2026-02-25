@@ -17,9 +17,21 @@
       "Name": "turreta",
       "BaseModelId": null,
       "Id": "ba1b6467-fed8-436a-b133-669262102fa2",
-      "Components": [],
+      "Components": [
+        "MOD.Core.SpriteRendererComponent"
+      ],
       "Properties": [],
-      "Values": [],
+      "Values": [
+        {
+          "TargetType": "MOD.Core.SpriteRendererComponent",
+          "Name": "SpriteRUID",
+          "ValueType": {
+            "$type": "MODNativeType",
+            "type": "System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+          },
+          "Value": "fd575bdf663c4507af81e82515039e99"
+        }
+      ],
       "EventLinks": [],
       "Children": []
     }

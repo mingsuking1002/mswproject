@@ -255,12 +255,36 @@ script Map01BootstrapComponent extends Component
         end
 
         local holder = nil
-        local findOk, findResult = pcall(function()
-            return playerEntity:GetChildByName("WeaponHolder", true)
-        end)
-        if findOk == true then
-            holder = findResult
+        local weaponModel = self:ResolveComponentSafe(playerEntity, "WeaponModelComponent", "CurrentWeaponId")
+        if weaponModel ~= nil then
+            if weaponModel.ResolveWeaponHolderEntity ~= nil then
+                local resolveOk, resolveResult = pcall(function()
+                    return weaponModel:ResolveWeaponHolderEntity(true)
+                end)
+                if resolveOk == true then
+                    holder = resolveResult
+                end
+            end
+
+            if (holder == nil or isvalid(holder) == false) and weaponModel.WeaponHolderEntityRef ~= nil then
+                local refOk, refResult = pcall(function()
+                    return weaponModel.WeaponHolderEntityRef
+                end)
+                if refOk == true then
+                    holder = refResult
+                end
+            end
         end
+
+        if holder == nil or isvalid(holder) == false then
+            local findOk, findResult = pcall(function()
+                return playerEntity:GetChildByName("WeaponHolder", true)
+            end)
+            if findOk == true then
+                holder = findResult
+            end
+        end
+
         if holder == nil or isvalid(holder) == false then
             return
         end

@@ -1258,3 +1258,40 @@
 |---|---|
 | Native player auto-attach | Added PlayerComponent, PlayerControllerComponent, StateComponent, SpriteRendererComponent, AvatarStateAnimationComponent, TriggerComponent, PhysicsColliderComponent to required attach list. |
 | Runtime stability | Prevents missing-base-component cases on custom player models (input/state animation not updating). |
+
+## 2026-02-25 WeaponHolder Binding Hotfix
+
+### WeaponModelComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.codeblock
+- **Updated:** 2026-02-25
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Direct holder binding | Added WeaponHolderEntityPath and path-first resolution. |
+| Fallback chain | Holder resolve order: WeaponHolderEntityRef -> WeaponHolderEntityPath -> child name(WeaponHolder). |
+
+### Map01BootstrapComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.codeblock
+- **Updated:** 2026-02-25
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Collision-disable target resolve | EnforceWeaponHolderNoCollisionServer now resolves holder via WeaponModelComponent reference/path first, then child-name fallback. |
+
+## 2026-02-25 WeaponHolder Follow Sync Hotfix
+
+### WeaponModelComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.codeblock
+- **Updated:** 2026-02-25
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Detached holder follow | Added server/client position sync for non-child WeaponHolder. |
+| New properties | FollowDetachedWeaponHolder, DetachedWeaponHolderOffset, DetachedHolderFollowInterval. |
+| Resolve order | WeaponHolderEntityRef -> WeaponHolderEntityPath -> child-name fallback. |
