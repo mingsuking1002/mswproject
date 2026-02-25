@@ -49,7 +49,8 @@ script WeaponModelComponent extends Component
     property boolean KeepWeaponHolderUnflippedFromOwner = true
     property boolean FlipWeaponSpriteByCursor = true
     property boolean WeaponFlipWhenCursorRight = true
-    property boolean CorrectWeaponSpriteYFlipOnLeft = true
+    property boolean CorrectWeaponSpriteYFlipOnLeft = false
+    property boolean CompensateLeftMirrorRotationWithoutHolderNegScale = true
 
     -- Server initializes utility and data cache for weapon-id lookup.
     @ExecSpace("ServerOnly")
@@ -677,6 +678,22 @@ script WeaponModelComponent extends Component
             end
         end
 
+        local shouldCompensateLeftMirror = false
+        if self.CompensateLeftMirrorRotationWithoutHolderNegScale == true and ownerFacingSign < 0 then
+            -- Parent mirror compensation is needed only when holder is a child under owner.
+            -- Detached holder path is already in world-space and must not be re-compensated.
+            shouldCompensateLeftMirror = (self:IsDetachedHolderEntity(holder) ~= true)
+        end
+        if shouldCompensateLeftMirror == true then
+            angle = 180 - angle
+            if angle > 180 then
+                angle -= 360
+            end
+            if angle < -180 then
+                angle += 360
+            end
+        end
+
         local rotationOffset = self._T.CurrentWeaponRotationOffset
         if rotationOffset == nil then
             rotationOffset = self.DefaultWeaponRotationOffset
@@ -730,8 +747,17 @@ script WeaponModelComponent extends Component
         if holderScale ~= nil then
             currentZ = holderScale.z
         end
-        -- Keep holder local scale positive so owner left-facing does not force holder local X to -1.
-        local targetScale = Vector3(baseScaleX, baseScaleY, currentZ)
+        local ownerSignX = 1
+        local ownerTransform = self.Entity.TransformComponent
+        if ownerTransform ~= nil and isvalid(ownerTransform) == true then
+            local ownerScale = ownerTransform.Scale
+            if ownerScale ~= nil and ownerScale.x < 0 then
+                ownerSignX = -1
+            end
+        end
+
+        -- Requested behavior: mirror holder locally when owner faces left.
+        local targetScale = Vector3(baseScaleX * ownerSignX, baseScaleY, currentZ)
         pcall(function()
             holderTransform.Scale = targetScale
         end)
@@ -769,15 +795,9 @@ script WeaponModelComponent extends Component
             flipX = not cursorRight
         end
 
+        -- 2nd pass: disable automatic left-side FlipY compensation.
+        -- It can invert visual up/down while muzzle logic remains correct.
         local flipY = false
-        if self.CorrectWeaponSpriteYFlipOnLeft == true then
-            local ownerScale = ownerTransform.Scale
-            if ownerScale ~= nil and ownerScale.x < 0 then
-                -- Left-facing owner can visually invert up/down on weapon sprite only.
-                -- This compensates renderer orientation without touching muzzle/ballistic logic.
-                flipY = true
-            end
-        end
 
         local spriteRenderer = self:ResolveComponentSafe(holder, "SpriteRendererComponent", "FlipX")
         if spriteRenderer == nil then

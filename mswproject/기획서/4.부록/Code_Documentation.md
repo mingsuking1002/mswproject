@@ -1462,3 +1462,30 @@
 | Muzzle integration | `muzzle_forward_offset`, `muzzle_side_offset` 컬럼으로 기존 `muzzle_distance`, `muzzle_offset_x/y` 경로를 통합 처리. |
 | Base offset policy | 통합 모드에서는 `muzzle_base_offset_x/y`를 테이블에서 읽지 않고 기본값(프로퍼티)만 사용. |
 | Legacy compatibility | 필요 시 `UseUnifiedWeaponTransformColumns=false`로 기존 분리 컬럼 읽기 경로 사용 가능. |
+
+## 2026-02-25 Left-Side Aim Inversion Reinforcement
+
+### WeaponModelComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.codeblock
+- **Updated:** 2026-02-25
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| FlipY policy | `CorrectWeaponSpriteYFlipOnLeft` default changed to `false` and automatic left-side `FlipY` compensation disabled. |
+| Mirror rotation compensation | Added `CompensateLeftMirrorRotationWithoutHolderNegScale=true`; applies `angle = 180 - angle` normalization only when holder is owner-child (not detached holder). |
+| Goal | Keep weapon visual up/down direction consistent on left-side aiming while preserving muzzle/fire logic path. |
+
+## 2026-02-25 WeaponHolder Left Mirror Restore
+
+### WeaponModelComponent (Updated)
+- **File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.mlua
+- **Sync File:** RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.codeblock
+- **Updated:** 2026-02-25
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Holder local scale sign | `ApplyHolderCounterFlipScaleClient()` now applies `scale.x = -abs(x)` when owner faces left (`owner scale.x < 0`). |
+| Intent | Restores requested left-facing local mirror behavior for WeaponHolder. |
