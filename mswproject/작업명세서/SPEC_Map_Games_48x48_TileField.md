@@ -136,3 +136,176 @@
 
 ### Static Checks
 - [x] `map/games.map` JSON parse success after temporary disable.
+
+## 9. 2026-02-26 Update: Safe TileMap Visual Re-Enable (No Kinematicbody)
+
+### Status History
+- `2026-02-26` `🔵 진행중` MCP 가이드 기준 타일맵 가림/충돌 이슈 안전 복구
+- `2026-02-26` `🟢 완료` 바닥 전용 렌더 설정으로 타일맵 재활성화
+
+### Applied
+- `script.GamesRectTileMapBuilderComponent`
+  - `Enable = false` 유지
+  - `RebuildOnBeginPlay = false` 유지
+- `/maps/games/MapleMapLayer/GRBaseRectTileMap`
+  - entity `enable = true`, `visible = true`
+  - `MOD.Core.RectTileMapComponent.Enable = true`
+  - `IgnoreMapLayerCheck = false`
+  - `OrderInLayer = -1000`
+  - `PhysicsInteractable = false` 유지
+- `games_base.tileset`
+  - 타일 이미지는 `datas[0].Id`에 이미지 RUID 입력 방식 유지 (`c2e42c0bf3754e73979553c8d0f32ac1`)
+
+### Static Checks
+- [x] `map/games.map` JSON parse success after safe visual re-enable.
+- [x] `RootDesk/MyDesk/games_base.tileset` image RUID entry 확인.
+
+## 10. 2026-02-26 Update: TileMap Occlusion Emergency Fix (MapLayer Sort)
+
+### Status History
+- `2026-02-26` `🔵 진행중` 타일맵이 플레이어/오브젝트를 가리는 레이어 우선순위 긴급 조정
+- `2026-02-26` `🟢 완료` MapLayer 정렬 우선순위 하향 적용
+
+### Applied
+- `/maps/games/MapleMapLayer` `MOD.Core.MapLayerComponent.LayerSortOrder` 값을 `0 -> -100`으로 변경.
+- 기존 안전 설정 유지:
+  - `GRBaseRectTileMap.RectTileMapComponent.OrderInLayer = -1000`
+  - `PhysicsInteractable = false`
+  - `IgnoreMapLayerCheck = false`
+
+### Static Checks
+- [x] `map/games.map` JSON parse success after layer sort fix.
+
+## 11. 2026-02-26 Update: Alternative 1 적용 (타일맵 완전 비사용 + 단일 배경 스프라이트)
+
+### Status History
+- `2026-02-26` `🔵 진행중` TileMap 기능 비사용 전환 및 단일 배경 스프라이트 연출 전환
+- `2026-02-26` `🟢 완료` `c2e42c0bf3754e73979553c8d0f32ac1` 배경 스프라이트 적용 완료
+
+### Applied
+- TileMap 완전 비사용 처리:
+  - `script.GamesRectTileMapBuilderComponent.Enable = false` 유지
+  - `script.GamesRectTileMapBuilderComponent.RebuildOnBeginPlay = false` 유지
+  - `/maps/games/MapleMapLayer/GRBaseRectTileMap` entity `enable=false`, `visible=false`
+  - `GRBaseRectTileMap.MOD.Core.RectTileMapComponent.Enable = false`
+- Alternative 1 배경 스프라이트 추가:
+  - 신규 엔티티: `/maps/games/MapleMapLayer/GRWorldBackdrop`
+  - `MOD.Core.SpriteRendererComponent.SpriteRUID = c2e42c0bf3754e73979553c8d0f32ac1`
+  - `MOD.Core.TransformComponent.Scale = (2034, 2034, 1)`
+  - `OrderInLayer = -2000` (모든 게임플레이 오브젝트 뒤)
+
+### Static Checks
+- [x] `map/games.map` JSON parse success after Alternative 1 migration.
+- [x] `GRWorldBackdrop` 엔티티 및 `SpriteRUID` 반영 확인.
+
+## 12. 2026-02-26 Update: Player World-Bounds Clamp (Prevent Leaving Backdrop)
+
+### Status History
+- `2026-02-26` `🟡 대기중` prevent player leaving backdrop bounds request received
+- `2026-02-26` `🔵 진행중` add server-authoritative movement clamp + bootstrap injection + map override
+- `2026-02-26` `🟢 완료` `.mlua/.codeblock` sync and map override update completed
+
+### Applied
+- `MovementComponent`
+  - Added world clamp properties:
+    - `UseWorldBoundsClamp`
+    - `WorldBoundsMinX/MaxX`
+    - `WorldBoundsMinY/MaxY`
+    - `WorldBoundsPadding`
+  - Added `ApplyWorldBoundsClampServer(transform)` and invoked after both transform-move and rigidbody velocity paths.
+- `Map01BootstrapComponent`
+  - Added backdrop clamp config properties:
+    - `ClampPlayerWithinBackdropBounds`
+    - `BackdropCenterX/Y`
+    - `BackdropSizeX/Y`
+    - `BackdropBoundPadding`
+  - In `ConfigurePlayer()`, injects calculated min/max bounds into `MovementComponent`.
+- `map/games.map`
+  - Added explicit `script.Map01BootstrapComponent` overrides:
+    - `ForcePlayerTransformMovement = true`
+    - `ClampPlayerWithinBackdropBounds = true`
+    - `BackdropCenterX = 0`
+    - `BackdropCenterY = 0`
+    - `BackdropSizeX/Y` initial `2034` (later corrected to `20.34` in section 13)
+    - `BackdropBoundPadding` initial `24` (later corrected to `0.25` in section 13)
+
+### Static Checks
+- [x] `MovementComponent.codeblock` `Target` exactly matches `MovementComponent.mlua`.
+- [x] `Map01BootstrapComponent.codeblock` `Target` exactly matches `Map01BootstrapComponent.mlua`.
+- [x] `map/games.map` JSON parse success after clamp override update.
+
+## 13. 2026-02-26 Update: Backdrop Scale 4.8 정합 + Clamp 주입 안정화
+
+### Status History
+- `2026-02-26` `🟡 대기중` backdrop scale 축소(4.8) 이후 clamp 미동작 재현 접수
+- `2026-02-26` `🔵 진행중` map override 단위 정합 및 런타임 주입 누락 fallback 보강
+- `2026-02-26` `🟢 완료` `20.34/0.25` 재설정 + `MovementComponent` bootstrap fallback 적용
+
+### Applied
+- `map/games.map` `LobbyBootstrap.script.Map01BootstrapComponent` 오버라이드 값 보정:
+  - `BackdropSizeX: 20.34`
+  - `BackdropSizeY: 20.34`
+  - `BackdropBoundPadding: 0.25`
+- `MovementComponent` 서버 fallback 주입 추가:
+  - `EnsureWorldBoundsBootstrapServer()`
+  - `TryApplyWorldBoundsFromBootstrapServer()`
+  - 호출 지점: `OnInitialize`, `OnUpdate`
+- 의도:
+  - `ConfigurePlayer()` 타이밍 누락 시에도 `/maps/games/LobbyBootstrap`에서 clamp 설정을 재시도 주입해 경계 미적용 상태를 방지.
+
+### Static Checks
+- [x] `map/games.map` JSON parse success after override correction (`20.34`, `0.25`).
+- [x] `MovementComponent.codeblock` JSON parse success.
+- [x] `MovementComponent.codeblock` `Target` exactly matches `MovementComponent.mlua`.
+- [x] `Map01BootstrapComponent.codeblock` `Target` exactly matches `Map01BootstrapComponent.mlua`.
+
+## 14. 2026-02-26 Update: GRWorldBackdrop 인식 기반 플레이어/몬스터 이동·스폰 경계 통합
+
+### Status History
+- `2026-02-26` `🟡 대기중` 플레이어/몬스터가 `GRWorldBackdrop` 기준으로만 이동/스폰되도록 전환 요청
+- `2026-02-26` `🔵 진행중` backdrop entity 실측(bounds) 계산 + 플레이어/몬스터 경계 주입 경로 통합
+- `2026-02-26` `🟢 완료` `.mlua/.codeblock` 동기화 및 정적 검증 완료
+
+### Applied
+- `Map01BootstrapComponent`
+  - `GRWorldBackdrop` 기준 자동 bounds 동기화 추가:
+    - `UseBackdropEntityAutoBounds`
+    - `BackdropEntityPath`
+    - `BackdropBoundsRefreshInterval`
+    - `RefreshBackdropBoundsFromEntityServer()`
+    - `TryResolveBackdropBoundsFromEntityServer()`
+    - `ResolveBackdropSizeFromSpriteServer()` (`Sprite.Width/Height/PixelPerUnit + Transform.Scale` 기반)
+  - 플레이어 스폰 fallback 추가:
+    - `SpawnAtBackdropCenterOnConfigure`
+    - `ApplyBackdropCenterSpawnServer()`
+  - `ConfigurePlayer()`에서 경계 갱신 후 clamp 주입, `MonsterSpawnComponent`에 bootstrap 경로 전달.
+  - `ConfigurePlayer()`에서 `MonsterSpawnComponent:RefreshBackdropBoundsCacheServer(true)` 즉시 호출로 초기 스폰 틱의 bounds 미해결 레이스를 완화.
+- `MonsterSpawnComponent`
+  - backdrop 경계 캐시/조회 추가:
+    - `RestrictMonstersToBackdrop`
+    - `BackdropBootstrapPath`
+    - `BackdropBoundsRefreshInterval`
+    - `RefreshBackdropBoundsCacheServer()`
+    - `ResolveBackdropBoundsFromBootstrapServer()`
+    - `IsInsideBackdropBoundsServer()`
+  - 스폰 제한:
+    - `IsValidSpawnPosition()`에 backdrop 내부 조건 추가.
+    - `ResolveBossSpawnPositionServer()`로 보스 스폰도 backdrop 중심으로 제한.
+  - 이동 제한:
+    - `ApplyMonsterBackdropClampToMovementServer()` 추가.
+    - `ApplyMonsterStatsIfAvailable()`에서 spawned/placed 몬스터 `MovementComponent`에 동일 world clamp 적용.
+  - bounds 일관성:
+    - `ResolveBackdropBoundsFromBootstrapServer()` 내부에서 `Map01BootstrapComponent:RefreshBackdropBoundsFromEntityServer(false)` 선호 호출 후 center/size를 읽어 stale bounds를 완화.
+- `map/games.map`
+  - `LobbyBootstrap.script.Map01BootstrapComponent`에 아래 오버라이드 명시 반영:
+    - `UseBackdropEntityAutoBounds = true`
+    - `BackdropEntityPath = "/maps/games/MapleMapLayer/GRWorldBackdrop"`
+    - `BackdropBoundsRefreshInterval = 1.0`
+    - `SpawnAtBackdropCenterOnConfigure = true`
+
+### Static Checks
+- [x] `Map01BootstrapComponent.codeblock` JSON parse success.
+- [x] `Map01BootstrapComponent.codeblock` `Target` exactly matches `.mlua`.
+- [x] `MonsterSpawnComponent.codeblock` JSON parse success.
+- [x] `MonsterSpawnComponent.codeblock` `Target` exactly matches `.mlua`.
+- [x] `map/games.map` JSON parse success.

@@ -1,507 +1,516 @@
 {
-    "Id":  "",
-    "GameId":  "",
-    "EntryKey":  "map://games",
-    "ContentType":  "x-mod/map",
-    "Content":  "",
-    "Usage":  0,
-    "UsePublish":  1,
-    "UseService":  0,
-    "CoreVersion":  "26.1.0.0",
-    "StudioVersion":  "0.1.0.0",
-    "DynamicLoading":  0,
-    "ContentProto":  {
-                         "Use":  "Binary",
-                         "Entities":  [
-                                          {
-                                              "id":  "9f3f13f2-6248-4f6e-b0f5-cff32e9622b7",
-                                              "path":  "/maps/games",
-                                              "componentNames":  "MOD.Core.MapComponent,MOD.Core.FootholdComponent,MOD.Core.PhysicsSimulatorComponent,script.GamesRectTileMapBuilderComponent",
-                                              "jsonString":  {
-                                                                 "name":  "games",
-                                                                 "path":  "/maps/games",
-                                                                 "nameEditable":  true,
-                                                                 "enable":  true,
-                                                                 "visible":  true,
-                                                                 "localize":  false,
-                                                                 "displayOrder":  0,
-                                                                 "pathConstraints":  "//",
-                                                                 "revision":  1,
-                                                                 "modelId":  null,
-                                                                 "@components":  [
-                                                                                     {
-                                                                                         "@type":  "MOD.Core.MapComponent",
-                                                                                         "IsInstanceMap":  false,
-                                                                                         "TileMapMode":  1,
-                                                                                         "Enable":  true
-                                                                                     },
-                                                                                     {
-                                                                                         "@type":  "MOD.Core.FootholdComponent",
-                                                                                         "FootholdsByLayer":  {
-
-                                                                                                              },
-                                                                                         "Enable":  true
-                                                                                     },
-                                                                                     {
-                                                                                         "@type":  "MOD.Core.PhysicsSimulatorComponent",
-                                                                                         "Gravity":  {
-                                                                                                         "x":  0.0,
-                                                                                                         "y":  0.0
-                                                                                                     },
-                                                                                         "NativePositionIteration":  3,
-                                                                                         "NativeVelocityIteration":  8,
-                                                                                         "Paused":  false,
-                                                                                         "PositionIteration":  3,
-                                                                                         "ServerSimulation":  false,
-                                                                                         "VelocityIteration":  8,
-                                                                                         "Enable":  true
-                                                                                     },
-                                                                                     {
-                                                                                        "@type":  "script.GamesRectTileMapBuilderComponent",
-                                                                                        "Enable":  false,
-                                                                                        "ClearBeforeFill":  false,
-                                                                                         "TileCountX":  48,
-                                                                                         "FillTileName":  "BaseTile",
-                                                                                        "RebuildOnBeginPlay":  false,
-                                                                                         "TileSetRuid":  "tileset://1a9d9bb4-4d5e-4f39-90d0-5c8ec2c3d26b",
-                                                                                         "TileOrderInLayer":  -100,
-                                                                                         "RectTileMapPath":  "/maps/games/MapleMapLayer/GRBaseRectTileMap",
-                                                                                         "SkipRebuildWhenAlreadyPrepared":  true,
-                                                                                         "TileSortingLayer":  "Default",
-                                                                                         "TileCountY":  48,
-                                                                                         "GridPixelSize":  48,
-                                                                                         "AlignTileFieldCenterToWorldOrigin":  true
-                                                                                     }
-                                                                                 ],
-                                                                 "@version":  1
-                                                             }
-                                          },
-                                          {
-                                              "id":  "45f17964-bf06-4de5-8de2-f533278c8369",
-                                              "path":  "/maps/games/Background",
-                                              "componentNames":  "MOD.Core.BackgroundComponent",
-                                              "jsonString":  {
-                                                                 "name":  "Background",
-                                                                 "path":  "/maps/games/Background",
-                                                                 "nameEditable":  false,
-                                                                 "enable":  true,
-                                                                 "visible":  true,
-                                                                 "localize":  false,
-                                                                 "displayOrder":  0,
-                                                                 "pathConstraints":  "///",
-                                                                 "revision":  1,
-                                                                 "modelId":  null,
-                                                                 "@components":  [
-                                                                                     {
-                                                                                         "@type":  "MOD.Core.BackgroundComponent",
-                                                                                         "SolidColor":  {
-                                                                                                            "r":  0.113725491,
-                                                                                                            "g":  0.156862751,
-                                                                                                            "b":  0.211764708,
-                                                                                                            "a":  1.0
-                                                                                                        },
-                                                                                         "TemplateRUID":  "794ad8421e2543d8a6d2c70307637450",
-                                                                                         "Type":  2,
-                                                                                         "Enable":  true
-                                                                                     }
-                                                                                 ],
-                                                                 "@version":  1
-                                                             }
-                                          },
-                                          {
-                                              "id":  "18182d28-cefa-4f3d-90ef-67df686f4f1d",
-                                              "path":  "/maps/games/MapleMapLayer",
-                                              "componentNames":  "MOD.Core.MapLayerComponent",
-                                              "jsonString":  {
-                                                                 "name":  "MapleMapLayer",
-                                                                 "path":  "/maps/games/MapleMapLayer",
-                                                                 "nameEditable":  false,
-                                                                 "enable":  true,
-                                                                 "visible":  true,
-                                                                 "localize":  false,
-                                                                 "displayOrder":  1,
-                                                                 "pathConstraints":  "///",
-                                                                 "revision":  1,
-                                                                 "origin":  {
-                                                                                "type":  "Model",
-                                                                                "entry_id":  "maplemaplayer",
-                                                                                "sub_entity_id":  null,
-                                                                                "root_entity_id":  null,
-                                                                                "replaced_model_id":  null
-                                                                            },
-                                                                 "modelId":  "maplemaplayer",
-                                                                 "@components":  [
-                                                                                     {
-                                                                                         "@type":  "MOD.Core.MapLayerComponent",
-                                                                                         "IsVisible":  true,
-                                                                                         "LayerSortOrder":  0,
-                                                                                         "Locked":  false,
-                                                                                         "MapLayerName":  "Layer1",
-                                                                                         "Thumbnail":  "",
-                                                                                         "Enable":  true
-                                                                                     }
-                                                                                 ],
-                                                                 "@version":  1
-                                                             }
-                                          },
-                                          {
-                                              "id":  "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-                                              "path":  "/maps/games/LobbyBootstrap",
-                                              "componentNames":  "MOD.Core.TransformComponent,script.Map01BootstrapComponent",
-                                              "jsonString":  {
-                                                                 "name":  "LobbyBootstrap",
-                                                                 "path":  "/maps/games/LobbyBootstrap",
-                                                                 "nameEditable":  true,
-                                                                 "enable":  true,
-                                                                 "visible":  true,
-                                                                 "localize":  false,
-                                                                 "displayOrder":  2,
-                                                                 "pathConstraints":  "///",
-                                                                 "revision":  1,
-                                                                 "modelId":  null,
-                                                                 "@components":  [
-                                                                                     {
-                                                                                         "@type":  "MOD.Core.TransformComponent",
-                                                                                         "Rotation":  {
-                                                                                                          "x":  0.0,
-                                                                                                          "y":  0.0,
-                                                                                                          "z":  0.0
-                                                                                                      },
-                                                                                         "Position":  {
-                                                                                                          "x":  0.0,
-                                                                                                          "y":  0.0,
-                                                                                                          "z":  0.0
-                                                                                                      },
-                                                                                         "QuaternionRotation":  {
-                                                                                                                    "x":  0.0,
-                                                                                                                    "y":  0.0,
-                                                                                                                    "z":  0.0,
-                                                                                                                    "w":  1.0
-                                                                                                                },
-                                                                                         "ZRotation":  0.0,
-                                                                                         "Enable":  true
-                                                                                     },
-                                                                                     {
-                                                                                         "@type":  "script.Map01BootstrapComponent",
-                                                                                         "Enable":  true,
-                                                                                         "ConfigureOnBeginPlay":  true,
-                                                                                         "ConfigureOnUserEnter":  true,
-                                                                                         "AutoAttachMissingComponents":  true,
-                                                                                         "EnableLobbyMapSplit":  false,
-                                                                                         "LobbyMapName":  "games",
-                                                                                         "InGameMapName":  "games",
-                                                                                         "AutoOpenRankingOnLobby":  true,
-                                                                                         "LobbyRankingTab":  1,
-                                                                                         "LobbyUIRootPath":  "/ui/MainGroup",
-                                                                                         "CenterSpawnTileCountY":  48,
-                                                                                         "ApplyCenterSpawnOncePerUser":  true,
-                                                                                         "CenterSpawnRectTilePath":  "/maps/games/MapleMapLayer/GRBaseRectTileMap",
-                                                                                        "SpawnAtRectTileCenterOnConfigure":  false,
-                                                                                         "CenterSpawnTileCountX":  48
-                                                                                     }
-                                                                                 ],
-                                                                 "@version":  1
-                                                             }
-                                          },
-                                          {
-                                              "id":  "f0f8d2bf-97e8-4ec2-bf0e-7b86fced0a53",
-                                              "path":  "/maps/games/GRProjectileTemplate",
-                                              "componentNames":  "MOD.Core.TransformComponent,script.ProjectileComponent,MOD.Core.TriggerComponent",
-                                              "jsonString":  {
-                                                                 "name":  "GRProjectileTemplate",
-                                                                 "path":  "/maps/games/GRProjectileTemplate",
-                                                                 "nameEditable":  true,
-                                                                 "enable":  false,
-                                                                 "visible":  false,
-                                                                 "localize":  false,
-                                                                 "displayOrder":  3,
-                                                                 "pathConstraints":  "///",
-                                                                 "revision":  1,
-                                                                 "modelId":  null,
-                                                                 "@components":  [
-                                                                                     {
-                                                                                         "@type":  "MOD.Core.TransformComponent",
-                                                                                         "Rotation":  {
-                                                                                                          "x":  0.0,
-                                                                                                          "y":  0.0,
-                                                                                                          "z":  0.0
-                                                                                                      },
-                                                                                         "Position":  {
-                                                                                                          "x":  0.0,
-                                                                                                          "y":  0.0,
-                                                                                                          "z":  0.0
-                                                                                                      },
-                                                                                         "QuaternionRotation":  {
-                                                                                                                    "x":  0.0,
-                                                                                                                    "y":  0.0,
-                                                                                                                    "z":  0.0,
-                                                                                                                    "w":  1.0
-                                                                                                                },
-                                                                                         "ZRotation":  0.0,
-                                                                                         "Enable":  true
-                                                                                     },
-                                                                                     {
-                                                                                         "@type":  "script.ProjectileComponent",
-                                                                                         "Enable":  true
-                                                                                     },
-                                                                                     {
-                                                                                         "@type":  "MOD.Core.TriggerComponent",
-                                                                                         "BoxSize":  {
-                                                                                                         "x":  0.3,
-                                                                                                         "y":  0.3
-                                                                                                     },
-                                                                                         "IsLegacy":  true,
-                                                                                         "IsPassive":  false,
-                                                                                         "Enable":  true
-                                                                                     }
-                                                                                 ],
-                                                                 "@version":  1
-                                                             }
-                                          },
-                                          {
-                                              "id":  "8cc65f6e-9fbf-408d-9b51-2c3632fcc75c",
-                                              "path":  "/maps/games/Shop_East",
-                                              "componentNames":  "MOD.Core.TransformComponent,MOD.Core.SpriteRendererComponent,MOD.Core.TriggerComponent",
-                                              "jsonString":  {
-                                                                 "name":  "Shop_East",
-                                                                 "path":  "/maps/games/Shop_East",
-                                                                 "nameEditable":  true,
-                                                                 "enable":  false,
-                                                                 "visible":  true,
-                                                                 "localize":  false,
-                                                                 "displayOrder":  4,
-                                                                 "pathConstraints":  "///",
-                                                                 "revision":  1,
-                                                                 "modelId":  null,
-                                                                 "@components":  [
-                                                                                     {
-                                                                                         "@type":  "MOD.Core.TransformComponent",
-                                                                                         "Rotation":  {
-                                                                                                          "x":  0.0,
-                                                                                                          "y":  0.0,
-                                                                                                          "z":  0.0
-                                                                                                      },
-                                                                                         "Position":  {
-                                                                                                          "x":  2.99220085,
-                                                                                                          "y":  1.04293823,
-                                                                                                          "z":  0.0
-                                                                                                      },
-                                                                                         "QuaternionRotation":  {
-                                                                                                                    "x":  0.0,
-                                                                                                                    "y":  0.0,
-                                                                                                                    "z":  0.0,
-                                                                                                                    "w":  1.0
-                                                                                                                },
-                                                                                         "ZRotation":  0.0,
-                                                                                         "Enable":  true
-                                                                                     },
-                                                                                     {
-                                                                                         "@type":  "MOD.Core.SpriteRendererComponent",
-                                                                                         "ActionSheet":  {
-
-                                                                                                         },
-                                                                                         "EndFrameIndex":  2147483647,
-                                                                                         "OrderInLayer":  0,
-                                                                                         "RenderSetting":  0,
-                                                                                         "SortingLayer":  "Default",
-                                                                                         "SpriteRUID":  "ba7443a453644bccb209350b4ab780c5",
-                                                                                         "StartFrameIndex":  0,
-                                                                                         "Color":  {
-                                                                                                       "r":  1.0,
-                                                                                                       "g":  1.0,
-                                                                                                       "b":  1.0,
-                                                                                                       "a":  1.0
-                                                                                                   },
-                                                                                         "Enable":  true
-                                                                                     },
-                                                                                     {
-                                                                                         "@type":  "MOD.Core.TriggerComponent",
-                                                                                         "BoxOffset":  {
-                                                                                                           "x":  0.0,
-                                                                                                           "y":  0.0
-                                                                                                       },
-                                                                                         "BoxSize":  {
-                                                                                                         "x":  5.0,
-                                                                                                         "y":  5.0
-                                                                                                     },
-                                                                                         "CircleRadius":  10.0,
-                                                                                         "ColliderOffset":  {
-                                                                                                                "x":  0.103317261,
-                                                                                                                "y":  0.4303832
-                                                                                                            },
-                                                                                         "ColliderType":  1,
-                                                                                         "CollisionGroup":  {
-                                                                                                                "Id":  "MOD@TriggerBox"
-                                                                                                            },
-                                                                                         "IsLegacy":  false,
-                                                                                         "IsPassive":  false,
-                                                                                         "Enable":  true
-                                                                                     }
-                                                                                 ],
-                                                                 "@version":  1
-                                                             }
-                                          },
-                                          {
-                                              "id":  "3e6de59b-2e35-4f5f-aeb5-9a8d8cf43af2",
-                                              "path":  "/maps/games/MonsterContainer",
-                                              "componentNames":  "MOD.Core.TransformComponent",
-                                              "jsonString":  {
-                                                                 "name":  "MonsterContainer",
-                                                                 "path":  "/maps/games/MonsterContainer",
-                                                                 "nameEditable":  true,
-                                                                "enable":  false,
-                                                                "visible":  false,
-                                                                 "localize":  false,
-                                                                 "displayOrder":  5,
-                                                                 "pathConstraints":  "///",
-                                                                 "revision":  1,
-                                                                 "modelId":  null,
-                                                                 "@components":  [
-                                                                                     {
-                                                                                         "@type":  "MOD.Core.TransformComponent",
-                                                                                         "Rotation":  {
-                                                                                                          "x":  0.0,
-                                                                                                          "y":  0.0,
-                                                                                                          "z":  0.0
-                                                                                                      },
-                                                                                         "Position":  {
-                                                                                                          "x":  0.309884727,
-                                                                                                          "y":  -0.315134972,
-                                                                                                          "z":  0.0
-                                                                                                      },
-                                                                                         "QuaternionRotation":  {
-                                                                                                                    "x":  0.0,
-                                                                                                                    "y":  0.0,
-                                                                                                                    "z":  0.0,
-                                                                                                                    "w":  1.0
-                                                                                                                },
-                                                                                         "Scale":  {
-                                                                                                       "x":  1.0,
-                                                                                                       "y":  1.0,
-                                                                                                       "z":  1.0
-                                                                                                   },
-                                                                                         "ZRotation":  0.0,
-                                                                                        "Enable":  false
-                                                                                     }
-                                                                                 ],
-                                                                 "@version":  1
-                                                             }
-                                          },
-                                          {
-                                              "id":  "cc7908b2-14c8-488e-aa46-b4e501da110c",
-                                              "path":  "/maps/games/WeaponHolder",
-                                              "componentNames":  "MOD.Core.TransformComponent,MOD.Core.SpriteRendererComponent",
-                                              "jsonString":  {
-                                                                 "name":  "WeaponHolder",
-                                                                 "path":  "/maps/games/WeaponHolder",
-                                                                 "nameEditable":  true,
-                                                                 "enable":  true,
-                                                                 "visible":  true,
-                                                                 "localize":  false,
-                                                                 "displayOrder":  6,
-                                                                 "pathConstraints":  "///",
-                                                                 "revision":  1,
-                                                                 "origin":  {
-                                                                                "type":  "Model",
-                                                                                "entry_id":  "mapempty",
-                                                                                "sub_entity_id":  null,
-                                                                                "root_entity_id":  "cc7908b2-14c8-488e-aa46-b4e501da110c",
-                                                                                "replaced_model_id":  null
-                                                                            },
-                                                                 "modelId":  "mapempty",
-                                                                 "@components":  [
-                                                                                     {
-                                                                                         "@type":  "MOD.Core.TransformComponent",
-                                                                                         "Position":  {
-                                                                                                          "x":  0.0,
-                                                                                                          "y":  0.0,
-                                                                                                          "z":  -1.0
-                                                                                                      },
-                                                                                         "QuaternionRotation":  {
-                                                                                                                    "x":  0.0,
-                                                                                                                    "y":  0.0,
-                                                                                                                    "z":  0.0,
-                                                                                                                    "w":  1.0
-                                                                                                                },
-                                                                                         "Scale":  {
-                                                                                                       "x":  1.0,
-                                                                                                       "y":  1.0,
-                                                                                                       "z":  1.0
-                                                                                                   },
-                                                                                         "Enable":  true
-                                                                                     },
-                                                                                     {
-                                                                                         "@type":  "MOD.Core.SpriteRendererComponent",
-                                                                                         "ActionSheet":  {
-
-                                                                                                         },
-                                                                                         "EndFrameIndex":  2147483647,
-                                                                                         "FlipX":  true,
-                                                                                         "FlipY":  true,
-                                                                                         "OrderInLayer":  1,
-                                                                                         "RenderSetting":  0,
-                                                                                         "StartFrameIndex":  0,
-                                                                                         "Enable":  true
-                                                                                     }
-                                                                                 ],
-                                                                 "@version":  1
-                                                             }
-                                          },
-                                          {
-                                              "id":  "0f025cf2-89ec-47cd-9ae6-9a262c6ae663",
-                                              "path":  "/maps/games/MapleMapLayer/GRBaseRectTileMap",
-                                              "componentNames":  "MOD.Core.TransformComponent,MOD.Core.RectTileMapComponent",
-                                              "jsonString":  {
-                                                                "name":  "GRBaseRectTileMap",
-                                                                "path":  "/maps/games/MapleMapLayer/GRBaseRectTileMap",
-                                                                "nameEditable":  true,
-                                                                "enable":  false,
-                                                                "visible":  false,
-                                                                 "localize":  false,
-                                                                 "displayOrder":  7,
-                                                                 "pathConstraints":  "////",
-                                                                 "revision":  1,
-                                                                 "modelId":  null,
-                                                                 "@components":  [
-                                                                                     {
-                                                                                         "@type":  "MOD.Core.TransformComponent",
-                                                                                         "Rotation":  {
-                                                                                                          "x":  0,
-                                                                                                          "y":  0,
-                                                                                                          "z":  0
-                                                                                                      },
-                                                                                         "Position":  {
-                                                                                                          "x":  0,
-                                                                                                          "y":  0,
-                                                                                                          "z":  0
-                                                                                                      },
-                                                                                         "QuaternionRotation":  {
-                                                                                                                    "x":  0,
-                                                                                                                    "y":  0,
-                                                                                                                    "z":  0,
-                                                                                                                    "w":  1
-                                                                                                                },
-                                                                                         "ZRotation":  0,
-                                                                                         "Enable":  true
-                                                                                     },
-                                                                                     {
-                                                                                         "@type":  "MOD.Core.RectTileMapComponent",
-                                                                                         "GridSize":  {
-                                                                                                          "x":  48,
-                                                                                                          "y":  48
-                                                                                                      },
-                                                                                         "IgnoreMapLayerCheck":  true,
-                                                                                         "IsOddGridPosition":  false,
-                                                                                         "OrderInLayer":  -100,
-                                                                                         "PhysicsInteractable":  false,
-                                                                                         "SortingLayer":  "Default",
-                                                                                        "TileSetRUID":  "tileset://1a9d9bb4-4d5e-4f39-90d0-5c8ec2c3d26b",
-                                                                                        "Enable":  false
-                                                                                     }
-                                                                                 ],
-                                                                 "@version":  1
-                                                             }
-                                          }
-                                      ]
-                     }
+  "Id": "",
+  "GameId": "",
+  "EntryKey": "map://games",
+  "ContentType": "x-mod/map",
+  "Content": "",
+  "Usage": 0,
+  "UsePublish": 1,
+  "UseService": 0,
+  "CoreVersion": "26.1.0.0",
+  "StudioVersion": "0.1.0.0",
+  "DynamicLoading": 0,
+  "ContentProto": {
+    "Use": "Binary",
+    "Entities": [
+      {
+        "id": "9f3f13f2-6248-4f6e-b0f5-cff32e9622b7",
+        "path": "/maps/games",
+        "componentNames": "MOD.Core.MapComponent,MOD.Core.FootholdComponent,MOD.Core.PhysicsSimulatorComponent,script.GamesRectTileMapBuilderComponent",
+        "jsonString": {
+          "name": "games",
+          "path": "/maps/games",
+          "nameEditable": true,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 0,
+          "pathConstraints": "//",
+          "revision": 1,
+          "modelId": null,
+          "@components": [
+            {
+              "@type": "MOD.Core.MapComponent",
+              "IsInstanceMap": false,
+              "TileMapMode": 1,
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.FootholdComponent",
+              "FootholdsByLayer": {},
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.PhysicsSimulatorComponent",
+              "Gravity": {
+                "x": 0.0,
+                "y": 0.0
+              },
+              "NativePositionIteration": 3,
+              "NativeVelocityIteration": 8,
+              "Paused": false,
+              "PositionIteration": 3,
+              "ServerSimulation": false,
+              "VelocityIteration": 8,
+              "Enable": true
+            },
+            {
+              "@type": "script.GamesRectTileMapBuilderComponent",
+              "Enable": false,
+              "RectTileMapPath": "/maps/games/MapleMapLayer/GRBaseRectTileMap",
+              "TileSetRuid": "tileset://1a9d9bb4-4d5e-4f39-90d0-5c8ec2c3d26b",
+              "FillTileName": "BaseTile",
+              "GridPixelSize": 48,
+              "TileCountX": 48,
+              "TileCountY": 48,
+              "TileOrderInLayer": -100,
+              "TileSortingLayer": "Default",
+              "AlignTileFieldCenterToWorldOrigin": true,
+              "SkipRebuildWhenAlreadyPrepared": true,
+              "RebuildOnBeginPlay": false,
+              "ClearBeforeFill": false
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "45f17964-bf06-4de5-8de2-f533278c8369",
+        "path": "/maps/games/Background",
+        "componentNames": "MOD.Core.BackgroundComponent",
+        "jsonString": {
+          "name": "Background",
+          "path": "/maps/games/Background",
+          "nameEditable": false,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 0,
+          "pathConstraints": "///",
+          "revision": 1,
+          "modelId": null,
+          "@components": [
+            {
+              "@type": "MOD.Core.BackgroundComponent",
+              "SolidColor": {
+                "r": 0.113725491,
+                "g": 0.156862751,
+                "b": 0.211764708,
+                "a": 1.0
+              },
+              "TemplateRUID": "794ad8421e2543d8a6d2c70307637450",
+              "Type": 2,
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "18182d28-cefa-4f3d-90ef-67df686f4f1d",
+        "path": "/maps/games/MapleMapLayer",
+        "componentNames": "MOD.Core.MapLayerComponent",
+        "jsonString": {
+          "name": "MapleMapLayer",
+          "path": "/maps/games/MapleMapLayer",
+          "nameEditable": false,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 1,
+          "pathConstraints": "///",
+          "revision": 1,
+          "origin": {
+            "type": "Model",
+            "entry_id": "maplemaplayer",
+            "sub_entity_id": null,
+            "root_entity_id": null,
+            "replaced_model_id": null
+          },
+          "modelId": "maplemaplayer",
+          "@components": [
+            {
+              "@type": "MOD.Core.MapLayerComponent",
+              "IsVisible": true,
+              "LayerSortOrder": -100,
+              "Locked": false,
+              "MapLayerName": "Layer1",
+              "Thumbnail": "",
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "5614e5b4-916b-43c3-9a59-3833aa4174bd",
+        "path": "/maps/games/MapleMapLayer/GRWorldBackdrop",
+        "componentNames": "MOD.Core.TransformComponent,MOD.Core.SpriteRendererComponent",
+        "jsonString": {
+          "name": "GRWorldBackdrop",
+          "path": "/maps/games/MapleMapLayer/GRWorldBackdrop",
+          "nameEditable": true,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 0,
+          "pathConstraints": "////",
+          "revision": 1,
+          "modelId": null,
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "Position": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Scale": {
+                "x": 4.8,
+                "y": 4.8,
+                "z": 1.0
+              },
+              "ZRotation": 0.0,
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.SpriteRendererComponent",
+              "ActionSheet": {},
+              "EndFrameIndex": 2147483647,
+              "OrderInLayer": -2000,
+              "RenderSetting": 0,
+              "SortingLayer": "Default",
+              "SpriteRUID": "c2e42c0bf3754e73979553c8d0f32ac1",
+              "StartFrameIndex": 0,
+              "Color": {
+                "r": 1.0,
+                "g": 1.0,
+                "b": 1.0,
+                "a": 1.0
+              },
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "path": "/maps/games/LobbyBootstrap",
+        "componentNames": "MOD.Core.TransformComponent,script.Map01BootstrapComponent",
+        "jsonString": {
+          "name": "LobbyBootstrap",
+          "path": "/maps/games/LobbyBootstrap",
+          "nameEditable": true,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 2,
+          "pathConstraints": "///",
+          "revision": 1,
+          "modelId": null,
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "Position": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "ZRotation": 0.0,
+              "Enable": true
+            },
+            {
+              "@type": "script.Map01BootstrapComponent",
+              "Enable": true,
+              "ConfigureOnBeginPlay": true,
+              "ConfigureOnUserEnter": true,
+              "AutoAttachMissingComponents": true,
+              "EnableLobbyMapSplit": false,
+              "LobbyMapName": "games",
+              "InGameMapName": "games",
+              "AutoOpenRankingOnLobby": true,
+              "LobbyRankingTab": 1,
+              "LobbyUIRootPath": "/ui/MainGroup",
+              "ForcePlayerTransformMovement": true,
+              "ClampPlayerWithinBackdropBounds": true,
+              "BackdropCenterX": 0.0,
+              "BackdropCenterY": 0.0,
+              "BackdropSizeX": 20.34,
+              "BackdropSizeY": 20.34,
+              "BackdropBoundPadding": 0.25,
+              "SpawnAtRectTileCenterOnConfigure": false,
+              "CenterSpawnRectTilePath": "/maps/games/MapleMapLayer/GRBaseRectTileMap",
+              "CenterSpawnTileCountX": 48,
+              "CenterSpawnTileCountY": 48,
+              "ApplyCenterSpawnOncePerUser": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "f0f8d2bf-97e8-4ec2-bf0e-7b86fced0a53",
+        "path": "/maps/games/GRProjectileTemplate",
+        "componentNames": "MOD.Core.TransformComponent,script.ProjectileComponent,MOD.Core.TriggerComponent",
+        "jsonString": {
+          "name": "GRProjectileTemplate",
+          "path": "/maps/games/GRProjectileTemplate",
+          "nameEditable": true,
+          "enable": false,
+          "visible": false,
+          "localize": false,
+          "displayOrder": 3,
+          "pathConstraints": "///",
+          "revision": 1,
+          "modelId": null,
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "Position": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "ZRotation": 0.0,
+              "Enable": true
+            },
+            {
+              "@type": "script.ProjectileComponent",
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.TriggerComponent",
+              "BoxSize": {
+                "x": 0.3,
+                "y": 0.3
+              },
+              "IsLegacy": true,
+              "IsPassive": false,
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "8cc65f6e-9fbf-408d-9b51-2c3632fcc75c",
+        "path": "/maps/games/Shop_East",
+        "componentNames": "MOD.Core.TransformComponent,MOD.Core.SpriteRendererComponent,MOD.Core.TriggerComponent",
+        "jsonString": {
+          "name": "Shop_East",
+          "path": "/maps/games/Shop_East",
+          "nameEditable": true,
+          "enable": false,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 4,
+          "pathConstraints": "///",
+          "revision": 1,
+          "modelId": null,
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "Position": {
+                "x": 2.99220085,
+                "y": 1.04293823,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "ZRotation": 0.0,
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.SpriteRendererComponent",
+              "ActionSheet": {},
+              "EndFrameIndex": 2147483647,
+              "OrderInLayer": 0,
+              "RenderSetting": 0,
+              "SortingLayer": "Default",
+              "SpriteRUID": "ba7443a453644bccb209350b4ab780c5",
+              "StartFrameIndex": 0,
+              "Color": {
+                "r": 1.0,
+                "g": 1.0,
+                "b": 1.0,
+                "a": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.TriggerComponent",
+              "BoxOffset": {
+                "x": 0.0,
+                "y": 0.0
+              },
+              "BoxSize": {
+                "x": 5.0,
+                "y": 5.0
+              },
+              "CircleRadius": 10.0,
+              "ColliderOffset": {
+                "x": 0.103317261,
+                "y": 0.4303832
+              },
+              "ColliderType": 1,
+              "CollisionGroup": {
+                "Id": "MOD@TriggerBox"
+              },
+              "IsLegacy": false,
+              "IsPassive": false,
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "3e6de59b-2e35-4f5f-aeb5-9a8d8cf43af2",
+        "path": "/maps/games/MonsterContainer",
+        "componentNames": "MOD.Core.TransformComponent",
+        "jsonString": {
+          "name": "MonsterContainer",
+          "path": "/maps/games/MonsterContainer",
+          "nameEditable": true,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 5,
+          "pathConstraints": "///",
+          "revision": 1,
+          "modelId": null,
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "Position": {
+                "x": 0.309884727,
+                "y": -0.315134972,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              "ZRotation": 0.0,
+              "Enable": false
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "cc7908b2-14c8-488e-aa46-b4e501da110c",
+        "path": "/maps/games/WeaponHolder",
+        "componentNames": "MOD.Core.TransformComponent,MOD.Core.SpriteRendererComponent",
+        "jsonString": {
+          "name": "WeaponHolder",
+          "path": "/maps/games/WeaponHolder",
+          "nameEditable": true,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 6,
+          "pathConstraints": "///",
+          "revision": 1,
+          "origin": {
+            "type": "Model",
+            "entry_id": "mapempty",
+            "sub_entity_id": null,
+            "root_entity_id": "cc7908b2-14c8-488e-aa46-b4e501da110c",
+            "replaced_model_id": null
+          },
+          "modelId": "mapempty",
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Position": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.SpriteRendererComponent",
+              "ActionSheet": {},
+              "EndFrameIndex": 2147483647,
+              "FlipX": true,
+              "FlipY": true,
+              "OrderInLayer": 1,
+              "RenderSetting": 0,
+              "StartFrameIndex": 0,
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      }
+    ]
+  }
 }

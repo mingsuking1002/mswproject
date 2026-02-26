@@ -2625,3 +2625,171 @@
 | Tile builder off | `script.GamesRectTileMapBuilderComponent.Enable=false`, `RebuildOnBeginPlay=false`. |
 | Center spawn off | `script.Map01BootstrapComponent.SpawnAtRectTileCenterOnConfigure=false`. |
 | Tile entity off | `/maps/games/MapleMapLayer/GRBaseRectTileMap` entity `enable/visible=false`, `RectTileMapComponent.Enable=false`. |
+
+## 2026-02-26 Safe TileMap Visual Re-Enable (No Kinematicbody)
+
+### games.map (Updated)
+- **File:** `map/games.map`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Builder remains off | Kept `script.GamesRectTileMapBuilderComponent.Enable=false`, `RebuildOnBeginPlay=false` to prevent runtime overwrite/rebuild hitch. |
+| Visual tilemap on | Re-enabled `/maps/games/MapleMapLayer/GRBaseRectTileMap` entity and `RectTileMapComponent.Enable=true`. |
+| Layer safety preset | Applied `IgnoreMapLayerCheck=false`, `OrderInLayer=-1000`, `SortingLayer=Default` to keep floor tiles behind player/monster/projectile sprites. |
+| Collision policy | Kept `PhysicsInteractable=false` (no Kinematicbody dependency, no tilemap collision blocking). |
+
+### games_base.tileset (Updated)
+- **File:** `RootDesk/MyDesk/games_base.tileset`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Image RUID input point | Tile image is controlled by `ContentProto.Json.datas[0].Id`; currently `c2e42c0bf3754e73979553c8d0f32ac1`. |
+
+## 2026-02-26 TileMap Occlusion Emergency Fix (MapLayer Sort)
+
+### games.map (Updated)
+- **File:** `map/games.map`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Map layer sort priority | Changed `/maps/games/MapleMapLayer` `MapLayerComponent.LayerSortOrder` from `0` to `-100` so floor tilemap renders behind gameplay entities. |
+| Combined safety | Kept tilemap `OrderInLayer=-1000`, `PhysicsInteractable=false`, `IgnoreMapLayerCheck=false` for non-blocking floor rendering. |
+
+## 2026-02-26 Alternative 1 Migration (No TileMap + Single Backdrop Sprite)
+
+### games.map (Updated)
+- **File:** `map/games.map`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| TileMap full disable | Kept `GamesRectTileMapBuilderComponent` disabled and disabled `/maps/games/MapleMapLayer/GRBaseRectTileMap` entity + `RectTileMapComponent.Enable=false`. |
+| Backdrop sprite entity | Added `/maps/games/MapleMapLayer/GRWorldBackdrop` with `MOD.Core.SpriteRendererComponent`. |
+| Image RUID apply | Set `GRWorldBackdrop.SpriteRendererComponent.SpriteRUID = c2e42c0bf3754e73979553c8d0f32ac1`. |
+| Requested backdrop size | Set `GRWorldBackdrop.TransformComponent.Scale = (2034, 2034, 1)`. |
+| Render priority | Set backdrop `OrderInLayer = -2000` so gameplay actors render in front. |
+
+## 2026-02-26 Player Backdrop Bounds Clamp (No Out-of-Bounds Movement)
+
+### MovementComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Core/MovementComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Core/MovementComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| World bounds properties | Added `UseWorldBoundsClamp`, `WorldBoundsMinX/MaxX`, `WorldBoundsMinY/MaxY`, `WorldBoundsPadding`. |
+| Clamp method | Added `ApplyWorldBoundsClampServer(transform)` to clamp world position on server authority. |
+| Movement integration | Clamp is applied after both transform translate path and rigidbody velocity path. |
+
+### Map01BootstrapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Backdrop clamp config | Added `ClampPlayerWithinBackdropBounds`, `BackdropCenterX/Y`, `BackdropSizeX/Y`, `BackdropBoundPadding`. |
+| Configure injection | `ConfigurePlayer()` now computes backdrop bounds and injects movement clamp values into `MovementComponent`. |
+
+### games.map (Updated)
+- **File:** `map/games.map`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Explicit clamp override | Added `Map01BootstrapComponent` override values for transform movement + backdrop clamp bounds (initial: `2034 x 2034`, padding `24`; later corrected to `20.34 x 20.34`, padding `0.25`). |
+
+## 2026-02-26 GRWorldBackdrop Authoritative Area Integration
+
+### Map01BootstrapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Backdrop auto-bounds | Added `UseBackdropEntityAutoBounds`, `BackdropEntityPath`, `BackdropBoundsRefreshInterval` and runtime resolver methods to derive bounds from `/maps/games/MapleMapLayer/GRWorldBackdrop`. |
+| Sprite-size 기반 계산 | Added `ResolveBackdropSizeFromSpriteServer()` using `Sprite.Width/Height/PixelPerUnit` and backdrop `Transform.Scale` to compute world-space width/height. |
+| Configure injection order | `ConfigurePlayer()` now refreshes backdrop bounds before injecting movement clamp values. |
+| Player spawn fallback | Added `SpawnAtBackdropCenterOnConfigure` + `ApplyBackdropCenterSpawnServer()` so player spawns inside backdrop even when tile-center spawn is disabled. |
+| MonsterSpawn handoff | `ConfigurePlayer()` now writes backdrop restriction/bootstrap path to attached `MonsterSpawnComponent` for consistent area rules. |
+
+### MonsterSpawnComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Backdrop bounds cache | Added `RestrictMonstersToBackdrop`, `BackdropBootstrapPath`, `BackdropBoundsRefreshInterval` and cache resolver methods (`RefreshBackdropBoundsCacheServer`, `ResolveBackdropBoundsFromBootstrapServer`). |
+| Spawn-area enforcement | `IsValidSpawnPosition()` now requires spawn point to be inside resolved backdrop bounds. |
+| Boss spawn restriction | Added `ResolveBossSpawnPositionServer()` and applied it to boss spawn path so boss also spawns within backdrop area. |
+| Monster movement clamp | Added `ApplyMonsterBackdropClampToMovementServer()` and applied to spawned/placed monsters through `ApplyMonsterStatsIfAvailable()`. |
+
+## 2026-02-26 Backdrop Clamp Reliability Fix (Scale 4.8 Alignment)
+
+### MovementComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Core/MovementComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Core/MovementComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Bootstrap fallback resolver | Added `EnsureWorldBoundsBootstrapServer()` and `TryApplyWorldBoundsFromBootstrapServer()` to fetch clamp config from `/maps/games/LobbyBootstrap` when runtime configure timing is missed. |
+| Retry strategy | Added per-player retry gate (`_T.WorldBoundsBootstrapResolved`, `_T.WorldBoundsResolveRetryAt`) and periodic retry in `OnUpdate` until applied. |
+| Safety behavior | If clamp is disabled in bootstrap, `UseWorldBoundsClamp=false` is applied explicitly to avoid stale settings. |
+
+### games.map (Updated)
+- **File:** `map/games.map`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Unit alignment fix | `Map01BootstrapComponent.BackdropSizeX/Y` override corrected to `20.34` (not `2034`) to match current `GRWorldBackdrop` transform scale `4.8`. |
+| Padding retune | `BackdropBoundPadding` changed to `0.25` for a light inner margin without over-shrinking valid move area. |
+
+## 2026-02-26 GRWorldBackdrop Bounds Stabilization Pass
+
+### Map01BootstrapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| MonsterSpawn immediate bounds refresh | `ConfigurePlayer()` now calls `MonsterSpawnComponent:RefreshBackdropBoundsCacheServer(true)` right after backdrop policy injection, reducing first-tick spawn race. |
+
+### MonsterSpawnComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Bootstrap bounds refresh hook | `ResolveBackdropBoundsFromBootstrapServer()` now prefers `Map01BootstrapComponent:RefreshBackdropBoundsFromEntityServer(false)` before reading center/size, reducing stale backdrop bounds reads. |
+
+### games.map (Updated)
+- **File:** `map/games.map`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Explicit backdrop auto-bounds overrides | Added `UseBackdropEntityAutoBounds=true`, `BackdropEntityPath=/maps/games/MapleMapLayer/GRWorldBackdrop`, `BackdropBoundsRefreshInterval=1.0`, `SpawnAtBackdropCenterOnConfigure=true` on `LobbyBootstrap.script.Map01BootstrapComponent`. |

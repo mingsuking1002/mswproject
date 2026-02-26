@@ -30,6 +30,9 @@ script MonsterSpawnComponent extends Component
     property integer MonsterHPBarMinSegments = 2
     property integer MonsterHPBarMinFontSize = 2
     property boolean MonsterHPBarShowNumeric = true
+    property boolean RestrictMonstersToBackdrop = true
+    property string BackdropBootstrapPath = "/maps/games/LobbyBootstrap"
+    property number BackdropBoundsRefreshInterval = 1.0
 
     -- Server initializes all runtime caches once so spawn flow remains deterministic after hot-reload.
     @ExecSpace("ServerOnly")
@@ -64,6 +67,9 @@ script MonsterSpawnComponent extends Component
         self._T.DefaultPlacedMonsterRow = nil
         self._T.MonsterDeathRuntimeByEntity = {}
         self._T.MonsterHPBarByEntity = {}
+        self._T.BackdropBounds = nil
+        self._T.BackdropBoundsLastRefreshAt = -9999
+        self._T.WarnedMissingBackdropBounds = false
 
         self.IsSpawnActive = false
         self.IsBossPhase = false
@@ -74,6 +80,7 @@ script MonsterSpawnComponent extends Component
     method void OnBeginPlay()
         self:LoadSpawnDataFromTable()
         self:ResolveMonsterParentEntity()
+        self:RefreshBackdropBoundsCacheServer(true)
         self:StartStateMonitorTimer()
         self:RefreshSpawnStateServer()
         self:SchedulePlacedMonsterBindingServer()
@@ -84,6 +91,7 @@ script MonsterSpawnComponent extends Component
     method void OnMapEnter(Entity enteredMap)
         self:ResolveMonsterParentEntity()
         self._T.HasMapPhysicsSimulator = nil
+        self:RefreshBackdropBoundsCacheServer(true)
         self:RefreshSpawnStateServer()
         self:SchedulePlacedMonsterBindingServer()
     end
@@ -749,6 +757,8 @@ script MonsterSpawnComponent extends Component
             return
         end
 
+        self:RefreshBackdropBoundsCacheServer(false)
+
         self._T.SpawnTickCounter = self._T.SpawnTickCounter + 1
         self:PruneSpawnedMonsters()
 
@@ -766,7 +776,8 @@ script MonsterSpawnComponent extends Component
         local bossRows = candidates.BossRows
         if bossRows ~= nil and #bossRows > 0 then
             local bossRow = self:SelectLatestRowBySpawnTime(bossRows)
-            local bossEntity = self:SpawnMonsterByRow(bossRow, Vector3(0, 0, 0), true)
+            local bossSpawnPos = self:ResolveBossSpawnPositionServer()
+            local bossEntity = self:SpawnMonsterByRow(bossRow, bossSpawnPos, true)
             if bossEntity ~= nil and isvalid(bossEntity) == true then
                 self.IsBossPhase = true
                 self:StopSpawning()
@@ -982,6 +993,239 @@ script MonsterSpawnComponent extends Component
         return Vector3(x, y, playerPosition.z)
     end
 
+    -- Backdrop bounds are cached from Map01Bootstrap so spawn/movement can share one authoritative area.
+    @ExecSpace("ServerOnly")
+    method void RefreshBackdropBoundsCacheServer(boolean forceRefresh)
+        if self.RestrictMonstersToBackdrop ~= true then
+            self._T.BackdropBounds = nil
+            return
+        end
+
+        local now = _UtilLogic.ServerElapsedSeconds
+        local interval = self.BackdropBoundsRefreshInterval
+        if interval <= 0 then
+            interval = 0.5
+        end
+
+        local lastAt = self._T.BackdropBoundsLastRefreshAt
+        if forceRefresh ~= true and lastAt ~= nil and (now - lastAt) < interval then
+            return
+        end
+        self._T.BackdropBoundsLastRefreshAt = now
+
+        local bounds = self:ResolveBackdropBoundsFromBootstrapServer()
+        self._T.BackdropBounds = bounds
+
+        if bounds ~= nil then
+            self._T.WarnedMissingBackdropBounds = false
+            return
+        end
+
+        if self._T.WarnedMissingBackdropBounds ~= true then
+            log_warning("[MonsterSpawnComponent] Failed to resolve backdrop bounds. path=", tostring(self.BackdropBootstrapPath))
+            self._T.WarnedMissingBackdropBounds = true
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method table ResolveBackdropBoundsFromBootstrapServer()
+        local path = self.BackdropBootstrapPath
+        if path == nil or path == "" then
+            return nil
+        end
+
+        local bootstrapEntity = _EntityService:GetEntityByPath(path)
+        if bootstrapEntity == nil or isvalid(bootstrapEntity) == false then
+            return nil
+        end
+
+        local bootstrap = self:ResolveComponentSafe(bootstrapEntity, "Map01BootstrapComponent", nil)
+        if bootstrap == nil then
+            return nil
+        end
+
+        if bootstrap.RefreshBackdropBoundsFromEntityServer ~= nil then
+            pcall(function()
+                bootstrap:RefreshBackdropBoundsFromEntityServer(false)
+            end)
+        end
+
+        local clampEnabled = false
+        local clampOk, clampValue = pcall(function()
+            return bootstrap.ClampPlayerWithinBackdropBounds
+        end)
+        if clampOk == true and clampValue == true then
+            clampEnabled = true
+        end
+        if clampEnabled ~= true then
+            return nil
+        end
+
+        local centerX = 0
+        local centerY = 0
+        local sizeX = 0
+        local sizeY = 0
+        local padding = 0
+
+        local centerXOk, centerXValue = pcall(function()
+            return bootstrap.BackdropCenterX
+        end)
+        if centerXOk == true and centerXValue ~= nil then
+            centerX = tonumber(centerXValue) or 0
+        end
+
+        local centerYOk, centerYValue = pcall(function()
+            return bootstrap.BackdropCenterY
+        end)
+        if centerYOk == true and centerYValue ~= nil then
+            centerY = tonumber(centerYValue) or 0
+        end
+
+        local sizeXOk, sizeXValue = pcall(function()
+            return bootstrap.BackdropSizeX
+        end)
+        if sizeXOk == true and sizeXValue ~= nil then
+            sizeX = tonumber(sizeXValue) or 0
+        end
+
+        local sizeYOk, sizeYValue = pcall(function()
+            return bootstrap.BackdropSizeY
+        end)
+        if sizeYOk == true and sizeYValue ~= nil then
+            sizeY = tonumber(sizeYValue) or 0
+        end
+
+        local paddingOk, paddingValue = pcall(function()
+            return bootstrap.BackdropBoundPadding
+        end)
+        if paddingOk == true and paddingValue ~= nil then
+            padding = math.max(0, tonumber(paddingValue) or 0)
+        end
+
+        if sizeX <= 0 or sizeY <= 0 then
+            return nil
+        end
+
+        local halfX = sizeX * 0.5
+        local halfY = sizeY * 0.5
+
+        local bounds = {}
+        bounds.CenterX = centerX
+        bounds.CenterY = centerY
+        bounds.MinX = centerX - halfX
+        bounds.MaxX = centerX + halfX
+        bounds.MinY = centerY - halfY
+        bounds.MaxY = centerY + halfY
+        bounds.Padding = padding
+        return bounds
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean IsInsideBackdropBoundsServer(Vector3 targetPosition)
+        if self.RestrictMonstersToBackdrop ~= true then
+            return true
+        end
+        if targetPosition == nil then
+            return false
+        end
+
+        self:RefreshBackdropBoundsCacheServer(false)
+        local bounds = self._T.BackdropBounds
+        if bounds == nil then
+            return false
+        end
+
+        local minX = bounds.MinX + bounds.Padding
+        local maxX = bounds.MaxX - bounds.Padding
+        local minY = bounds.MinY + bounds.Padding
+        local maxY = bounds.MaxY - bounds.Padding
+
+        if minX > maxX then
+            minX = bounds.CenterX
+            maxX = bounds.CenterX
+        end
+        if minY > maxY then
+            minY = bounds.CenterY
+            maxY = bounds.CenterY
+        end
+
+        if targetPosition.x < minX then
+            return false
+        end
+        if targetPosition.x > maxX then
+            return false
+        end
+        if targetPosition.y < minY then
+            return false
+        end
+        if targetPosition.y > maxY then
+            return false
+        end
+        return true
+    end
+
+    -- Boss spawn position is constrained to backdrop center so boss also stays in the same play area.
+    @ExecSpace("ServerOnly")
+    method Vector3 ResolveBossSpawnPositionServer()
+        local z = 0
+        local transform = self.Entity.TransformComponent
+        if transform ~= nil and isvalid(transform) == true then
+            local posOk, posValue = pcall(function()
+                return transform.WorldPosition
+            end)
+            if posOk == true and posValue ~= nil then
+                z = posValue.z
+            end
+        end
+
+        if self.RestrictMonstersToBackdrop ~= true then
+            return Vector3(0, 0, z)
+        end
+
+        self:RefreshBackdropBoundsCacheServer(false)
+        local bounds = self._T.BackdropBounds
+        if bounds == nil then
+            return Vector3(0, 0, z)
+        end
+
+        return Vector3(bounds.CenterX, bounds.CenterY, z)
+    end
+
+    -- Every monster uses the same world clamp as player so roaming never leaves GRWorldBackdrop.
+    method void ApplyMonsterBackdropClampToMovementServer(Component movement)
+        if movement == nil then
+            return
+        end
+        if self.RestrictMonstersToBackdrop ~= true then
+            return
+        end
+
+        self:RefreshBackdropBoundsCacheServer(false)
+        local bounds = self._T.BackdropBounds
+        if bounds == nil then
+            return
+        end
+
+        pcall(function()
+            movement.UseWorldBoundsClamp = true
+        end)
+        pcall(function()
+            movement.WorldBoundsMinX = bounds.MinX
+        end)
+        pcall(function()
+            movement.WorldBoundsMaxX = bounds.MaxX
+        end)
+        pcall(function()
+            movement.WorldBoundsMinY = bounds.MinY
+        end)
+        pcall(function()
+            movement.WorldBoundsMaxY = bounds.MaxY
+        end)
+        pcall(function()
+            movement.WorldBoundsPadding = bounds.Padding
+        end)
+    end
+
     -- Validity check intentionally stays basic per SPEC v1.1 (no NavMesh dependency yet).
     @ExecSpace("ServerOnly")
     method boolean IsValidSpawnPosition(Vector3 targetPosition)
@@ -1014,6 +1258,10 @@ script MonsterSpawnComponent extends Component
             return false
         end
         if distanceSqr > outerSqr then
+            return false
+        end
+
+        if self:IsInsideBackdropBoundsServer(targetPosition) ~= true then
             return false
         end
 
@@ -1446,6 +1694,7 @@ script MonsterSpawnComponent extends Component
             pcall(function()
                 movement.UsePlayerInput = false
             end)
+            self:ApplyMonsterBackdropClampToMovementServer(movement)
 
             if monSpd >= 0 then
                 pcall(function()

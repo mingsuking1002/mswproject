@@ -17,7 +17,17 @@ script Map01BootstrapComponent extends Component
     property integer LobbyRankingTab = 1
     property string LobbyUIRootPath = "/ui/MainGroup"
     property boolean ForcePlayerTransformMovement = true
+    property boolean ClampPlayerWithinBackdropBounds = true
+    property boolean UseBackdropEntityAutoBounds = true
+    property string BackdropEntityPath = "/maps/games/MapleMapLayer/GRWorldBackdrop"
+    property number BackdropBoundsRefreshInterval = 1.0
+    property number BackdropCenterX = 0
+    property number BackdropCenterY = 0
+    property number BackdropSizeX = 20.34
+    property number BackdropSizeY = 20.34
+    property number BackdropBoundPadding = 0.25
     property boolean SpawnAtRectTileCenterOnConfigure = true
+    property boolean SpawnAtBackdropCenterOnConfigure = true
     property string CenterSpawnRectTilePath = "/maps/games/MapleMapLayer/GRBaseRectTileMap"
     property integer CenterSpawnTileCountX = 48
     property integer CenterSpawnTileCountY = 48
@@ -32,11 +42,15 @@ script Map01BootstrapComponent extends Component
         self._T.ConfiguredEntityByUserId = {}
         self._T.CenterSpawnAppliedByUser = {}
         self._T.CenterSpawnAppliedByEntity = {}
+        self._T.LastBackdropBoundsRefreshAt = -9999
+        self._T.WarnedBackdropResolveFailure = false
     end
 
     -- BeginPlay configures already connected users so bootstrap works after hot-reload/rejoin.
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
+        self:RefreshBackdropBoundsFromEntityServer(true)
+
         if self.ConfigureOnBeginPlay == true then
             local users = _UserService.UserEntities
             if users ~= nil then
@@ -233,6 +247,8 @@ script Map01BootstrapComponent extends Component
             return
         end
 
+        self:RefreshBackdropBoundsFromEntityServer(false)
+
         if self.AutoAttachMissingComponents == true then
             self:AttachRequiredComponentsServer(playerEntity)
         end
@@ -246,6 +262,48 @@ script Map01BootstrapComponent extends Component
             pcall(function()
                 movement.UsePhysicsMovement = usePhysics
             end)
+
+            local clampEnabled = (self.ClampPlayerWithinBackdropBounds == true)
+            local halfWidth = math.max(0, self.BackdropSizeX * 0.5)
+            local halfHeight = math.max(0, self.BackdropSizeY * 0.5)
+            local minX = self.BackdropCenterX - halfWidth
+            local maxX = self.BackdropCenterX + halfWidth
+            local minY = self.BackdropCenterY - halfHeight
+            local maxY = self.BackdropCenterY + halfHeight
+
+            pcall(function()
+                movement.UseWorldBoundsClamp = clampEnabled
+            end)
+            pcall(function()
+                movement.WorldBoundsMinX = minX
+            end)
+            pcall(function()
+                movement.WorldBoundsMaxX = maxX
+            end)
+            pcall(function()
+                movement.WorldBoundsMinY = minY
+            end)
+            pcall(function()
+                movement.WorldBoundsMaxY = maxY
+            end)
+            pcall(function()
+                movement.WorldBoundsPadding = math.max(0, self.BackdropBoundPadding)
+            end)
+        end
+
+        local monsterSpawn = self:ResolveComponentSafe(playerEntity, "MonsterSpawnComponent", "IsSpawnActive")
+        if monsterSpawn ~= nil then
+            pcall(function()
+                monsterSpawn.RestrictMonstersToBackdrop = (self.ClampPlayerWithinBackdropBounds == true)
+            end)
+            pcall(function()
+                monsterSpawn.BackdropBootstrapPath = "/maps/games/LobbyBootstrap"
+            end)
+            if monsterSpawn.RefreshBackdropBoundsCacheServer ~= nil then
+                pcall(function()
+                    monsterSpawn:RefreshBackdropBoundsCacheServer(true)
+                end)
+            end
         end
 
         local lobbyFlow = self:ResolveComponentSafe(playerEntity, "LobbyFlowComponent", "IsLobbyActive")
@@ -312,29 +370,35 @@ script Map01BootstrapComponent extends Component
             end
         end
 
-        self:ApplyCenterSpawnServer(playerEntity)
+        local didSpawnByRect = false
+        if self.SpawnAtRectTileCenterOnConfigure == true then
+            didSpawnByRect = self:ApplyCenterSpawnServer(playerEntity)
+        end
+        if didSpawnByRect ~= true and self.SpawnAtBackdropCenterOnConfigure == true then
+            self:ApplyBackdropCenterSpawnServer(playerEntity)
+        end
     end
 
     -- Player start position is aligned to tile-field center so first spawn always lands at map center.
     @ExecSpace("ServerOnly")
-    method void ApplyCenterSpawnServer(Entity playerEntity)
+    method boolean ApplyCenterSpawnServer(Entity playerEntity)
         if self.SpawnAtRectTileCenterOnConfigure ~= true then
-            return
+            return false
         end
         if playerEntity == nil or isvalid(playerEntity) == false then
-            return
+            return false
         end
 
         if self.ApplyCenterSpawnOncePerUser == true and self._T.CenterSpawnAppliedByEntity ~= nil then
             if self._T.CenterSpawnAppliedByEntity[playerEntity] == true then
-                return
+                return false
             end
         end
 
         local userKey = self:ResolveCenterSpawnUserKey(playerEntity)
         if self.ApplyCenterSpawnOncePerUser == true and userKey ~= nil and userKey ~= "" then
             if self._T.CenterSpawnAppliedByUser ~= nil and self._T.CenterSpawnAppliedByUser[userKey] == true then
-                return
+                return false
             end
         end
 
@@ -343,7 +407,7 @@ script Map01BootstrapComponent extends Component
             tileEntity = _EntityService:GetEntityByPath(self.CenterSpawnRectTilePath)
         end
         if tileEntity == nil or isvalid(tileEntity) == false then
-            return
+            return false
         end
 
         local tileMap = nil
@@ -362,7 +426,7 @@ script Map01BootstrapComponent extends Component
             end
         end
         if tileMap == nil then
-            return
+            return false
         end
 
         local maxX = math.max(0, self.CenterSpawnTileCountX - 1)
@@ -382,14 +446,14 @@ script Map01BootstrapComponent extends Component
             maxWorld = maxValue
         end
         if minWorld == nil or maxWorld == nil then
-            return
+            return false
         end
 
         local centerX = (minWorld.x + maxWorld.x) * 0.5
         local centerY = (minWorld.y + maxWorld.y) * 0.5
         local transform = playerEntity.TransformComponent
         if transform == nil then
-            return
+            return false
         end
 
         local currentZ = 0
@@ -417,6 +481,236 @@ script Map01BootstrapComponent extends Component
             end
             self._T.CenterSpawnAppliedByEntity[playerEntity] = true
         end
+        return true
+    end
+
+    -- Backdrop center fallback keeps player spawn valid when RectTile center spawn is disabled.
+    @ExecSpace("ServerOnly")
+    method boolean ApplyBackdropCenterSpawnServer(Entity playerEntity)
+        if self.SpawnAtBackdropCenterOnConfigure ~= true then
+            return false
+        end
+        if playerEntity == nil or isvalid(playerEntity) == false then
+            return false
+        end
+
+        if self.ApplyCenterSpawnOncePerUser == true and self._T.CenterSpawnAppliedByEntity ~= nil then
+            if self._T.CenterSpawnAppliedByEntity[playerEntity] == true then
+                return false
+            end
+        end
+
+        local userKey = self:ResolveCenterSpawnUserKey(playerEntity)
+        if self.ApplyCenterSpawnOncePerUser == true and userKey ~= nil and userKey ~= "" then
+            if self._T.CenterSpawnAppliedByUser ~= nil and self._T.CenterSpawnAppliedByUser[userKey] == true then
+                return false
+            end
+        end
+
+        self:RefreshBackdropBoundsFromEntityServer(false)
+
+        local transform = playerEntity.TransformComponent
+        if transform == nil or isvalid(transform) == false then
+            return false
+        end
+
+        local currentZ = 0
+        local currentOk, currentValue = pcall(function()
+            return transform.WorldPosition
+        end)
+        if currentOk == true and currentValue ~= nil then
+            currentZ = currentValue.z
+        end
+
+        pcall(function()
+            transform.WorldPosition = Vector3(self.BackdropCenterX, self.BackdropCenterY, currentZ)
+        end)
+
+        if self.ApplyCenterSpawnOncePerUser == true and userKey ~= nil and userKey ~= "" then
+            if self._T.CenterSpawnAppliedByUser == nil then
+                self._T.CenterSpawnAppliedByUser = {}
+            end
+            self._T.CenterSpawnAppliedByUser[userKey] = true
+        end
+
+        if self.ApplyCenterSpawnOncePerUser == true then
+            if self._T.CenterSpawnAppliedByEntity == nil then
+                self._T.CenterSpawnAppliedByEntity = {}
+            end
+            self._T.CenterSpawnAppliedByEntity[playerEntity] = true
+        end
+
+        return true
+    end
+
+    -- Backdrop entity is the authoritative world-play area, so center/size are refreshed from it.
+    @ExecSpace("ServerOnly")
+    method void RefreshBackdropBoundsFromEntityServer(boolean forceRefresh)
+        if self.UseBackdropEntityAutoBounds ~= true then
+            return
+        end
+
+        local now = _UtilLogic.ServerElapsedSeconds
+        local interval = self.BackdropBoundsRefreshInterval
+        if interval <= 0 then
+            interval = 0.5
+        end
+
+        local lastAt = self._T.LastBackdropBoundsRefreshAt
+        if forceRefresh ~= true and lastAt ~= nil and (now - lastAt) < interval then
+            return
+        end
+        self._T.LastBackdropBoundsRefreshAt = now
+
+        local resolved = self:TryResolveBackdropBoundsFromEntityServer()
+        if resolved == true then
+            self._T.WarnedBackdropResolveFailure = false
+            return
+        end
+
+        if self._T.WarnedBackdropResolveFailure ~= true then
+            local path = self.BackdropEntityPath
+            if path == nil then
+                path = ""
+            end
+            log_warning("[Map01BootstrapComponent] Failed to resolve backdrop bounds from entity path=", path)
+            self._T.WarnedBackdropResolveFailure = true
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean TryResolveBackdropBoundsFromEntityServer()
+        local path = self.BackdropEntityPath
+        if path == nil or path == "" then
+            return false
+        end
+
+        local backdrop = _EntityService:GetEntityByPath(path)
+        if backdrop == nil or isvalid(backdrop) == false then
+            return false
+        end
+
+        local transform = backdrop.TransformComponent
+        if transform == nil or isvalid(transform) == false then
+            return false
+        end
+
+        local centerX = self.BackdropCenterX
+        local centerY = self.BackdropCenterY
+        local worldPosOk, worldPos = pcall(function()
+            return transform.WorldPosition
+        end)
+        if worldPosOk == true and worldPos ~= nil then
+            centerX = worldPos.x
+            centerY = worldPos.y
+        end
+
+        local sizeX = math.max(0, self.BackdropSizeX)
+        local sizeY = math.max(0, self.BackdropSizeY)
+        local scale = Vector3(1, 1, 1)
+        local scaleOk, scaleValue = pcall(function()
+            return transform.Scale
+        end)
+        if scaleOk == true and scaleValue ~= nil then
+            scale = scaleValue
+        end
+
+        local spriteRenderer = self:ResolveComponentSafe(backdrop, "SpriteRendererComponent", "SpriteRUID")
+        if spriteRenderer ~= nil then
+            local spriteRuid = ""
+            local readRuidOk, readRuidValue = pcall(function()
+                return spriteRenderer.SpriteRUID
+            end)
+            if readRuidOk == true and readRuidValue ~= nil then
+                spriteRuid = tostring(readRuidValue)
+            end
+
+            local resolvedSize = self:ResolveBackdropSizeFromSpriteServer(spriteRuid, scale)
+            if resolvedSize ~= nil and resolvedSize.Success == true then
+                sizeX = resolvedSize.Width
+                sizeY = resolvedSize.Height
+            end
+        end
+
+        if sizeX <= 0 or sizeY <= 0 then
+            return false
+        end
+
+        self.BackdropCenterX = centerX
+        self.BackdropCenterY = centerY
+        self.BackdropSizeX = sizeX
+        self.BackdropSizeY = sizeY
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method table ResolveBackdropSizeFromSpriteServer(string spriteRuid, Vector3 scale)
+        local result = {}
+        result.Success = false
+        result.Width = 0
+        result.Height = 0
+
+        if spriteRuid == nil or spriteRuid == "" then
+            return result
+        end
+
+        local sprite = nil
+        local loadOk, loadValue = pcall(function()
+            return _ResourceService:LoadSpriteAndWait(spriteRuid)
+        end)
+        if loadOk == true then
+            sprite = loadValue
+        end
+        if sprite == nil then
+            return result
+        end
+
+        local widthPx = 0
+        local heightPx = 0
+        local pixelPerUnit = 0
+
+        local widthOk, widthValue = pcall(function()
+            return sprite.Width
+        end)
+        if widthOk == true and widthValue ~= nil then
+            widthPx = tonumber(widthValue) or 0
+        end
+
+        local heightOk, heightValue = pcall(function()
+            return sprite.Height
+        end)
+        if heightOk == true and heightValue ~= nil then
+            heightPx = tonumber(heightValue) or 0
+        end
+
+        local ppuOk, ppuValue = pcall(function()
+            return sprite.PixelPerUnit
+        end)
+        if ppuOk == true and ppuValue ~= nil then
+            pixelPerUnit = tonumber(ppuValue) or 0
+        end
+
+        if widthPx <= 0 or heightPx <= 0 or pixelPerUnit <= 0 then
+            return result
+        end
+
+        local scaleX = 1
+        local scaleY = 1
+        if scale ~= nil then
+            scaleX = math.abs(scale.x)
+            scaleY = math.abs(scale.y)
+        end
+
+        local worldWidth = (widthPx / pixelPerUnit) * scaleX
+        local worldHeight = (heightPx / pixelPerUnit) * scaleY
+        if worldWidth <= 0 or worldHeight <= 0 then
+            return result
+        end
+
+        result.Success = true
+        result.Width = worldWidth
+        result.Height = worldHeight
+        return result
     end
 
     method string ResolveCenterSpawnUserKey(Entity playerEntity)

@@ -17,6 +17,12 @@ script MovementComponent extends Component
     property boolean UsePhysicsMovement = true
     property boolean EnableClientAnimationRefresh = true
     property number ClientAnimationRefreshInterval = 0.05
+    property boolean UseWorldBoundsClamp = false
+    property number WorldBoundsMinX = -1017
+    property number WorldBoundsMaxX = 1017
+    property number WorldBoundsMinY = -1017
+    property number WorldBoundsMaxY = 1017
+    property number WorldBoundsPadding = 0
 
     -- Server initializes authoritative input cache so movement always has a deterministic source.
     @ExecSpace("ServerOnly")
@@ -26,7 +32,10 @@ script MovementComponent extends Component
         self._T.ServerInputDirection = Vector2.zero
         self._T.AutoRegisterAttemptedByState = {}
         self._T.LastAnimationSamplePos = nil
+        self._T.WorldBoundsBootstrapResolved = false
+        self._T.WorldBoundsResolveRetryAt = 0
         self:EnsureGRUtil()
+        self:EnsureWorldBoundsBootstrapServer()
         -- Skip eager AddState on initialize to avoid AlreadyExist warnings on models that already define states.
     end
 
@@ -218,6 +227,8 @@ script MovementComponent extends Component
     -- Server is the only place that applies final movement so modified clients cannot move directly.
     @ExecSpace("ServerOnly")
     method void OnUpdate(number delta)
+        self:EnsureWorldBoundsBootstrapServer()
+
         local moveDirection = self._T.ServerInputDirection
         if self.CanMove == false then
             moveDirection = Vector2.zero
@@ -362,25 +373,224 @@ script MovementComponent extends Component
         return inputDirection:Normalize()
     end
 
+    -- Some runtime paths skip bootstrap ConfigurePlayer timing, so Movement pulls bounds directly from LobbyBootstrap as a fallback.
+    @ExecSpace("ServerOnly")
+    method void EnsureWorldBoundsBootstrapServer()
+        if self.Entity == nil or isvalid(self.Entity) == false then
+            return
+        end
+
+        local playerComponent = self.Entity.PlayerComponent
+        if playerComponent == nil or isvalid(playerComponent) == false then
+            return
+        end
+
+        if self._T.WorldBoundsBootstrapResolved == true then
+            return
+        end
+
+        local now = _UtilLogic.ServerElapsedSeconds
+        local retryAt = self._T.WorldBoundsResolveRetryAt
+        if retryAt ~= nil and retryAt > 0 and now < retryAt then
+            return
+        end
+
+        local applied = self:TryApplyWorldBoundsFromBootstrapServer()
+        if applied == true then
+            self._T.WorldBoundsBootstrapResolved = true
+            return
+        end
+
+        self._T.WorldBoundsResolveRetryAt = now + 1.0
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean TryApplyWorldBoundsFromBootstrapServer()
+        local bootstrapEntity = _EntityService:GetEntityByPath("/maps/games/LobbyBootstrap")
+        if bootstrapEntity == nil or isvalid(bootstrapEntity) == false then
+            return false
+        end
+
+        local bootstrap = self:ResolveComponentSafe(bootstrapEntity, "Map01BootstrapComponent", nil)
+        if bootstrap == nil then
+            return false
+        end
+
+        local clampEnabled = false
+        local centerX = 0
+        local centerY = 0
+        local sizeX = 0
+        local sizeY = 0
+        local padding = 0
+
+        local enabledOk, enabledValue = pcall(function()
+            return bootstrap.ClampPlayerWithinBackdropBounds
+        end)
+        if enabledOk == true and enabledValue == true then
+            clampEnabled = true
+        end
+
+        local centerXOk, centerXValue = pcall(function()
+            return bootstrap.BackdropCenterX
+        end)
+        if centerXOk == true and centerXValue ~= nil then
+            centerX = tonumber(centerXValue) or 0
+        end
+
+        local centerYOk, centerYValue = pcall(function()
+            return bootstrap.BackdropCenterY
+        end)
+        if centerYOk == true and centerYValue ~= nil then
+            centerY = tonumber(centerYValue) or 0
+        end
+
+        local sizeXOk, sizeXValue = pcall(function()
+            return bootstrap.BackdropSizeX
+        end)
+        if sizeXOk == true and sizeXValue ~= nil then
+            sizeX = tonumber(sizeXValue) or 0
+        end
+
+        local sizeYOk, sizeYValue = pcall(function()
+            return bootstrap.BackdropSizeY
+        end)
+        if sizeYOk == true and sizeYValue ~= nil then
+            sizeY = tonumber(sizeYValue) or 0
+        end
+
+        local paddingOk, paddingValue = pcall(function()
+            return bootstrap.BackdropBoundPadding
+        end)
+        if paddingOk == true and paddingValue ~= nil then
+            padding = math.max(0, tonumber(paddingValue) or 0)
+        end
+
+        if clampEnabled ~= true then
+            pcall(function()
+                self.UseWorldBoundsClamp = false
+            end)
+            return true
+        end
+
+        if sizeX <= 0 or sizeY <= 0 then
+            return false
+        end
+
+        local halfWidth = sizeX * 0.5
+        local halfHeight = sizeY * 0.5
+        local minX = centerX - halfWidth
+        local maxX = centerX + halfWidth
+        local minY = centerY - halfHeight
+        local maxY = centerY + halfHeight
+
+        pcall(function()
+            self.UseWorldBoundsClamp = true
+        end)
+        pcall(function()
+            self.WorldBoundsMinX = minX
+        end)
+        pcall(function()
+            self.WorldBoundsMaxX = maxX
+        end)
+        pcall(function()
+            self.WorldBoundsMinY = minY
+        end)
+        pcall(function()
+            self.WorldBoundsMaxY = maxY
+        end)
+        pcall(function()
+            self.WorldBoundsPadding = padding
+        end)
+
+        return true
+    end
+
     -- Physics velocity path can be disabled for player entities that use custom top-down transform movement.
     @ExecSpace("ServerOnly")
     method void ApplyMovementServer(Vector2 moveDirection, number speed, number delta)
-        if self.UsePhysicsMovement == true then
-            local rigidbody = self.Entity.RigidbodyComponent
-            if rigidbody ~= nil and isvalid(rigidbody) == true then
-                rigidbody.MoveVelocity = moveDirection * speed
-                return
-            end
-        end
-
         local transform = self.Entity.TransformComponent
         if transform == nil or isvalid(transform) == false then
             return
         end
 
+        if self.UsePhysicsMovement == true then
+            local rigidbody = self.Entity.RigidbodyComponent
+            if rigidbody ~= nil and isvalid(rigidbody) == true then
+                rigidbody.MoveVelocity = moveDirection * speed
+                self:ApplyWorldBoundsClampServer(transform)
+                return
+            end
+        end
+
         local deltaX = moveDirection.x * speed * delta
         local deltaY = moveDirection.y * speed * delta
         transform:Translate(deltaX, deltaY)
+        self:ApplyWorldBoundsClampServer(transform)
+    end
+
+    -- Transform-driven movement ignores map collision, so explicit world-bounds clamp prevents leaving play area.
+    @ExecSpace("ServerOnly")
+    method void ApplyWorldBoundsClampServer(Component transform)
+        if self.UseWorldBoundsClamp ~= true then
+            return
+        end
+        if transform == nil or isvalid(transform) == false then
+            return
+        end
+
+        local worldPos = nil
+        local readOk, readValue = pcall(function()
+            return transform.WorldPosition
+        end)
+        if readOk == true then
+            worldPos = readValue
+        end
+        if worldPos == nil then
+            return
+        end
+
+        local minX = math.min(self.WorldBoundsMinX, self.WorldBoundsMaxX)
+        local maxX = math.max(self.WorldBoundsMinX, self.WorldBoundsMaxX)
+        local minY = math.min(self.WorldBoundsMinY, self.WorldBoundsMaxY)
+        local maxY = math.max(self.WorldBoundsMinY, self.WorldBoundsMaxY)
+        local padding = math.max(0, self.WorldBoundsPadding)
+
+        minX += padding
+        maxX -= padding
+        minY += padding
+        maxY -= padding
+
+        if minX > maxX then
+            local centerX = (self.WorldBoundsMinX + self.WorldBoundsMaxX) * 0.5
+            minX = centerX
+            maxX = centerX
+        end
+        if minY > maxY then
+            local centerY = (self.WorldBoundsMinY + self.WorldBoundsMaxY) * 0.5
+            minY = centerY
+            maxY = centerY
+        end
+
+        local clampedX = worldPos.x
+        local clampedY = worldPos.y
+        if clampedX < minX then
+            clampedX = minX
+        elseif clampedX > maxX then
+            clampedX = maxX
+        end
+        if clampedY < minY then
+            clampedY = minY
+        elseif clampedY > maxY then
+            clampedY = maxY
+        end
+
+        if clampedX == worldPos.x and clampedY == worldPos.y then
+            return
+        end
+
+        pcall(function()
+            transform.WorldPosition = Vector3(clampedX, clampedY, worldPos.z)
+        end)
     end
 
     -- State updates are server-authoritative to avoid divergent animation states per client.
