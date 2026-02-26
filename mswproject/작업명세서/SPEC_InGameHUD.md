@@ -138,3 +138,26 @@ UI 씬 배치는 Codex가 코드를 작성한 이후 PD 또는 TD가 Maker UI Ed
 - **Scale 기준점**: `UITransformComponent` 스케일을 조절할 때, 기준점(Pivot)이 좌측(또는 하단)인지 확인 (UI 배치는 Maker에서 처리하므로 스크립트는 항상 0.0~1.0 비율만 넣어줌).
 - **방어 코드 일괄**: 각 Property 호출 시 연동 Entity나 System이 `nil`일 경우 OnUpdate가 죽지 않도록 방어 코드 추가.
 ---
+
+---
+
+## 8. 2026-02-26 확장 기록 - 우측하단 무기 HUD(레거시 포함)
+
+상태: 본 명세는 완료(`🟢`)를 유지한다.
+
+### 추가 반영 범위
+- 우측하단 전용 루트: `/ui/DefaultGroup/GRWeaponRightBottomHUD`
+- 무기 아이콘 패널 8종: `bow_icon`, `cannon_icon`, `turret_minigun_icon`, `deathperado_icon`, `gun_icon`, `fireball_icon`, `turret_sniper_icon`, `gungnir_icon`
+- 무기 교체 아이콘 패널: `weapon_swap_icon` (표시 전용)
+- 레벨 텍스트: `weapon_level_text` (`LVn` 표시)
+
+### 런타임 연동 변경
+- `WeaponSwapComponent`에 `@Sync property string CurrentWeaponId` 추가.
+- `InGameHUDComponent`는 `CurrentWeaponId`를 1순위로 현재 무기를 판단하고, `CurrentWeaponName -> WeaponData(name->id)` fallback을 사용.
+- 레거시 HUD 모드(`GRInGameHUD` 미배치)에서도 우측하단 아이콘/LV는 동일하게 동작.
+
+### 배치 프리셋(중형)
+- 현재 무기 아이콘 중심: `(770, -430)`
+- 무기 교체 아이콘 중심: `(912, -430)`
+- 레벨 텍스트 중심: `(824, -492)`
+- 아이콘 크기: `96 x 96`

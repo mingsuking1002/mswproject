@@ -1,0 +1,23 @@
+{
+  "Id": "",
+  "GameId": "",
+  "EntryKey": "directory://bdc97b578df846c8a4ff0b8c0d38f6a7",
+  "ContentType": "x-mod/directory",
+  "Content": "",
+  "Usage": 0,
+  "UsePublish": 1,
+  "UseService": 0,
+  "CoreVersion": "26.1.0.0",
+  "StudioVersion": "",
+  "DynamicLoading": 0,
+  "ContentProto": {
+    "Use": "Json",
+    "Json": {
+      "entry_id": "directory://bdc97b578df846c8a4ff0b8c0d38f6a7",
+      "name": "UI_WeaponSwap_Scene",
+      "lock": false,
+      "folding": false,
+      "nameEditable": true
+    }
+  }
+}

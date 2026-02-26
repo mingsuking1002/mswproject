@@ -1,0 +1,23 @@
+{
+  "Id": "",
+  "GameId": "",
+  "EntryKey": "directory://8091a11625d24a23b21e890c64348165",
+  "ContentType": "x-mod/directory",
+  "Content": "",
+  "Usage": 0,
+  "UsePublish": 1,
+  "UseService": 0,
+  "CoreVersion": "26.1.0.0",
+  "StudioVersion": "",
+  "DynamicLoading": 0,
+  "ContentProto": {
+    "Use": "Json",
+    "Json": {
+      "entry_id": "directory://8091a11625d24a23b21e890c64348165",
+      "name": "UI_Passive_Scene",
+      "lock": false,
+      "folding": false,
+      "nameEditable": true
+    }
+  }
+}

@@ -12,7 +12,7 @@ script Map01BootstrapComponent extends Component
     property string InGameMapName = "games"
     property boolean AutoOpenRankingOnLobby = false
     property integer LobbyRankingTab = 1
-    property string LobbyUIRootPath = "/ui/DefaultGroup"
+    property string LobbyUIRootPath = "/ui/MainGroup"
     property boolean ForcePlayerTransformMovement = true
 
     -- Server initializes utility and sets up per-user configuration flow.

@@ -174,7 +174,7 @@
               "InGameMapName": "games",
               "AutoOpenRankingOnLobby": true,
               "LobbyRankingTab": 1,
-              "LobbyUIRootPath": "/ui/DefaultGroup"
+              "LobbyUIRootPath": "/ui/MainGroup"
             }
           ],
           "@version": 1

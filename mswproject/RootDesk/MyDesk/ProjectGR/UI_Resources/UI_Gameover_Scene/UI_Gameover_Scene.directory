@@ -1,0 +1,23 @@
+{
+  "Id": "",
+  "GameId": "",
+  "EntryKey": "directory://493ebd7a2c444b48ae33ab9fa675229b",
+  "ContentType": "x-mod/directory",
+  "Content": "",
+  "Usage": 0,
+  "UsePublish": 1,
+  "UseService": 0,
+  "CoreVersion": "26.1.0.0",
+  "StudioVersion": "",
+  "DynamicLoading": 0,
+  "ContentProto": {
+    "Use": "Json",
+    "Json": {
+      "entry_id": "directory://493ebd7a2c444b48ae33ab9fa675229b",
+      "name": "UI_Gameover_Scene",
+      "lock": false,
+      "folding": false,
+      "nameEditable": true
+    }
+  }
+}

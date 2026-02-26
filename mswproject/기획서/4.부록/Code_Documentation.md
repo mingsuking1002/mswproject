@@ -2232,3 +2232,118 @@
 |---|---|
 | New panel entities | Added `/ui/DefaultGroup/GRReloadFollowBack` and child `/Fore` as runtime reload bar panel pair. |
 | Fill-ready transform | Fore panel default pivot set to left (`x=0`) and left-anchored local offset for scale-based fill. |
+
+## 2026-02-26 Right-Bottom Weapon HUD Expansion (8 Icons + Swap Icon + LV)
+
+### InGameHUDComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/UI/InGameHUDComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/UI/InGameHUDComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Right-bottom HUD paths | Added `WeaponRightBottomRootPath`, `WeaponSwapIconPath`, and moved default `WeaponLevelTextPath` to `/ui/DefaultGroup/GRWeaponRightBottomHUD/weapon_level_text`. |
+| Icon panel render | Added `RefreshWeaponRightBottomClient()` to show only current `<weapon_id>_icon` panel and hide the other 7 panels. |
+| ID resolve policy | Added `ResolveCurrentWeaponIdForHUDClient()` with priority `CurrentWeaponId` sync -> `CurrentWeaponName + WeaponData(name->id)` fallback -> `FireSystem.CurrentWeaponId` fallback. |
+| WeaponData cache | Added `LoadWeaponNameToIdCacheClient()` for robust name-to-id fallback lookup. |
+| Lobby visibility | Added right-bottom HUD visibility bridge to both `SetHUDVisibilityClient` and `SetLegacyHUDVisibilityClient`. |
+| Legacy compatibility | Even when `GRInGameHUD` root is missing, right-bottom weapon HUD updates continue in legacy mode. |
+
+### WeaponSwapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Current weapon id sync | Added `@Sync property string CurrentWeaponId = ""`. |
+| Sync write point | `SyncCurrentWeaponVisualFromRowServer()` now writes `CurrentWeaponId` together with `CurrentWeaponName` and `CurrentWeaponSpriteRuid`. |
+
+### DefaultGroup.ui (Updated)
+- **File:** `ui/DefaultGroup.ui`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Right-bottom root | Added `/ui/DefaultGroup/GRWeaponRightBottomHUD`. |
+| 8 weapon icon panels | Added `bow_icon`, `cannon_icon`, `turret_minigun_icon`, `deathperado_icon`, `gun_icon`, `fireball_icon`, `turret_sniper_icon`, `gungnir_icon`. |
+| Swap icon panel | Added `/ui/DefaultGroup/GRWeaponRightBottomHUD/weapon_swap_icon` (visual-only panel). |
+| Level text panel | Added `/ui/DefaultGroup/GRWeaponRightBottomHUD/weapon_level_text` with default text `LV1`. |
+| Placement preset | Current icon `(770,-430)`, swap icon `(912,-430)`, level text `(824,-492)`, icon size `96x96`. |
+
+## 2026-02-26 DefaultGroup UI JSON Parse Hotfix
+
+### DefaultGroup.ui (Updated)
+- **File:** `ui/DefaultGroup.ui`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Maker load blocker fix | Repaired two broken `Text` string literals that were missing closing quotes, which invalidated entire JSON payload. |
+| Back button label safety | `/ui/DefaultGroup/GRRankingPanel/GRBackButton` text corrected to `BACK`. |
+| Ranking row template safety | `/ui/DefaultGroup/GRRankingPanel/GRRankingRowTemplate/NicknameText` text corrected to `PLAYER`. |
+| Validation | `ConvertFrom-Json` parse succeeds after patch (`Entities=71`). |
+
+## 2026-02-26 Main UI Group Split (DefaultGroup InGame-Only)
+
+### UI Resources (Updated)
+- **Files:** `ui/DefaultGroup.ui`, `ui/MainGroup.ui`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| New group | Added `ui/MainGroup.ui` with root `/ui/MainGroup`. |
+| Moved from Default to Main | `GRStartButton`, `GRLobbyPanel*`, `GRRankingPanel*`, `GRScoreText`, `GRResultPanel`, `GRReentryPopup*` moved to `/ui/MainGroup/*`. |
+| Legacy summary text restore | Added `/ui/MainGroup/GRRankingText`, `/ui/MainGroup/GRMyRankText` for legacy path compatibility. |
+| DefaultGroup role narrowed | `DefaultGroup` now keeps in-game HUD/combat UI roots only (`GRInGameHUD/legacy HUD/WeaponWheel/Shop/...`). |
+
+### LobbyFlowComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Main defaults | `StartButtonPath`, `RankingTextPath`, `MyRankTextPath`, `UIRootPath` defaulted to `/ui/MainGroup/*`. |
+| Fallback root | Added `UIRootFallbackPath = "/ui/DefaultGroup"`. |
+| Resolver chain | `ResolveUIEntity` now resolves in order: exact path -> main root leaf -> fallback root leaf. |
+
+### RankingUIComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/UI/RankingUIComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/UI/RankingUIComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Main defaults | Ranking/Lobby panel paths defaulted to `/ui/MainGroup/*`. |
+| Root properties | Added `UIRootPath`, `UIRootFallbackPath`. |
+| Legacy text fallback | `RankingTextFallbackPath`, `MyRankTextFallbackPath` defaulted to `/ui/DefaultGroup/*`. |
+| Hardcoded root 제거 | `"/ui/DefaultGroup"` 하드코드를 제거하고 root property 기반 탐색으로 변경. |
+
+### InfiniteModeComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/InfiniteModeComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/InfiniteModeComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Main defaults | `ScoreTextPath`, `ResultPanelPath`, `ReentryPopupPath`, `Reentry*ButtonPath` defaulted to `/ui/MainGroup/*`. |
+| Root fallback | Added `UIRootPath`, `UIRootFallbackPath` and root-based fallback in `ResolveUIEntity`. |
+
+### Map01BootstrapComponent + games.map (Updated)
+- **Files:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`, `map/games.map`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Bootstrap default | `LobbyUIRootPath` default changed to `/ui/MainGroup`. |
+| Map override | `/maps/games/LobbyBootstrap` override updated to `/ui/MainGroup`. |

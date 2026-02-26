@@ -7,19 +7,22 @@ script RankingUIComponent extends Component
     property Entity RankingTextEntity = nil
     property Entity MyRankTextEntity = nil
 
-    property string RankingTextPath = "/ui/DefaultGroup/GRRankingText"
-    property string MyRankTextPath = "/ui/DefaultGroup/GRMyRankText"
-    property string RankingTextFallbackPath = ""
-    property string MyRankTextFallbackPath = ""
+    property string RankingTextPath = "/ui/MainGroup/GRRankingText"
+    property string MyRankTextPath = "/ui/MainGroup/GRMyRankText"
+    property string RankingTextFallbackPath = "/ui/DefaultGroup/GRRankingText"
+    property string MyRankTextFallbackPath = "/ui/DefaultGroup/GRMyRankText"
 
-    property string LobbyPanelPath = "/ui/DefaultGroup/GRLobbyPanel"
-    property string RankingPanelPath = "/ui/DefaultGroup/GRRankingPanel"
-    property string RankingOpenButtonPath = "/ui/DefaultGroup/GRLobbyPanel/GRRankingOpenButton"
-    property string RankingBackButtonPath = "/ui/DefaultGroup/GRRankingPanel/GRBackButton"
-    property string NormalTabButtonPath = "/ui/DefaultGroup/GRRankingPanel/GRTabNormalButton"
-    property string InfiniteTabButtonPath = "/ui/DefaultGroup/GRRankingPanel/GRTabInfiniteButton"
-    property string RankingGridPath = "/ui/DefaultGroup/GRRankingPanel/GRRankingGrid"
-    property string RankingRowTemplatePath = "/ui/DefaultGroup/GRRankingPanel/GRRankingRowTemplate"
+    property string UIRootPath = "/ui/MainGroup"
+    property string UIRootFallbackPath = "/ui/DefaultGroup"
+
+    property string LobbyPanelPath = "/ui/MainGroup/GRLobbyPanel"
+    property string RankingPanelPath = "/ui/MainGroup/GRRankingPanel"
+    property string RankingOpenButtonPath = "/ui/MainGroup/GRLobbyPanel/GRRankingOpenButton"
+    property string RankingBackButtonPath = "/ui/MainGroup/GRRankingPanel/GRBackButton"
+    property string NormalTabButtonPath = "/ui/MainGroup/GRRankingPanel/GRTabNormalButton"
+    property string InfiniteTabButtonPath = "/ui/MainGroup/GRRankingPanel/GRTabInfiniteButton"
+    property string RankingGridPath = "/ui/MainGroup/GRRankingPanel/GRRankingGrid"
+    property string RankingRowTemplatePath = "/ui/MainGroup/GRRankingPanel/GRRankingRowTemplate"
 
     property string FirstRankIconRuid = ""
     property string SecondRankIconRuid = ""
@@ -900,17 +903,45 @@ script RankingUIComponent extends Component
             return entity
         end
 
-        local root = _EntityService:GetEntityByPath("/ui/DefaultGroup")
-        if root == nil or isvalid(root) == false then
-            return nil
-        end
-
         local leaf = self:GetLeafName(path)
         if leaf == nil or leaf == "" then
             return nil
         end
 
-        return root:GetChildByName(leaf, true)
+        entity = self:ResolveUIEntityByRoot(self.UIRootPath, leaf)
+        if entity ~= nil and isvalid(entity) == true then
+            return entity
+        end
+
+        entity = self:ResolveUIEntityByRoot(self.UIRootFallbackPath, leaf)
+        return entity
+    end
+
+    method Entity ResolveUIEntityByRoot(string rootPath, string leafName)
+        if rootPath == nil or rootPath == "" then
+            return nil
+        end
+        if leafName == nil or leafName == "" then
+            return nil
+        end
+
+        local root = _EntityService:GetEntityByPath(rootPath)
+        if root == nil or isvalid(root) == false then
+            return nil
+        end
+
+        local child = nil
+        local ok, result = pcall(function()
+            return root:GetChildByName(leafName, true)
+        end)
+        if ok == true then
+            child = result
+        end
+
+        if child == nil or isvalid(child) == false then
+            return nil
+        end
+        return child
     end
 
     method string GetLeafName(string path)

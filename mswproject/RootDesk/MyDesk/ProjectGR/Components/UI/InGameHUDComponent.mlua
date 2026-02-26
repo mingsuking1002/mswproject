@@ -11,12 +11,14 @@ script InGameHUDComponent extends Component
     property Entity LegacyHPBarForeEntity = nil
     property Entity LegacyEXPBarBackEntity = nil
     property Entity LegacyEXPBarForeEntity = nil
+    property Entity WeaponRightBottomRootEntity = nil
     property Entity TimerTextEntity = nil
     property Entity GoldTextEntity = nil
     property Entity HPForegroundEntity = nil
     property Entity EXPForegroundEntity = nil
     property Entity AmmoTextEntity = nil
     property Entity WeaponIconEntity = nil
+    property Entity WeaponSwapIconEntity = nil
     property Entity WeaponLevelTextEntity = nil
     property Entity TagCooldownForegroundEntity = nil
     property Entity StandbyPortraitEntity = nil
@@ -36,13 +38,15 @@ script InGameHUDComponent extends Component
     property string LegacyHPBarForePath = "/ui/DefaultGroup/GRHUD_HPBack/Fore"
     property string LegacyEXPBarBackPath = "/ui/DefaultGroup/GRHUD_EXPBack"
     property string LegacyEXPBarForePath = "/ui/DefaultGroup/GRHUD_EXPBack/Fore"
+    property string WeaponRightBottomRootPath = "/ui/DefaultGroup/GRWeaponRightBottomHUD"
+    property string WeaponSwapIconPath = "/ui/DefaultGroup/GRWeaponRightBottomHUD/weapon_swap_icon"
     property string TimerTextPath = "/ui/DefaultGroup/GRInGameHUD/TimerText"
     property string GoldTextPath = "/ui/DefaultGroup/GRInGameHUD/GoldText"
     property string HP_ForegroundPath = "/ui/DefaultGroup/GRInGameHUD/HPGauge/Fore"
     property string EXP_ForegroundPath = "/ui/DefaultGroup/GRInGameHUD/EXPGauge/Fore"
     property string AmmoTextPath = "/ui/DefaultGroup/GRInGameHUD/AmmoText"
     property string WeaponIconPath = "/ui/DefaultGroup/GRInGameHUD/WeaponIcon"
-    property string WeaponLevelTextPath = "/ui/DefaultGroup/GRInGameHUD/WeaponLevelText"
+    property string WeaponLevelTextPath = "/ui/DefaultGroup/GRWeaponRightBottomHUD/weapon_level_text"
     property string TagCooldown_ForegroundPath = "/ui/DefaultGroup/GRInGameHUD/TagCooldownGauge/Fore"
     property string StandbyPortraitPath = "/ui/DefaultGroup/GRInGameHUD/StandbyPortrait"
     property string ReloadGaugePath = "/ui/DefaultGroup/GRInGameHUD/ReloadGauge/Fore"
@@ -52,6 +56,7 @@ script InGameHUDComponent extends Component
 
     property string CharacterDataTableName = "PlayerbleData"
     property string SkillDataTableName = "SkillData"
+    property string WeaponDataTableName = "WeaponData"
     property string DefaultWeaponIconRuid = ""
     property string DefaultStandbyPortraitRuid = ""
     property string DefaultTagSkillIconRuid = ""
@@ -117,6 +122,30 @@ script InGameHUDComponent extends Component
         if self._T.LastTagSkillIconRuid == nil then
             self._T.LastTagSkillIconRuid = ""
         end
+        if self._T.WeaponIconIds == nil then
+            self._T.WeaponIconIds = {
+                "bow",
+                "cannon",
+                "turret_minigun",
+                "deathperado",
+                "gun",
+                "fireball",
+                "turret_sniper",
+                "gungnir"
+            }
+        end
+        if self._T.WeaponIconPathById == nil then
+            self._T.WeaponIconPathById = {}
+        end
+        if self._T.WeaponIconEntityById == nil then
+            self._T.WeaponIconEntityById = {}
+        end
+        if self._T.WeaponNameToId == nil then
+            self._T.WeaponNameToId = {}
+        end
+        if self._T.WeaponNameIdCacheLoaded == nil then
+            self._T.WeaponNameIdCacheLoaded = false
+        end
     end
 
     -- Low-frequency timer keeps HUD responsive without per-frame cost.
@@ -150,6 +179,7 @@ script InGameHUDComponent extends Component
                 return
             end
             self:RefreshLegacyHUDClient()
+            self:RefreshWeaponRightBottomClient()
             return
         end
 
@@ -164,6 +194,7 @@ script InGameHUDComponent extends Component
         self:RefreshWeaponProgressClient()
         self:RefreshAmmoAndReloadClient()
         self:RefreshWeaponVisualClient()
+        self:RefreshWeaponRightBottomClient()
         self:RefreshTagStatusClient()
     end
 
@@ -188,7 +219,9 @@ script InGameHUDComponent extends Component
             self.HPForegroundEntity,
             self.EXPForegroundEntity,
             self.AmmoTextEntity,
+            self.WeaponRightBottomRootEntity,
             self.WeaponIconEntity,
+            self.WeaponSwapIconEntity,
             self.WeaponLevelTextEntity,
             self.TagCooldownForegroundEntity,
             self.StandbyPortraitEntity,
@@ -201,6 +234,8 @@ script InGameHUDComponent extends Component
         for _, entity in pairs(entities) do
             self:SetEntityVisibleClient(entity, visible)
         end
+
+        self:SetWeaponRightBottomVisibilityClient(visible)
     end
 
     @ExecSpace("ClientOnly")
@@ -246,6 +281,32 @@ script InGameHUDComponent extends Component
 
         for _, entity in pairs(entities) do
             self:SetEntityVisibleClient(entity, visible)
+        end
+
+        self:SetWeaponRightBottomVisibilityClient(visible)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetWeaponRightBottomVisibilityClient(boolean visible)
+        self.WeaponRightBottomRootEntity = self:ResolveEntityWithCacheClient(self.WeaponRightBottomRootEntity, self.WeaponRightBottomRootPath)
+        self.WeaponSwapIconEntity = self:ResolveEntityWithCacheClient(self.WeaponSwapIconEntity, self.WeaponSwapIconPath)
+        self.WeaponLevelTextEntity = self:ResolveEntityWithCacheClient(self.WeaponLevelTextEntity, self.WeaponLevelTextPath)
+
+        self:SetEntityVisibleClient(self.WeaponRightBottomRootEntity, visible)
+        self:SetEntityVisibleClient(self.WeaponSwapIconEntity, visible)
+        self:SetEntityVisibleClient(self.WeaponLevelTextEntity, visible)
+
+        self:BuildWeaponIconPathMapClient()
+        local iconIds = self._T.WeaponIconIds
+        if iconIds == nil then
+            return
+        end
+
+        if visible == false then
+            for _, weaponId in pairs(iconIds) do
+                local panelEntity = self:ResolveWeaponIconPanelEntityClient(weaponId)
+                self:SetEntityVisibleClient(panelEntity, false)
+            end
         end
     end
 
@@ -819,6 +880,187 @@ script InGameHUDComponent extends Component
         end
     end
 
+    -- Right-bottom weapon HUD uses weapon-id icon panels and keeps only one current weapon icon visible.
+    @ExecSpace("ClientOnly")
+    method void RefreshWeaponRightBottomClient()
+        self:BuildWeaponIconPathMapClient()
+        self.WeaponRightBottomRootEntity = self:ResolveEntityWithCacheClient(self.WeaponRightBottomRootEntity, self.WeaponRightBottomRootPath)
+        self.WeaponSwapIconEntity = self:ResolveEntityWithCacheClient(self.WeaponSwapIconEntity, self.WeaponSwapIconPath)
+        self.WeaponLevelTextEntity = self:ResolveEntityWithCacheClient(self.WeaponLevelTextEntity, self.WeaponLevelTextPath)
+
+        self:SetEntityVisibleClient(self.WeaponSwapIconEntity, true)
+
+        local currentWeaponId = self:ResolveCurrentWeaponIdForHUDClient()
+        local iconIds = self._T.WeaponIconIds
+        if iconIds ~= nil then
+            for _, weaponId in pairs(iconIds) do
+                local panelEntity = self:ResolveWeaponIconPanelEntityClient(weaponId)
+                local showCurrent = (currentWeaponId ~= "" and currentWeaponId == weaponId)
+                self:SetEntityVisibleClient(panelEntity, showCurrent)
+            end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method Entity ResolveWeaponIconPanelEntityClient(string weaponId)
+        if weaponId == nil or weaponId == "" then
+            return nil
+        end
+
+        self:BuildWeaponIconPathMapClient()
+        local normalizedWeaponId = string.lower(self:TrimTextClient(weaponId))
+        local panelPath = self._T.WeaponIconPathById[normalizedWeaponId]
+        if panelPath == nil or panelPath == "" then
+            return nil
+        end
+
+        if self._T.WeaponIconEntityById == nil then
+            self._T.WeaponIconEntityById = {}
+        end
+
+        local panelEntity = self._T.WeaponIconEntityById[normalizedWeaponId]
+        panelEntity = self:ResolveEntityWithCacheClient(panelEntity, panelPath)
+        self._T.WeaponIconEntityById[normalizedWeaponId] = panelEntity
+        return panelEntity
+    end
+
+    -- Current weapon id is resolved by sync-id first, then WeaponData name->id cache fallback.
+    @ExecSpace("ClientOnly")
+    method string ResolveCurrentWeaponIdForHUDClient()
+        local swap = self:ResolveComponentSafe(self.Entity, "WeaponSwapComponent", "CurrentWeaponSlot")
+        if swap ~= nil then
+            local syncWeaponId = ""
+            local idOk, idValue = pcall(function()
+                return swap.CurrentWeaponId
+            end)
+            if idOk == true and idValue ~= nil then
+                syncWeaponId = self:NormalizeWeaponIdClient(tostring(idValue))
+            end
+            if syncWeaponId ~= "" then
+                return syncWeaponId
+            end
+
+            local weaponName = ""
+            local nameOk, nameValue = pcall(function()
+                return swap.CurrentWeaponName
+            end)
+            if nameOk == true and nameValue ~= nil then
+                weaponName = self:TrimTextClient(tostring(nameValue))
+            end
+            if weaponName ~= "" then
+                self:LoadWeaponNameToIdCacheClient()
+                local lowerName = string.lower(weaponName)
+                local mappedId = self._T.WeaponNameToId[lowerName]
+                if mappedId ~= nil and mappedId ~= "" then
+                    return tostring(mappedId)
+                end
+            end
+        end
+
+        local fire = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "CurrentWeaponId")
+        if fire ~= nil then
+            local fireOk, fireValue = pcall(function()
+                return fire.CurrentWeaponId
+            end)
+            if fireOk == true and fireValue ~= nil then
+                local fireWeaponId = self:NormalizeWeaponIdClient(tostring(fireValue))
+                if fireWeaponId ~= "" then
+                    return fireWeaponId
+                end
+            end
+        end
+
+        return ""
+    end
+
+    @ExecSpace("ClientOnly")
+    method void BuildWeaponIconPathMapClient()
+        if self._T.WeaponIconPathById == nil then
+            self._T.WeaponIconPathById = {}
+        end
+        if self._T.WeaponIconIds == nil then
+            self._T.WeaponIconIds = {
+                "bow",
+                "cannon",
+                "turret_minigun",
+                "deathperado",
+                "gun",
+                "fireball",
+                "turret_sniper",
+                "gungnir"
+            }
+        end
+
+        local rootPath = self.WeaponRightBottomRootPath
+        if rootPath == nil or rootPath == "" then
+            rootPath = "/ui/DefaultGroup/GRWeaponRightBottomHUD"
+        end
+
+        for _, weaponId in pairs(self._T.WeaponIconIds) do
+            self._T.WeaponIconPathById[weaponId] = rootPath .. "/" .. weaponId .. "_icon"
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void LoadWeaponNameToIdCacheClient()
+        if self._T.WeaponNameIdCacheLoaded == true then
+            return
+        end
+
+        self:BuildWeaponIconPathMapClient()
+        if self._T.WeaponNameToId == nil then
+            self._T.WeaponNameToId = {}
+        end
+
+        local weaponTable = self:LoadDataTableClient(self.WeaponDataTableName)
+        if weaponTable == nil then
+            return
+        end
+
+        local rows = self:GetAllRowsFromTableClient(weaponTable)
+        if rows == nil then
+            return
+        end
+
+        for _, row in pairs(rows) do
+            local weaponId = self:NormalizeWeaponIdClient(self:GetRowString(row, "id", ""))
+            if weaponId == "" then
+                continue
+            end
+
+            self._T.WeaponNameToId[weaponId] = weaponId
+
+            local weaponName = self:TrimTextClient(self:GetRowString(row, "name", ""))
+            if weaponName ~= "" then
+                self._T.WeaponNameToId[string.lower(weaponName)] = weaponId
+            end
+        end
+
+        self._T.WeaponNameIdCacheLoaded = true
+    end
+
+    method string NormalizeWeaponIdClient(string rawId)
+        self:BuildWeaponIconPathMapClient()
+        local normalized = string.lower(self:TrimTextClient(rawId))
+        if normalized == "" then
+            return ""
+        end
+        if self._T.WeaponIconPathById[normalized] ~= nil then
+            return normalized
+        end
+        return ""
+    end
+
+    method string TrimTextClient(string textValue)
+        local text = ""
+        if textValue ~= nil then
+            text = tostring(textValue)
+        end
+        text = string.gsub(text, "^%s+", "")
+        text = string.gsub(text, "%s+$", "")
+        return text
+    end
+
     -- Tag status updates standby portrait, tag cooldown gauge, and standby skill icon.
     @ExecSpace("ClientOnly")
     method void RefreshTagStatusClient()
@@ -1000,12 +1242,14 @@ script InGameHUDComponent extends Component
         self.LegacyHPBarForeEntity = self:ResolveEntityWithCacheClient(self.LegacyHPBarForeEntity, self.LegacyHPBarForePath)
         self.LegacyEXPBarBackEntity = self:ResolveEntityWithCacheClient(self.LegacyEXPBarBackEntity, self.LegacyEXPBarBackPath)
         self.LegacyEXPBarForeEntity = self:ResolveEntityWithCacheClient(self.LegacyEXPBarForeEntity, self.LegacyEXPBarForePath)
+        self.WeaponRightBottomRootEntity = self:ResolveEntityWithCacheClient(self.WeaponRightBottomRootEntity, self.WeaponRightBottomRootPath)
         self.TimerTextEntity = self:ResolveEntityWithCacheClient(self.TimerTextEntity, self.TimerTextPath)
         self.GoldTextEntity = self:ResolveEntityWithCacheClient(self.GoldTextEntity, self.GoldTextPath)
         self.HPForegroundEntity = self:ResolveEntityWithCacheClient(self.HPForegroundEntity, self.HP_ForegroundPath)
         self.EXPForegroundEntity = self:ResolveEntityWithCacheClient(self.EXPForegroundEntity, self.EXP_ForegroundPath)
         self.AmmoTextEntity = self:ResolveEntityWithCacheClient(self.AmmoTextEntity, self.AmmoTextPath)
         self.WeaponIconEntity = self:ResolveEntityWithCacheClient(self.WeaponIconEntity, self.WeaponIconPath)
+        self.WeaponSwapIconEntity = self:ResolveEntityWithCacheClient(self.WeaponSwapIconEntity, self.WeaponSwapIconPath)
         self.WeaponLevelTextEntity = self:ResolveEntityWithCacheClient(self.WeaponLevelTextEntity, self.WeaponLevelTextPath)
         self.TagCooldownForegroundEntity = self:ResolveEntityWithCacheClient(self.TagCooldownForegroundEntity, self.TagCooldown_ForegroundPath)
         self.StandbyPortraitEntity = self:ResolveEntityWithCacheClient(self.StandbyPortraitEntity, self.StandbyPortraitPath)

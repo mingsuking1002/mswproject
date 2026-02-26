@@ -10,11 +10,13 @@ script InfiniteModeComponent extends Component
     property number ResultDelaySeconds = 3.0
     property string ModeMonsterDataTableName = "ModeMonsterData"
 
-    property string ScoreTextPath = "/ui/DefaultGroup/GRScoreText"
-    property string ResultPanelPath = "/ui/DefaultGroup/GRResultPanel"
-    property string ReentryPopupPath = "/ui/DefaultGroup/GRReentryPopup"
-    property string ReentryAcceptButtonPath = "/ui/DefaultGroup/GRReentryPopup/AcceptButton"
-    property string ReentryDeclineButtonPath = "/ui/DefaultGroup/GRReentryPopup/DeclineButton"
+    property string ScoreTextPath = "/ui/MainGroup/GRScoreText"
+    property string ResultPanelPath = "/ui/MainGroup/GRResultPanel"
+    property string ReentryPopupPath = "/ui/MainGroup/GRReentryPopup"
+    property string ReentryAcceptButtonPath = "/ui/MainGroup/GRReentryPopup/AcceptButton"
+    property string ReentryDeclineButtonPath = "/ui/MainGroup/GRReentryPopup/DeclineButton"
+    property string UIRootPath = "/ui/MainGroup"
+    property string UIRootFallbackPath = "/ui/DefaultGroup"
 
     property boolean EnableDebugLogs = true
 
@@ -646,10 +648,61 @@ script InfiniteModeComponent extends Component
             entity = readResult
         end
 
-        if entity == nil or isvalid(entity) == false then
+        if entity ~= nil and isvalid(entity) == true then
+            return entity
+        end
+
+        local leafName = self:GetLeafName(path)
+        if leafName == nil or leafName == "" then
             return nil
         end
+
+        entity = self:ResolveUIEntityByRoot(self.UIRootPath, leafName)
+        if entity ~= nil and isvalid(entity) == true then
+            return entity
+        end
+
+        entity = self:ResolveUIEntityByRoot(self.UIRootFallbackPath, leafName)
         return entity
+    end
+
+    method Entity ResolveUIEntityByRoot(string rootPath, string leafName)
+        if rootPath == nil or rootPath == "" then
+            return nil
+        end
+        if leafName == nil or leafName == "" then
+            return nil
+        end
+
+        local root = _EntityService:GetEntityByPath(rootPath)
+        if root == nil or isvalid(root) == false then
+            return nil
+        end
+
+        local child = nil
+        local ok, result = pcall(function()
+            return root:GetChildByName(leafName, true)
+        end)
+        if ok == true then
+            child = result
+        end
+
+        if child == nil or isvalid(child) == false then
+            return nil
+        end
+        return child
+    end
+
+    method string GetLeafName(string path)
+        if path == nil or path == "" then
+            return ""
+        end
+
+        local indexStart, indexEnd = string.find(path, "[^/]*$")
+        if indexStart == nil then
+            return path
+        end
+        return string.sub(path, indexStart, indexEnd)
     end
 
     method void OnEndPlay()

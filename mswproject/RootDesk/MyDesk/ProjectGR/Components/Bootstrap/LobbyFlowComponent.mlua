@@ -11,10 +11,11 @@ script LobbyFlowComponent extends Component
     property boolean AutoOpenRankingOnLobby = false
     property integer LobbyRankingTab = 1
 
-    property string StartButtonPath = "/ui/DefaultGroup/GRStartButton"
-    property string RankingTextPath = "/ui/DefaultGroup/GRRankingText"
-    property string MyRankTextPath = "/ui/DefaultGroup/GRMyRankText"
-    property string UIRootPath = "/ui/DefaultGroup"
+    property string StartButtonPath = "/ui/MainGroup/GRStartButton"
+    property string RankingTextPath = "/ui/MainGroup/GRRankingText"
+    property string MyRankTextPath = "/ui/MainGroup/GRMyRankText"
+    property string UIRootPath = "/ui/MainGroup"
+    property string UIRootFallbackPath = "/ui/DefaultGroup"
     property boolean EnableDebugLogs = true
 
     -- Server initializes utility and runtime-only button/debounce state.
@@ -475,7 +476,7 @@ script LobbyFlowComponent extends Component
         end
     end
 
-    -- Primary path lookup with UIRoot fallback keeps references stable across map transitions.
+    -- Primary path lookup with main/fallback root chain keeps references stable during UI-group migration.
     method Entity ResolveUIEntity(string path)
         local target = nil
         if path ~= nil and path ~= "" then
@@ -485,17 +486,30 @@ script LobbyFlowComponent extends Component
             return target
         end
 
-        if self.UIRootPath == nil or self.UIRootPath == "" then
-            return nil
-        end
-
-        local root = _EntityService:GetEntityByPath(self.UIRootPath)
-        if root == nil or isvalid(root) == false then
-            return nil
-        end
-
         local leafName = self:GetLeafName(path)
         if leafName == nil or leafName == "" then
+            return nil
+        end
+
+        target = self:ResolveUIEntityByRoot(self.UIRootPath, leafName)
+        if target ~= nil and isvalid(target) == true then
+            return target
+        end
+
+        target = self:ResolveUIEntityByRoot(self.UIRootFallbackPath, leafName)
+        return target
+    end
+
+    method Entity ResolveUIEntityByRoot(string rootPath, string leafName)
+        if rootPath == nil or rootPath == "" then
+            return nil
+        end
+        if leafName == nil or leafName == "" then
+            return nil
+        end
+
+        local root = _EntityService:GetEntityByPath(rootPath)
+        if root == nil or isvalid(root) == false then
             return nil
         end
 
@@ -507,6 +521,9 @@ script LobbyFlowComponent extends Component
             child = result
         end
 
+        if child == nil or isvalid(child) == false then
+            return nil
+        end
         return child
     end
 

@@ -1,0 +1,23 @@
+{
+  "Id": "",
+  "GameId": "",
+  "EntryKey": "directory://4c758beaea72418a910bd3a7821bc562",
+  "ContentType": "x-mod/directory",
+  "Content": "",
+  "Usage": 0,
+  "UsePublish": 1,
+  "UseService": 0,
+  "CoreVersion": "26.1.0.0",
+  "StudioVersion": "",
+  "DynamicLoading": 0,
+  "ContentProto": {
+    "Use": "Json",
+    "Json": {
+      "entry_id": "directory://4c758beaea72418a910bd3a7821bc562",
+      "name": "UI_Ranking_Scene",
+      "lock": false,
+      "folding": false,
+      "nameEditable": true
+    }
+  }
+}
