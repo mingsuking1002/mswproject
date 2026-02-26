@@ -22,6 +22,8 @@ script InGameHUDComponent extends Component
     property Entity StandbyPortraitEntity = nil
     property Entity ReloadGaugeEntity = nil
     property Entity TagSkillIconEntity = nil
+    property Entity CharacterReloadBarBackEntity = nil
+    property Entity CharacterReloadBarForeEntity = nil
 
     property string HUDRootPath = "/ui/DefaultGroup/GRInGameHUD"
     property boolean UseLegacyTextHUDWhenRootMissing = true
@@ -45,6 +47,8 @@ script InGameHUDComponent extends Component
     property string StandbyPortraitPath = "/ui/DefaultGroup/GRInGameHUD/StandbyPortrait"
     property string ReloadGaugePath = "/ui/DefaultGroup/GRInGameHUD/ReloadGauge/Fore"
     property string TagSkillIconPath = "/ui/DefaultGroup/GRInGameHUD/TagSkillIcon"
+    property string CharacterReloadBarBackPath = "/ui/DefaultGroup/GRReloadFollowBack"
+    property string CharacterReloadBarForePath = "/ui/DefaultGroup/GRReloadFollowBack/Fore"
 
     property string CharacterDataTableName = "PlayerbleData"
     property string SkillDataTableName = "SkillData"
@@ -56,6 +60,9 @@ script InGameHUDComponent extends Component
     property boolean HideInLobby = true
     property number MaxGaugeWidth = 100
     property number MaxVerticalGaugeHeight = 100
+    property number CharacterReloadBarOffsetY = -72
+    property number CharacterReloadWorldOffsetY = -0.2
+    property number CharacterReloadBarCompleteHoldTime = 0.12
 
     -- Client initializes HUD entity cache and starts low-frequency refresh loop.
     @ExecSpace("ClientOnly")
@@ -186,7 +193,9 @@ script InGameHUDComponent extends Component
             self.TagCooldownForegroundEntity,
             self.StandbyPortraitEntity,
             self.ReloadGaugeEntity,
-            self.TagSkillIconEntity
+            self.TagSkillIconEntity,
+            self.CharacterReloadBarBackEntity,
+            self.CharacterReloadBarForeEntity
         }
 
         for _, entity in pairs(entities) do
@@ -230,7 +239,9 @@ script InGameHUDComponent extends Component
             self.LegacyHPBarBackEntity,
             self.LegacyHPBarForeEntity,
             self.LegacyEXPBarBackEntity,
-            self.LegacyEXPBarForeEntity
+            self.LegacyEXPBarForeEntity,
+            self.CharacterReloadBarBackEntity,
+            self.CharacterReloadBarForeEntity
         }
 
         for _, entity in pairs(entities) do
@@ -427,19 +438,29 @@ script InGameHUDComponent extends Component
         self:SetTextByPathClient(self.LegacyAmmoTextEntity, self.LegacyAmmoTextPath, ammoLabel)
 
         local cooldownLabel = "READY"
+        local showGauge = false
+        local reloadRatio = 0
         if isReloading == true and reloadEndAt > reloadStartAt then
             local nowSec = self:GetServerNowSecondsClient()
-            local ratio = 0
             if nowSec <= reloadStartAt then
-                ratio = 0
-            elseif nowSec >= reloadEndAt then
-                ratio = 1
+                showGauge = true
+                reloadRatio = 0
+            elseif nowSec < reloadEndAt then
+                showGauge = true
+                reloadRatio = self:Clamp01((nowSec - reloadStartAt) / (reloadEndAt - reloadStartAt))
+            elseif nowSec < (reloadEndAt + self.CharacterReloadBarCompleteHoldTime) then
+                showGauge = true
+                reloadRatio = 1
             else
-                ratio = self:Clamp01((nowSec - reloadStartAt) / (reloadEndAt - reloadStartAt))
+                showGauge = false
+                reloadRatio = 1
             end
-            cooldownLabel = "RELOAD " .. tostring(math.floor(ratio * 100)) .. "%"
+            if showGauge == true then
+                cooldownLabel = "RELOAD " .. tostring(math.floor(reloadRatio * 100)) .. "%"
+            end
         end
         self:SetTextByPathClient(self.LegacyCooldownTextEntity, self.LegacyCooldownTextPath, cooldownLabel)
+        self:RefreshCharacterReloadBarClient(showGauge, reloadRatio)
     end
 
     @ExecSpace("ClientOnly")
@@ -613,19 +634,169 @@ script InGameHUDComponent extends Component
         local reloadRatio = 0
         local showGauge = false
         if isReloading == true and reloadEndAt > reloadStartAt then
-            showGauge = true
             if nowSec <= reloadStartAt then
+                showGauge = true
                 reloadRatio = 0
-            elseif nowSec >= reloadEndAt then
+            elseif nowSec < reloadEndAt then
+                showGauge = true
+                reloadRatio = self:Clamp01((nowSec - reloadStartAt) / (reloadEndAt - reloadStartAt))
+            elseif nowSec < (reloadEndAt + self.CharacterReloadBarCompleteHoldTime) then
+                showGauge = true
                 reloadRatio = 1
             else
-                reloadRatio = self:Clamp01((nowSec - reloadStartAt) / (reloadEndAt - reloadStartAt))
+                showGauge = false
+                reloadRatio = 1
             end
         end
 
         self.ReloadGaugeEntity = self:ResolveEntityWithCacheClient(self.ReloadGaugeEntity, self.ReloadGaugePath)
         self:SetEntityVisibleClient(self.ReloadGaugeEntity, showGauge)
         self:ApplyHorizontalGaugeScaleClient(self.ReloadGaugeEntity, self.ReloadGaugePath, reloadRatio)
+        self:RefreshCharacterReloadBarClient(showGauge, reloadRatio)
+    end
+
+    -- Character-follow reload bar uses panel back/fore pair and appears only during active reload window.
+    @ExecSpace("ClientOnly")
+    method void RefreshCharacterReloadBarClient(boolean showGauge, number reloadRatio)
+        self.CharacterReloadBarBackEntity = self:ResolveEntityWithCacheClient(self.CharacterReloadBarBackEntity, self.CharacterReloadBarBackPath)
+        self.CharacterReloadBarForeEntity = self:ResolveEntityWithCacheClient(self.CharacterReloadBarForeEntity, self.CharacterReloadBarForePath)
+
+        self:SetEntityVisibleClient(self.CharacterReloadBarBackEntity, showGauge)
+        self:SetEntityVisibleClient(self.CharacterReloadBarForeEntity, showGauge)
+        if showGauge ~= true then
+            return
+        end
+
+        self:EnsureCharacterReloadBarGaugeSetupClient(self.CharacterReloadBarForeEntity, self.CharacterReloadBarForePath)
+        self:UpdateCharacterReloadBarPositionClient(self.CharacterReloadBarBackEntity, self.CharacterReloadBarBackPath)
+        self:ApplyHorizontalGaugeScaleClient(self.CharacterReloadBarForeEntity, self.CharacterReloadBarForePath, reloadRatio)
+    end
+
+    -- Left-fixed fill setup enforces 0% background-only and 50% half-filled from left to right.
+    @ExecSpace("ClientOnly")
+    method void EnsureCharacterReloadBarGaugeSetupClient(Entity gaugeForeEntity, string gaugePath)
+        if gaugeForeEntity == nil or isvalid(gaugeForeEntity) == false then
+            return
+        end
+        if gaugeForeEntity.UITransformComponent == nil then
+            return
+        end
+
+        if self._T.CharacterReloadGaugePrepared == nil then
+            self._T.CharacterReloadGaugePrepared = {}
+        end
+
+        local key = gaugePath
+        if key == nil or key == "" then
+            key = tostring(gaugeForeEntity.Id)
+        end
+        if self._T.CharacterReloadGaugePrepared[key] == true then
+            return
+        end
+
+        local uiTransform = gaugeForeEntity.UITransformComponent
+        local width = 0
+        local height = 0
+        local posY = 0
+
+        local sizeOk, sizeValue = pcall(function()
+            return uiTransform.RectSize
+        end)
+        if sizeOk == true and sizeValue ~= nil then
+            width = math.max(0, sizeValue.x)
+            height = math.max(0, sizeValue.y)
+        end
+        if width <= 0 then
+            local fallbackOk, fallbackValue = pcall(function()
+                return uiTransform.Size
+            end)
+            if fallbackOk == true and fallbackValue ~= nil then
+                width = math.max(0, fallbackValue.x)
+                height = math.max(0, fallbackValue.y)
+            end
+        end
+
+        local posOk, posValue = pcall(function()
+            return uiTransform.anchoredPosition
+        end)
+        if posOk == true and posValue ~= nil then
+            posY = posValue.y
+        end
+
+        local leftX = -(width * 0.5)
+        local halfH = height * 0.5
+
+        pcall(function()
+            uiTransform.Pivot = Vector2(0, 0.5)
+        end)
+        pcall(function()
+            uiTransform.anchoredPosition = Vector2(leftX, posY)
+        end)
+        pcall(function()
+            uiTransform.OffsetMin = Vector2(leftX, -halfH)
+        end)
+        pcall(function()
+            uiTransform.OffsetMax = Vector2(leftX + width, halfH)
+        end)
+
+        self._T.CharacterReloadGaugePrepared[key] = true
+    end
+
+    -- Reload bar anchor is projected from player world position and shifted downward in UI space.
+    @ExecSpace("ClientOnly")
+    method void UpdateCharacterReloadBarPositionClient(Entity barBackEntity, string barBackPath)
+        local backEntity = self:ResolveEntityWithCacheClient(barBackEntity, barBackPath)
+        if backEntity == nil or isvalid(backEntity) == false then
+            return
+        end
+        if backEntity.UITransformComponent == nil then
+            return
+        end
+        if self.Entity == nil or isvalid(self.Entity) == false then
+            return
+        end
+        if self.Entity.TransformComponent == nil then
+            return
+        end
+
+        local worldPosition = nil
+        local worldOk, worldValue = pcall(function()
+            return self.Entity.TransformComponent.WorldPosition
+        end)
+        if worldOk == true and worldValue ~= nil then
+            worldPosition = worldValue
+        end
+        if worldPosition == nil then
+            return
+        end
+
+        local world2D = Vector2(worldPosition.x, worldPosition.y + self.CharacterReloadWorldOffsetY)
+        local screenPosition = nil
+        local screenOk, screenValue = pcall(function()
+            return _UILogic:WorldToScreenPosition(world2D)
+        end)
+        if screenOk == true and screenValue ~= nil then
+            screenPosition = screenValue
+        end
+        if screenPosition == nil then
+            return
+        end
+
+        local uiPosition = nil
+        local uiOk, uiValue = pcall(function()
+            return _UILogic:ScreenToUIPosition(screenPosition)
+        end)
+        if uiOk == true and uiValue ~= nil then
+            uiPosition = uiValue
+        end
+        if uiPosition == nil then
+            return
+        end
+
+        local finalPos = Vector2(uiPosition.x, uiPosition.y + self.CharacterReloadBarOffsetY)
+        pcall(function()
+            backEntity.UITransformComponent.anchoredPosition = finalPos
+        end)
     end
 
     -- Weapon icon/name HUD reads sync state prepared by WeaponSwapComponent.
@@ -840,6 +1011,8 @@ script InGameHUDComponent extends Component
         self.StandbyPortraitEntity = self:ResolveEntityWithCacheClient(self.StandbyPortraitEntity, self.StandbyPortraitPath)
         self.ReloadGaugeEntity = self:ResolveEntityWithCacheClient(self.ReloadGaugeEntity, self.ReloadGaugePath)
         self.TagSkillIconEntity = self:ResolveEntityWithCacheClient(self.TagSkillIconEntity, self.TagSkillIconPath)
+        self.CharacterReloadBarBackEntity = self:ResolveEntityWithCacheClient(self.CharacterReloadBarBackEntity, self.CharacterReloadBarBackPath)
+        self.CharacterReloadBarForeEntity = self:ResolveEntityWithCacheClient(self.CharacterReloadBarForeEntity, self.CharacterReloadBarForePath)
     end
 
     @ExecSpace("ClientOnly")

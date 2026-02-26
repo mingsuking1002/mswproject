@@ -2204,3 +2204,31 @@
 | Item | Detail |
 |---|---|
 | Required component list | Replaced legacy `HUDComponent` auto-attach with `InGameHUDComponent` to avoid duplicated in-game HUD display. |
+
+## 2026-02-26 Character-Follow Reload Bar
+
+### InGameHUDComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/UI/InGameHUDComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/UI/InGameHUDComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Character-follow reload UI | Added `CharacterReloadBarBack/Fore` entity/path properties and runtime references. |
+| Show only while reloading | Reload bar now appears only during active reload window and hides immediately after reload end time. |
+| Left-to-right fill | Fore panel pivot/offset setup added so 0% shows background only, 50% shows left half fill, and full fill reaches 100%. |
+| 100% hold then hide | Added `CharacterReloadBarCompleteHoldTime` (default `0.12s`) so full bar is visible briefly at completion before hiding. |
+| Under-player tracking | Added world-to-screen-to-UI projection (`_UILogic:WorldToScreenPosition` + `ScreenToUIPosition`) and Y-offset follow under local character. |
+| Legacy/new HUD parity | Character reload bar refresh is called from both legacy text HUD flow and new HUD flow. |
+| Lobby visibility integration | Added reload bar entities to both `SetHUDVisibilityClient` and `SetLegacyHUDVisibilityClient`. |
+
+### DefaultGroup.ui (Updated)
+- **File:** `ui/DefaultGroup.ui`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| New panel entities | Added `/ui/DefaultGroup/GRReloadFollowBack` and child `/Fore` as runtime reload bar panel pair. |
+| Fill-ready transform | Fore panel default pivot set to left (`x=0`) and left-anchored local offset for scale-based fill. |
