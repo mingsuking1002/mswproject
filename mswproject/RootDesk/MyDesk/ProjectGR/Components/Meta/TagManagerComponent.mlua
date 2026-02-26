@@ -6,6 +6,8 @@ script TagManagerComponent extends Component
     property number TagCooldown = 3.0
     @Sync
     property boolean IsTagReady = true
+    @Sync
+    property number TagCooldownEndAt = 0
     property number InvincibleTime = 0.5
     @Sync
     property boolean IsTagLocked = false
@@ -25,6 +27,7 @@ script TagManagerComponent extends Component
 
         self.CurrentCharIndex = self:ClampCharacterIndex(self.CurrentCharIndex)
         self.IsTagReady = true
+        self.TagCooldownEndAt = 0
         self._T.TagCooldownTimerId = 0
         self._T.TagInvincibleTimerId = 0
         self._T.TagUnlockTimerId = 0
@@ -148,10 +151,18 @@ script TagManagerComponent extends Component
 
         self.IsTagReady = false
         local cooldown = math.max(self.TagCooldown, 0)
+        local nowSec = self:GetServerNowSeconds()
+        self.TagCooldownEndAt = nowSec + cooldown
 
         local restoreTagReady = function()
             self.IsTagReady = true
+            self.TagCooldownEndAt = 0
             self._T.TagCooldownTimerId = 0
+        end
+
+        if cooldown <= 0 then
+            restoreTagReady()
+            return
         end
 
         self._T.TagCooldownTimerId = _TimerService:SetTimerOnce(restoreTagReady, cooldown)
@@ -580,6 +591,18 @@ script TagManagerComponent extends Component
         return ok
     end
 
+    -- Cooldown HUD consumers read this server-time-based end timestamp.
+    method number GetServerNowSeconds()
+        local nowSec = 0
+        local readOk, readValue = pcall(function()
+            return _UtilLogic.ServerElapsedSeconds
+        end)
+        if readOk == true and readValue ~= nil then
+            nowSec = math.max(0, readValue)
+        end
+        return nowSec
+    end
+
     -- EndPlay clears timers so tag callbacks never fire on destroyed entities.
     @ExecSpace("ServerOnly")
     method void OnEndPlay()
@@ -595,6 +618,7 @@ script TagManagerComponent extends Component
             _TimerService:ClearTimer(self._T.TagUnlockTimerId)
             self._T.TagUnlockTimerId = 0
         end
+        self.TagCooldownEndAt = 0
     end
 
     -- Utility bootstrap first; fallback local lookup is kept for resiliency when util component is missing.

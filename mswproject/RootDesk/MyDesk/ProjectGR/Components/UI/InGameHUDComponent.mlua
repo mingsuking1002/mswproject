@@ -1,0 +1,1041 @@
+@Component
+script InGameHUDComponent extends Component
+
+    property Entity HUDRootEntity = nil
+    property Entity LegacyTimerTextEntity = nil
+    property Entity LegacyHPTextEntity = nil
+    property Entity LegacyAmmoTextEntity = nil
+    property Entity LegacyCooldownTextEntity = nil
+    property Entity LegacyWeaponTextEntity = nil
+    property Entity TimerTextEntity = nil
+    property Entity GoldTextEntity = nil
+    property Entity HPForegroundEntity = nil
+    property Entity EXPForegroundEntity = nil
+    property Entity AmmoTextEntity = nil
+    property Entity WeaponIconEntity = nil
+    property Entity WeaponLevelTextEntity = nil
+    property Entity TagCooldownForegroundEntity = nil
+    property Entity StandbyPortraitEntity = nil
+    property Entity ReloadGaugeEntity = nil
+    property Entity TagSkillIconEntity = nil
+
+    property string HUDRootPath = "/ui/DefaultGroup/GRInGameHUD"
+    property boolean UseLegacyTextHUDWhenRootMissing = true
+    property string LegacyTimerTextPath = "/ui/DefaultGroup/GRTimerText"
+    property string LegacyHPTextPath = "/ui/DefaultGroup/GRHPText"
+    property string LegacyAmmoTextPath = "/ui/DefaultGroup/GRAmmoText"
+    property string LegacyCooldownTextPath = "/ui/DefaultGroup/GRCooldownText"
+    property string LegacyWeaponTextPath = "/ui/DefaultGroup/GRWeaponText"
+    property string TimerTextPath = "/ui/DefaultGroup/GRInGameHUD/TimerText"
+    property string GoldTextPath = "/ui/DefaultGroup/GRInGameHUD/GoldText"
+    property string HP_ForegroundPath = "/ui/DefaultGroup/GRInGameHUD/HPGauge/Fore"
+    property string EXP_ForegroundPath = "/ui/DefaultGroup/GRInGameHUD/EXPGauge/Fore"
+    property string AmmoTextPath = "/ui/DefaultGroup/GRInGameHUD/AmmoText"
+    property string WeaponIconPath = "/ui/DefaultGroup/GRInGameHUD/WeaponIcon"
+    property string WeaponLevelTextPath = "/ui/DefaultGroup/GRInGameHUD/WeaponLevelText"
+    property string TagCooldown_ForegroundPath = "/ui/DefaultGroup/GRInGameHUD/TagCooldownGauge/Fore"
+    property string StandbyPortraitPath = "/ui/DefaultGroup/GRInGameHUD/StandbyPortrait"
+    property string ReloadGaugePath = "/ui/DefaultGroup/GRInGameHUD/ReloadGauge/Fore"
+    property string TagSkillIconPath = "/ui/DefaultGroup/GRInGameHUD/TagSkillIcon"
+
+    property string CharacterDataTableName = "PlayerbleData"
+    property string SkillDataTableName = "SkillData"
+    property string DefaultWeaponIconRuid = ""
+    property string DefaultStandbyPortraitRuid = ""
+    property string DefaultTagSkillIconRuid = ""
+
+    property number UpdateInterval = 0.1
+    property boolean HideInLobby = true
+    property number MaxGaugeWidth = 100
+    property number MaxVerticalGaugeHeight = 100
+
+    -- Client initializes HUD entity cache and starts low-frequency refresh loop.
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self:EnsureGRUtil()
+        self:InitializeRuntimeCacheClient()
+        self:ResolveUIEntitiesClient()
+        self:CacheGaugeDimensionsClient()
+        self:LoadHudIconDataCacheClient()
+        self:StartHUDLoopClient()
+        self:RefreshHUDClient()
+    end
+
+    -- Map re-entry can invalidate UI references, so path resolve runs again.
+    @ExecSpace("ClientOnly")
+    method void OnMapEnter(Entity enteredMap)
+        self:ResolveUIEntitiesClient()
+        self:CacheGaugeDimensionsClient()
+        self:LoadHudIconDataCacheClient()
+        self:RefreshHUDClient()
+    end
+
+    -- EndPlay clears refresh timer to prevent callbacks on invalid entities.
+    method void OnEndPlay()
+        if self._T.HUDTimerId ~= nil and self._T.HUDTimerId > 0 then
+            _TimerService:ClearTimer(self._T.HUDTimerId)
+            self._T.HUDTimerId = 0
+        end
+    end
+
+    -- Runtime cache tracks last-applied icon values and avoids repeated UI writes.
+    @ExecSpace("ClientOnly")
+    method void InitializeRuntimeCacheClient()
+        if self._T.HUDTimerId == nil then
+            self._T.HUDTimerId = 0
+        end
+        if self._T.IsLegacyHUDMode == nil then
+            self._T.IsLegacyHUDMode = false
+        end
+        if self._T.SkillIconBySkillId == nil then
+            self._T.SkillIconBySkillId = {}
+        end
+        if self._T.SkillIdByCharacterId == nil then
+            self._T.SkillIdByCharacterId = {}
+        end
+        if self._T.LastWeaponIconRuid == nil then
+            self._T.LastWeaponIconRuid = ""
+        end
+        if self._T.LastStandbyPortraitRuid == nil then
+            self._T.LastStandbyPortraitRuid = ""
+        end
+        if self._T.LastTagSkillIconRuid == nil then
+            self._T.LastTagSkillIconRuid = ""
+        end
+    end
+
+    -- Low-frequency timer keeps HUD responsive without per-frame cost.
+    @ExecSpace("ClientOnly")
+    method void StartHUDLoopClient()
+        if self._T.HUDTimerId ~= nil and self._T.HUDTimerId > 0 then
+            return
+        end
+
+        local interval = self.UpdateInterval
+        if interval <= 0 then
+            interval = 0.1
+        end
+
+        local tick = function()
+            self:RefreshHUDClient()
+        end
+
+        self._T.HUDTimerId = _TimerService:SetTimerRepeat(tick, interval, 0)
+    end
+
+    -- Main HUD refresh reads sync states and applies text/gauge/icon updates.
+    @ExecSpace("ClientOnly")
+    method void RefreshHUDClient()
+        self:ResolveUIEntitiesClient()
+        self:UpdateHUDModeClient()
+        local isLobby = self:ResolveLobbyStateClient()
+        if self:IsLegacyHUDModeClient() == true then
+            self:ApplyLegacyLobbyStateClient(isLobby)
+            if self.HideInLobby == true and isLobby == true then
+                return
+            end
+            self:RefreshLegacyHUDClient()
+            return
+        end
+
+        self:ApplyLobbyStateClient(isLobby)
+        if self.HideInLobby == true and isLobby == true then
+            return
+        end
+
+        self:RefreshTimerTextClient()
+        self:RefreshGoldTextClient()
+        self:RefreshHPGaugeClient()
+        self:RefreshWeaponProgressClient()
+        self:RefreshAmmoAndReloadClient()
+        self:RefreshWeaponVisualClient()
+        self:RefreshTagStatusClient()
+    end
+
+    -- Lobby policy keeps in-game HUD hidden while lobby flow is active.
+    @ExecSpace("ClientOnly")
+    method void ApplyLobbyStateClient(boolean isLobby)
+        local visible = true
+        if self.HideInLobby == true and isLobby == true then
+            visible = false
+        end
+        self:SetHUDVisibilityClient(visible)
+    end
+
+    -- Visibility setter toggles all known HUD entities together.
+    @ExecSpace("ClientOnly")
+    method void SetHUDVisibilityClient(boolean visible)
+        self.HUDRootEntity = self:ResolveEntityWithCacheClient(self.HUDRootEntity, self.HUDRootPath)
+        local entities = {
+            self.HUDRootEntity,
+            self.TimerTextEntity,
+            self.GoldTextEntity,
+            self.HPForegroundEntity,
+            self.EXPForegroundEntity,
+            self.AmmoTextEntity,
+            self.WeaponIconEntity,
+            self.WeaponLevelTextEntity,
+            self.TagCooldownForegroundEntity,
+            self.StandbyPortraitEntity,
+            self.ReloadGaugeEntity,
+            self.TagSkillIconEntity
+        }
+
+        for _, entity in pairs(entities) do
+            self:SetEntityVisibleClient(entity, visible)
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void UpdateHUDModeClient()
+        local legacyMode = false
+        if self.UseLegacyTextHUDWhenRootMissing == true then
+            if self.HUDRootEntity == nil or isvalid(self.HUDRootEntity) == false then
+                legacyMode = true
+            end
+        end
+        self._T.IsLegacyHUDMode = legacyMode
+    end
+
+    method boolean IsLegacyHUDModeClient()
+        return self._T.IsLegacyHUDMode == true
+    end
+
+    -- Legacy fallback keeps old text HUD alive when new GRInGameHUD prefab is not placed yet.
+    @ExecSpace("ClientOnly")
+    method void ApplyLegacyLobbyStateClient(boolean isLobby)
+        local visible = true
+        if self.HideInLobby == true and isLobby == true then
+            visible = false
+        end
+        self:SetLegacyHUDVisibilityClient(visible)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetLegacyHUDVisibilityClient(boolean visible)
+        local entities = {
+            self.LegacyTimerTextEntity,
+            self.LegacyHPTextEntity,
+            self.LegacyAmmoTextEntity,
+            self.LegacyCooldownTextEntity,
+            self.LegacyWeaponTextEntity
+        }
+
+        for _, entity in pairs(entities) do
+            self:SetEntityVisibleClient(entity, visible)
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RefreshLegacyHUDClient()
+        self:RefreshLegacyTimerTextClient()
+        self:RefreshLegacyHPTextClient()
+        self:RefreshLegacyAmmoAndCooldownTextClient()
+        self:RefreshLegacyWeaponTextClient()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RefreshLegacyTimerTextClient()
+        local elapsed = 0
+        local timer = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "ElapsedTime")
+        if timer ~= nil then
+            local readOk, readValue = pcall(function()
+                return timer.ElapsedTime
+            end)
+            if readOk == true and readValue ~= nil then
+                elapsed = math.max(0, readValue)
+            end
+        end
+
+        local text = self:FormatSecondsToClockClient(elapsed)
+        self:SetTextByPathClient(self.LegacyTimerTextEntity, self.LegacyTimerTextPath, text)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RefreshLegacyHPTextClient()
+        local currentHp = 0
+        local maxHp = 0
+        local hp = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "CurrentHP")
+        if hp ~= nil then
+            pcall(function()
+                currentHp = math.max(0, math.floor(hp.CurrentHP))
+                maxHp = math.max(0, math.floor(hp.MaxHP))
+            end)
+        end
+
+        local label = "HP " .. tostring(currentHp) .. " / " .. tostring(maxHp)
+        self:SetTextByPathClient(self.LegacyHPTextEntity, self.LegacyHPTextPath, label)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RefreshLegacyAmmoAndCooldownTextClient()
+        local ammo = 0
+        local maxAmmo = 0
+        local isReloading = false
+        local reloadStartAt = 0
+        local reloadEndAt = 0
+        local reload = self:ResolveComponentSafe(self.Entity, "ReloadComponent", "CurrentAmmo")
+        if reload ~= nil then
+            local readOk, _ = pcall(function()
+                ammo = reload.CurrentAmmo
+                maxAmmo = reload.MaxAmmo
+                isReloading = reload.IsReloading
+                reloadStartAt = reload.CurrentReloadStartAt
+                reloadEndAt = reload.CurrentReloadEndAt
+            end)
+            if readOk ~= true then
+                ammo = 0
+                maxAmmo = 0
+                isReloading = false
+                reloadStartAt = 0
+                reloadEndAt = 0
+            end
+        end
+
+        local ammoLabel = "AMMO " .. tostring(math.max(0, math.floor(ammo)))
+        if maxAmmo > 0 then
+            ammoLabel = ammoLabel .. " / " .. tostring(math.max(0, math.floor(maxAmmo)))
+        end
+        self:SetTextByPathClient(self.LegacyAmmoTextEntity, self.LegacyAmmoTextPath, ammoLabel)
+
+        local cooldownLabel = "READY"
+        if isReloading == true and reloadEndAt > reloadStartAt then
+            local nowSec = self:GetServerNowSecondsClient()
+            local ratio = 0
+            if nowSec <= reloadStartAt then
+                ratio = 0
+            elseif nowSec >= reloadEndAt then
+                ratio = 1
+            else
+                ratio = self:Clamp01((nowSec - reloadStartAt) / (reloadEndAt - reloadStartAt))
+            end
+            cooldownLabel = "RELOAD " .. tostring(math.floor(ratio * 100)) .. "%"
+        end
+        self:SetTextByPathClient(self.LegacyCooldownTextEntity, self.LegacyCooldownTextPath, cooldownLabel)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RefreshLegacyWeaponTextClient()
+        local weaponName = ""
+        local slot = 1
+        local level = 1
+
+        local swap = self:ResolveComponentSafe(self.Entity, "WeaponSwapComponent", "CurrentWeaponSlot")
+        if swap ~= nil then
+            pcall(function()
+                slot = math.max(1, math.floor(swap.CurrentWeaponSlot))
+            end)
+            pcall(function()
+                weaponName = tostring(swap.CurrentWeaponName)
+            end)
+        end
+
+        local levelUp = self:ResolveComponentSafe(self.Entity, "WeaponLevelUpComponent", "CurrentWeaponLevel")
+        if levelUp ~= nil then
+            pcall(function()
+                level = math.max(1, math.floor(levelUp.CurrentWeaponLevel))
+            end)
+        end
+
+        local weaponLabel = "SLOT " .. tostring(slot)
+        if weaponName ~= nil and weaponName ~= "" then
+            weaponLabel = tostring(weaponName)
+        end
+        weaponLabel = weaponLabel .. "  LV " .. tostring(level)
+        self:SetTextByPathClient(self.LegacyWeaponTextEntity, self.LegacyWeaponTextPath, weaponLabel)
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean ResolveLobbyStateClient()
+        local lobbyFlow = self:ResolveComponentSafe(self.Entity, "LobbyFlowComponent", "IsLobbyActive")
+        if lobbyFlow == nil then
+            return false
+        end
+
+        local readOk, readValue = pcall(function()
+            return lobbyFlow.IsLobbyActive
+        end)
+        if readOk == true and readValue ~= nil then
+            return readValue == true
+        end
+
+        return false
+    end
+
+    -- Timer text uses shared GameTimer sync values and MM:SS formatting.
+    @ExecSpace("ClientOnly")
+    method void RefreshTimerTextClient()
+        local elapsed = 0
+        local timer = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "ElapsedTime")
+        if timer ~= nil then
+            local readOk, readValue = pcall(function()
+                return timer.ElapsedTime
+            end)
+            if readOk == true and readValue ~= nil then
+                elapsed = math.max(0, readValue)
+            end
+        end
+
+        local text = self:FormatSecondsToClockClient(elapsed)
+        self:SetTextByPathClient(self.TimerTextEntity, self.TimerTextPath, text)
+    end
+
+    -- Gold text is read-only from GoldComponent and never writes gameplay state.
+    @ExecSpace("ClientOnly")
+    method void RefreshGoldTextClient()
+        local goldValue = 0
+        local gold = self:ResolveComponentSafe(self.Entity, "GoldComponent", "CurrentGold")
+        if gold ~= nil then
+            local readOk, readValue = pcall(function()
+                return gold.CurrentGold
+            end)
+            if readOk == true and readValue ~= nil then
+                goldValue = math.max(0, math.floor(readValue))
+            end
+        end
+
+        self:SetTextByPathClient(self.GoldTextEntity, self.GoldTextPath, tostring(goldValue))
+    end
+
+    -- HP gauge is a normalized horizontal fill based on current/max HP.
+    @ExecSpace("ClientOnly")
+    method void RefreshHPGaugeClient()
+        local ratio = 0
+        local hp = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "CurrentHP")
+        if hp ~= nil then
+            local currentHp = 0
+            local maxHp = 1
+            local readOk, _ = pcall(function()
+                currentHp = hp.CurrentHP
+                maxHp = hp.MaxHP
+            end)
+            if readOk == true then
+                if maxHp <= 0 then
+                    maxHp = 1
+                end
+                ratio = self:Clamp01(currentHp / maxHp)
+            end
+        end
+
+        self:ApplyHorizontalGaugeScaleClient(self.HPForegroundEntity, self.HP_ForegroundPath, ratio)
+    end
+
+    -- Weapon progress HUD reads sync values from WeaponLevelUpComponent.
+    @ExecSpace("ClientOnly")
+    method void RefreshWeaponProgressClient()
+        local level = 1
+        local exp = 0
+        local required = 1
+        local levelUp = self:ResolveComponentSafe(self.Entity, "WeaponLevelUpComponent", "CurrentWeaponLevel")
+        if levelUp ~= nil then
+            local readOk, _ = pcall(function()
+                level = levelUp.CurrentWeaponLevel
+                exp = levelUp.CurrentWeaponExp
+                required = levelUp.CurrentWeaponRequiredExp
+            end)
+            if readOk ~= true then
+                level = 1
+                exp = 0
+                required = 1
+            end
+        end
+
+        if required <= 0 then
+            required = 1
+        end
+        local ratio = self:Clamp01(exp / required)
+        self:ApplyHorizontalGaugeScaleClient(self.EXPForegroundEntity, self.EXP_ForegroundPath, ratio)
+        self:SetTextByPathClient(self.WeaponLevelTextEntity, self.WeaponLevelTextPath, "LV " .. tostring(math.max(1, math.floor(level))))
+    end
+
+    -- Ammo text and reload gauge are both sourced from ReloadComponent sync fields.
+    @ExecSpace("ClientOnly")
+    method void RefreshAmmoAndReloadClient()
+        local ammo = 0
+        local maxAmmo = 0
+        local isReloading = false
+        local reloadStartAt = 0
+        local reloadEndAt = 0
+
+        local reload = self:ResolveComponentSafe(self.Entity, "ReloadComponent", "CurrentAmmo")
+        if reload ~= nil then
+            local readOk, _ = pcall(function()
+                ammo = reload.CurrentAmmo
+                maxAmmo = reload.MaxAmmo
+                isReloading = reload.IsReloading
+                reloadStartAt = reload.CurrentReloadStartAt
+                reloadEndAt = reload.CurrentReloadEndAt
+            end)
+            if readOk ~= true then
+                ammo = 0
+                maxAmmo = 0
+                isReloading = false
+                reloadStartAt = 0
+                reloadEndAt = 0
+            end
+        end
+
+        local ammoLabel = tostring(math.max(0, math.floor(ammo)))
+        if maxAmmo > 0 then
+            ammoLabel = ammoLabel .. " / " .. tostring(math.max(0, math.floor(maxAmmo)))
+        end
+        self:SetTextByPathClient(self.AmmoTextEntity, self.AmmoTextPath, ammoLabel)
+
+        local nowSec = self:GetServerNowSecondsClient()
+        local reloadRatio = 0
+        local showGauge = false
+        if isReloading == true and reloadEndAt > reloadStartAt then
+            showGauge = true
+            if nowSec <= reloadStartAt then
+                reloadRatio = 0
+            elseif nowSec >= reloadEndAt then
+                reloadRatio = 1
+            else
+                reloadRatio = self:Clamp01((nowSec - reloadStartAt) / (reloadEndAt - reloadStartAt))
+            end
+        end
+
+        self.ReloadGaugeEntity = self:ResolveEntityWithCacheClient(self.ReloadGaugeEntity, self.ReloadGaugePath)
+        self:SetEntityVisibleClient(self.ReloadGaugeEntity, showGauge)
+        self:ApplyHorizontalGaugeScaleClient(self.ReloadGaugeEntity, self.ReloadGaugePath, reloadRatio)
+    end
+
+    -- Weapon icon/name HUD reads sync state prepared by WeaponSwapComponent.
+    @ExecSpace("ClientOnly")
+    method void RefreshWeaponVisualClient()
+        local iconRuid = self.DefaultWeaponIconRuid
+        local swap = self:ResolveComponentSafe(self.Entity, "WeaponSwapComponent", "CurrentWeaponSpriteRuid")
+        if swap ~= nil then
+            local readOk, spriteValue = pcall(function()
+                return swap.CurrentWeaponSpriteRuid
+            end)
+            if readOk == true and spriteValue ~= nil and tostring(spriteValue) ~= "" then
+                iconRuid = tostring(spriteValue)
+            end
+        end
+
+        if self._T.LastWeaponIconRuid ~= iconRuid then
+            self:ApplySpriteRuidByPathClient(self.WeaponIconEntity, self.WeaponIconPath, iconRuid)
+            self._T.LastWeaponIconRuid = iconRuid
+        end
+    end
+
+    -- Tag status updates standby portrait, tag cooldown gauge, and standby skill icon.
+    @ExecSpace("ClientOnly")
+    method void RefreshTagStatusClient()
+        self:LoadHudIconDataCacheClient()
+
+        local currentCharIndex = 1
+        local tagReady = true
+        local cooldown = 0
+        local cooldownEndAt = 0
+        local portraitA = ""
+        local portraitB = ""
+
+        local tag = self:ResolveComponentSafe(self.Entity, "TagManagerComponent", "CurrentCharIndex")
+        if tag ~= nil then
+            local readOk, _ = pcall(function()
+                currentCharIndex = tag.CurrentCharIndex
+                tagReady = tag.IsTagReady
+                cooldown = tag.TagCooldown
+                cooldownEndAt = tag.TagCooldownEndAt
+                portraitA = tag.CharacterAAvatarRuid
+                portraitB = tag.CharacterBAvatarRuid
+            end)
+            if readOk ~= true then
+                currentCharIndex = 1
+                tagReady = true
+                cooldown = 0
+                cooldownEndAt = 0
+                portraitA = ""
+                portraitB = ""
+            end
+        end
+
+        local standbyPortraitRuid = self.DefaultStandbyPortraitRuid
+        if math.floor(currentCharIndex) == 1 then
+            if portraitB ~= nil and portraitB ~= "" then
+                standbyPortraitRuid = tostring(portraitB)
+            end
+        else
+            if portraitA ~= nil and portraitA ~= "" then
+                standbyPortraitRuid = tostring(portraitA)
+            end
+        end
+        if self._T.LastStandbyPortraitRuid ~= standbyPortraitRuid then
+            self:ApplySpriteRuidByPathClient(self.StandbyPortraitEntity, self.StandbyPortraitPath, standbyPortraitRuid)
+            self._T.LastStandbyPortraitRuid = standbyPortraitRuid
+        end
+
+        local cooldownRatio = 1
+        if tagReady ~= true then
+            if cooldown > 0 and cooldownEndAt > 0 then
+                local nowSec = self:GetServerNowSecondsClient()
+                local remain = math.max(0, cooldownEndAt - nowSec)
+                cooldownRatio = self:Clamp01(1 - (remain / cooldown))
+            else
+                cooldownRatio = 0
+            end
+        end
+        self:ApplyVerticalGaugeScaleClient(self.TagCooldownForegroundEntity, self.TagCooldown_ForegroundPath, cooldownRatio)
+
+        local standbyCharacterId = self:ResolveStandbyCharacterIdClient(currentCharIndex)
+        local tagSkillIconRuid = self:ResolveTagSkillIconRuidClient(standbyCharacterId)
+        if self._T.LastTagSkillIconRuid ~= tagSkillIconRuid then
+            self:ApplySpriteRuidByPathClient(self.TagSkillIconEntity, self.TagSkillIconPath, tagSkillIconRuid)
+            self._T.LastTagSkillIconRuid = tagSkillIconRuid
+        end
+    end
+
+    -- Data-table cache for standby tag-skill icon lookup.
+    @ExecSpace("ClientOnly")
+    method void LoadHudIconDataCacheClient()
+        if self._T.HudDataCacheLoaded == true then
+            return
+        end
+
+        self._T.SkillIconBySkillId = {}
+        self._T.SkillIdByCharacterId = {}
+
+        local characterTable = self:LoadDataTableClient(self.CharacterDataTableName)
+        local skillTable = self:LoadDataTableClient(self.SkillDataTableName)
+        if characterTable == nil or skillTable == nil then
+            return
+        end
+
+        local charRows = self:GetAllRowsFromTableClient(characterTable)
+        if charRows ~= nil then
+            for _, row in pairs(charRows) do
+                local charId = self:GetRowString(row, "id", "")
+                if charId == "" then
+                    continue
+                end
+                local skillId = self:GetRowString(row, "tag_skill", "")
+                if skillId ~= "" then
+                    self._T.SkillIdByCharacterId[charId] = skillId
+                end
+            end
+        end
+
+        local skillRows = self:GetAllRowsFromTableClient(skillTable)
+        if skillRows ~= nil then
+            for _, row in pairs(skillRows) do
+                local skillId = self:GetRowString(row, "id", "")
+                if skillId == "" then
+                    continue
+                end
+                local iconRuid = self:GetRowString(row, "sprite_ruid", "")
+                self._T.SkillIconBySkillId[skillId] = iconRuid
+            end
+        end
+
+        self._T.HudDataCacheLoaded = true
+    end
+
+    @ExecSpace("ClientOnly")
+    method any LoadDataTableClient(string tableName)
+        if tableName == nil or tableName == "" then
+            return nil
+        end
+
+        local dataTable = nil
+        local loadOk, loadValue = pcall(function()
+            return _DataService:GetTable(tableName)
+        end)
+        if loadOk == true then
+            dataTable = loadValue
+        end
+        return dataTable
+    end
+
+    @ExecSpace("ClientOnly")
+    method any GetAllRowsFromTableClient(any dataTable)
+        if dataTable == nil then
+            return nil
+        end
+
+        local rows = nil
+        local rowsOk, rowsValue = pcall(function()
+            return dataTable:GetAllRow()
+        end)
+        if rowsOk == true then
+            rows = rowsValue
+        end
+        return rows
+    end
+
+    method string ResolveStandbyCharacterIdClient(integer currentCharIndex)
+        if math.floor(currentCharIndex) == 1 then
+            return "player_b"
+        end
+        return "player_a"
+    end
+
+    method string ResolveTagSkillIconRuidClient(string standbyCharacterId)
+        local result = self.DefaultTagSkillIconRuid
+        if standbyCharacterId == nil or standbyCharacterId == "" then
+            return result
+        end
+
+        local skillId = self._T.SkillIdByCharacterId[standbyCharacterId]
+        if skillId == nil or skillId == "" then
+            return result
+        end
+
+        local iconRuid = self._T.SkillIconBySkillId[skillId]
+        if iconRuid ~= nil and iconRuid ~= "" then
+            return tostring(iconRuid)
+        end
+        return result
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ResolveUIEntitiesClient()
+        self.HUDRootEntity = self:ResolveEntityWithCacheClient(self.HUDRootEntity, self.HUDRootPath)
+        self.LegacyTimerTextEntity = self:ResolveEntityWithCacheClient(self.LegacyTimerTextEntity, self.LegacyTimerTextPath)
+        self.LegacyHPTextEntity = self:ResolveEntityWithCacheClient(self.LegacyHPTextEntity, self.LegacyHPTextPath)
+        self.LegacyAmmoTextEntity = self:ResolveEntityWithCacheClient(self.LegacyAmmoTextEntity, self.LegacyAmmoTextPath)
+        self.LegacyCooldownTextEntity = self:ResolveEntityWithCacheClient(self.LegacyCooldownTextEntity, self.LegacyCooldownTextPath)
+        self.LegacyWeaponTextEntity = self:ResolveEntityWithCacheClient(self.LegacyWeaponTextEntity, self.LegacyWeaponTextPath)
+        self.TimerTextEntity = self:ResolveEntityWithCacheClient(self.TimerTextEntity, self.TimerTextPath)
+        self.GoldTextEntity = self:ResolveEntityWithCacheClient(self.GoldTextEntity, self.GoldTextPath)
+        self.HPForegroundEntity = self:ResolveEntityWithCacheClient(self.HPForegroundEntity, self.HP_ForegroundPath)
+        self.EXPForegroundEntity = self:ResolveEntityWithCacheClient(self.EXPForegroundEntity, self.EXP_ForegroundPath)
+        self.AmmoTextEntity = self:ResolveEntityWithCacheClient(self.AmmoTextEntity, self.AmmoTextPath)
+        self.WeaponIconEntity = self:ResolveEntityWithCacheClient(self.WeaponIconEntity, self.WeaponIconPath)
+        self.WeaponLevelTextEntity = self:ResolveEntityWithCacheClient(self.WeaponLevelTextEntity, self.WeaponLevelTextPath)
+        self.TagCooldownForegroundEntity = self:ResolveEntityWithCacheClient(self.TagCooldownForegroundEntity, self.TagCooldown_ForegroundPath)
+        self.StandbyPortraitEntity = self:ResolveEntityWithCacheClient(self.StandbyPortraitEntity, self.StandbyPortraitPath)
+        self.ReloadGaugeEntity = self:ResolveEntityWithCacheClient(self.ReloadGaugeEntity, self.ReloadGaugePath)
+        self.TagSkillIconEntity = self:ResolveEntityWithCacheClient(self.TagSkillIconEntity, self.TagSkillIconPath)
+    end
+
+    @ExecSpace("ClientOnly")
+    method Entity ResolveEntityWithCacheClient(Entity entityRef, string path)
+        if entityRef ~= nil and isvalid(entityRef) == true then
+            return entityRef
+        end
+        return self:ResolveEntityByPath(path)
+    end
+
+    @ExecSpace("ClientOnly")
+    method Entity ResolveEntityByPath(string path)
+        if path == nil or path == "" then
+            return nil
+        end
+
+        local entity = _EntityService:GetEntityByPath(path)
+        if entity == nil or isvalid(entity) == false then
+            return nil
+        end
+        return entity
+    end
+
+    -- Optional size cache keeps spec fields populated when UI size APIs are available.
+    @ExecSpace("ClientOnly")
+    method void CacheGaugeDimensionsClient()
+        self.MaxGaugeWidth = self:ReadGaugeDimensionClient(self.HPForegroundEntity, self.MaxGaugeWidth, false)
+        self.MaxVerticalGaugeHeight = self:ReadGaugeDimensionClient(self.TagCooldownForegroundEntity, self.MaxVerticalGaugeHeight, true)
+    end
+
+    @ExecSpace("ClientOnly")
+    method number ReadGaugeDimensionClient(Entity gaugeEntity, number fallbackValue, boolean readY)
+        if gaugeEntity == nil or isvalid(gaugeEntity) == false then
+            return fallbackValue
+        end
+        if gaugeEntity.UITransformComponent == nil then
+            return fallbackValue
+        end
+
+        local uiTransform = gaugeEntity.UITransformComponent
+        local size = nil
+        local sizeOk, sizeValue = pcall(function()
+            return uiTransform.RectSize
+        end)
+        if sizeOk == true then
+            size = sizeValue
+        else
+            local legacyOk, legacySize = pcall(function()
+                return uiTransform.Size
+            end)
+            if legacyOk == true then
+                size = legacySize
+            end
+        end
+        if size ~= nil then
+            local dimension = nil
+            local readOk, readValue = pcall(function()
+                if readY == true then
+                    return size.y
+                end
+                return size.x
+            end)
+            if readOk == true then
+                dimension = readValue
+            end
+            if dimension ~= nil and dimension > 0 then
+                return dimension
+            end
+        end
+
+        return fallbackValue
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetTextByPathClient(Entity entityRef, string path, string textValue)
+        local textComponent = self:ResolveTextComponentClient(entityRef, path)
+        if textComponent == nil then
+            return
+        end
+        pcall(function()
+            textComponent.Text = textValue
+        end)
+    end
+
+    @ExecSpace("ClientOnly")
+    method TextComponent ResolveTextComponentClient(Entity entityRef, string path)
+        local target = self:ResolveEntityWithCacheClient(entityRef, path)
+        if target == nil or isvalid(target) == false then
+            return nil
+        end
+        if target.TextComponent == nil then
+            return nil
+        end
+        return target.TextComponent
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ApplyHorizontalGaugeScaleClient(Entity entityRef, string path, number ratio)
+        local target = self:ResolveEntityWithCacheClient(entityRef, path)
+        if target == nil or isvalid(target) == false then
+            return
+        end
+        if target.UITransformComponent == nil then
+            return
+        end
+
+        local value = self:Clamp01(ratio)
+        pcall(function()
+            target.UITransformComponent.UIScale = Vector3(value, 1, 1)
+        end)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ApplyVerticalGaugeScaleClient(Entity entityRef, string path, number ratio)
+        local target = self:ResolveEntityWithCacheClient(entityRef, path)
+        if target == nil or isvalid(target) == false then
+            return
+        end
+        if target.UITransformComponent == nil then
+            return
+        end
+
+        local value = self:Clamp01(ratio)
+        pcall(function()
+            target.UITransformComponent.UIScale = Vector3(1, value, 1)
+        end)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ApplySpriteRuidByPathClient(Entity entityRef, string path, string ruid)
+        local target = self:ResolveEntityWithCacheClient(entityRef, path)
+        if target == nil or isvalid(target) == false then
+            return
+        end
+
+        local finalRuid = ""
+        if ruid ~= nil then
+            finalRuid = tostring(ruid)
+        end
+
+        if target.SpriteGUIRendererComponent ~= nil then
+            pcall(function()
+                target.SpriteGUIRendererComponent.ImageRUID = finalRuid
+            end)
+            pcall(function()
+                target.SpriteGUIRendererComponent.SpriteRUID = finalRuid
+            end)
+            return
+        end
+
+        if target.SpriteRendererComponent ~= nil then
+            pcall(function()
+                target.SpriteRendererComponent.SpriteRUID = finalRuid
+            end)
+            return
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetEntityVisibleClient(Entity target, boolean visible)
+        if target == nil or isvalid(target) == false then
+            return
+        end
+        pcall(function()
+            target.Enable = visible
+            target.Visible = visible
+        end)
+    end
+
+    method number Clamp01(number value)
+        local numeric = value
+        if numeric == nil then
+            numeric = 0
+        end
+        if numeric < 0 then
+            return 0
+        end
+        if numeric > 1 then
+            return 1
+        end
+        return numeric
+    end
+
+    method string FormatSecondsToClockClient(number totalSeconds)
+        local value = totalSeconds
+        if value == nil then
+            value = 0
+        end
+        value = math.max(0, math.floor(value))
+
+        local hour = math.floor(value / 3600)
+        local minute = math.floor((value % 3600) / 60)
+        local second = math.floor(value % 60)
+
+        if hour > 0 then
+            return string.format("%02d:%02d:%02d", hour, minute, second)
+        end
+        return string.format("%02d:%02d", minute, second)
+    end
+
+    method number GetServerNowSecondsClient()
+        local nowSec = 0
+        local readOk, readValue = pcall(function()
+            return _UtilLogic.ServerElapsedSeconds
+        end)
+        if readOk == true and readValue ~= nil then
+            nowSec = math.max(0, readValue)
+        end
+        return nowSec
+    end
+
+    method string GetRowString(any row, string columnName, string fallbackValue)
+        local fallback = fallbackValue
+        if fallback == nil then
+            fallback = ""
+        end
+
+        if row == nil then
+            return fallback
+        end
+        if columnName == nil or columnName == "" then
+            return fallback
+        end
+
+        local value = nil
+        local readOk, readValue = pcall(function()
+            return row:GetItem(columnName)
+        end)
+        if readOk == true then
+            value = readValue
+        end
+        if value == nil then
+            return fallback
+        end
+
+        local text = tostring(value)
+        text = string.gsub(text, "^%s+", "")
+        text = string.gsub(text, "%s+$", "")
+        if text == "" then
+            return fallback
+        end
+
+        local lowered = string.lower(text)
+        if text == "-" or lowered == "null" or lowered == "nil" then
+            return fallback
+        end
+        return text
+    end
+
+    -- Utility bootstrap first; fallback lookup remains when global util is unavailable.
+    method void EnsureGRUtil()
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, utilApi = pcall(function()
+                return utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and utilApi ~= nil then
+                self._T.GRUtil = utilApi
+            end
+            if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+end

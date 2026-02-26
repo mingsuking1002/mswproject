@@ -7,6 +7,10 @@ script ReloadComponent extends Component
     property boolean IsReloading = false
     @Sync
     property integer CurrentWeaponSlot = 1
+    @Sync
+    property number CurrentReloadStartAt = 0
+    @Sync
+    property number CurrentReloadEndAt = 0
 
     property integer MaxAmmo = 30
     property number ReloadTime = 1.5
@@ -19,6 +23,8 @@ script ReloadComponent extends Component
         self.CurrentAmmo = math.max(0, math.min(self.CurrentAmmo, self.MaxAmmo))
         self.IsReloading = false
         self.CurrentWeaponSlot = math.max(1, self.CurrentWeaponSlot)
+        self.CurrentReloadStartAt = 0
+        self.CurrentReloadEndAt = 0
 
         self._T.AmmoBySlot = {}
         self._T.MaxAmmoBySlot = {}
@@ -101,7 +107,12 @@ script ReloadComponent extends Component
         end
 
         local delay = math.max(self.ReloadTime, 0)
-        self._T.ReloadEndTimeBySlot[slot] = _UtilLogic.ServerElapsedSeconds + delay
+        local nowSec = self:GetServerNowSeconds()
+        local endAt = nowSec + delay
+        self._T.ReloadEndTimeBySlot[slot] = endAt
+        if slot == self.CurrentWeaponSlot then
+            self:SetCurrentReloadWindowSync(nowSec, endAt)
+        end
 
         local completeReload = function()
             self:CompleteReload(slot)
@@ -132,6 +143,7 @@ script ReloadComponent extends Component
             self.MaxAmmo = currentMax
             self.CurrentAmmo = currentMax
             self.IsReloading = false
+            self:SetCurrentReloadWindowSync(0, 0)
         end
     end
 
@@ -152,6 +164,7 @@ script ReloadComponent extends Component
 
         if slot == self.CurrentWeaponSlot then
             self.IsReloading = false
+            self:SetCurrentReloadWindowSync(0, 0)
         end
     end
 
@@ -195,6 +208,17 @@ script ReloadComponent extends Component
         end
 
         self.IsReloading = self:IsReloadingInSlot(slot)
+        if self.IsReloading == true then
+            local endAt = self._T.ReloadEndTimeBySlot[slot]
+            if endAt == nil then
+                endAt = 0
+            end
+            endAt = math.max(0, endAt)
+            local startAt = math.max(0, endAt - math.max(self.ReloadTime, 0))
+            self:SetCurrentReloadWindowSync(startAt, endAt)
+        else
+            self:SetCurrentReloadWindowSync(0, 0)
+        end
     end
 
     -- Fire consumption updates both ammo and per-slot fire cooldown timestamp.
@@ -331,6 +355,37 @@ script ReloadComponent extends Component
             self._T.ReloadTimerBySlot[slot] = 0
             self._T.ReloadEndTimeBySlot[slot] = 0
         end
+        self:SetCurrentReloadWindowSync(0, 0)
+    end
+
+    -- Sync window is centralized so HUD reads one authoritative pair for current-slot reload progress.
+    method void SetCurrentReloadWindowSync(number startAt, number endAt)
+        local safeStart = 0
+        local safeEnd = 0
+        if startAt ~= nil then
+            safeStart = math.max(0, startAt)
+        end
+        if endAt ~= nil then
+            safeEnd = math.max(0, endAt)
+        end
+        if safeEnd < safeStart then
+            safeEnd = safeStart
+        end
+
+        self.CurrentReloadStartAt = safeStart
+        self.CurrentReloadEndAt = safeEnd
+    end
+
+    -- Server time helper keeps reload sync values resilient when elapsed-seconds service is temporarily unavailable.
+    method number GetServerNowSeconds()
+        local nowSec = 0
+        local ok, value = pcall(function()
+            return _UtilLogic.ServerElapsedSeconds
+        end)
+        if ok == true and value ~= nil then
+            nowSec = math.max(0, value)
+        end
+        return nowSec
     end
 
     -- Utility bootstrap first; fallback owner validation is used if global utility is not available.

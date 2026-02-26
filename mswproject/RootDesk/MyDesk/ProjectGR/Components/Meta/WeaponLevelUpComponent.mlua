@@ -8,6 +8,12 @@ script WeaponLevelUpComponent extends Component
     property integer DefaultMaxLevel = 10
     property boolean EnableDamageRatioAliasFallback = true
     property boolean EnableDebugLogs = false
+    @Sync
+    property integer CurrentWeaponLevel = 1
+    @Sync
+    property integer CurrentWeaponExp = 0
+    @Sync
+    property integer CurrentWeaponRequiredExp = 10
 
     -- Server initializes caches so exp/level lookup remains O(1) during combat.
     @ExecSpace("ServerOnly")
@@ -19,6 +25,9 @@ script WeaponLevelUpComponent extends Component
         self._T.IsWeaponConfigLoaded = false
         self._T.IsWeaponLevelLoaded = false
         self._T.RequiredColumnWarned = {}
+        self.CurrentWeaponLevel = math.max(1, self.DefaultStartLevel)
+        self.CurrentWeaponExp = 0
+        self.CurrentWeaponRequiredExp = math.max(1, self.DefaultRequiredExp)
     end
 
     -- BeginPlay preloads table contracts and applies the current weapon power once.
@@ -26,12 +35,14 @@ script WeaponLevelUpComponent extends Component
     method void OnBeginPlay()
         self:InitializeWeaponProgressServer()
         self:ApplyWeaponPowerToFireServer("")
+        self:RefreshCurrentWeaponProgressSyncServer("")
     end
 
     -- Map enter can reorder component initialization timing; reapply once to keep current slot power deterministic.
     @ExecSpace("ServerOnly")
     method void OnMapEnter(Entity enteredMap)
         self:ApplyWeaponPowerToFireServer("")
+        self:RefreshCurrentWeaponProgressSyncServer("")
     end
 
     -- Public initializer is idempotent so bootstrap/tag paths can call it safely.
@@ -49,6 +60,7 @@ script WeaponLevelUpComponent extends Component
                 self:EnsureWeaponProgressByIdServer(tostring(weaponId))
             end
         end
+        self:RefreshCurrentWeaponProgressSyncServer("")
     end
 
     -- FireSystem calls this API after successful fire/install; max-level weapons stop accumulating exp.
@@ -97,6 +109,7 @@ script WeaponLevelUpComponent extends Component
         local currentWeaponId = self:ResolveCurrentWeaponIdServer()
         if currentWeaponId == weaponId then
             self:ApplyWeaponPowerToFireServer(weaponId)
+            self:RefreshCurrentWeaponProgressSyncServer(weaponId)
         end
     end
 
@@ -115,6 +128,7 @@ script WeaponLevelUpComponent extends Component
         if progress == nil then
             return 0
         end
+        self:RefreshCurrentWeaponProgressSyncServer(finalWeaponId)
 
         local fire = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "BaseWeaponAttack")
         if fire == nil then
@@ -250,6 +264,35 @@ script WeaponLevelUpComponent extends Component
         end
 
         self:ApplyWeaponPowerToFireServer("")
+        self:RefreshCurrentWeaponProgressSyncServer("")
+    end
+
+    -- HUD sync snapshot for currently equipped weapon progress is centralized in one server API.
+    @ExecSpace("ServerOnly")
+    method void RefreshCurrentWeaponProgressSyncServer(string weaponId)
+        local finalWeaponId = weaponId
+        if finalWeaponId == nil or finalWeaponId == "" then
+            finalWeaponId = self:ResolveCurrentWeaponIdServer()
+        end
+
+        if finalWeaponId == nil or finalWeaponId == "" then
+            self.CurrentWeaponLevel = math.max(1, self.DefaultStartLevel)
+            self.CurrentWeaponExp = 0
+            self.CurrentWeaponRequiredExp = math.max(1, self.DefaultRequiredExp)
+            return
+        end
+
+        local progress = self:EnsureWeaponProgressByIdServer(finalWeaponId)
+        if progress == nil then
+            self.CurrentWeaponLevel = math.max(1, self.DefaultStartLevel)
+            self.CurrentWeaponExp = 0
+            self.CurrentWeaponRequiredExp = math.max(1, self.DefaultRequiredExp)
+            return
+        end
+
+        self.CurrentWeaponLevel = math.max(1, math.floor(progress.Level))
+        self.CurrentWeaponExp = math.max(0, math.floor(progress.Exp))
+        self.CurrentWeaponRequiredExp = math.max(1, math.floor(progress.RequiredExp))
     end
 
     -- Ensures one weapon progress row exists using WeaponData start/max/required defaults.

@@ -2117,3 +2117,78 @@
 |---|---|
 | Target serialization fix | Corrected `ContentProto.Json.Target` to plain string for DropSystem-related codeblocks (`MonsterSpawnComponent`, `LobbyFlowComponent`, `Map01BootstrapComponent`, `ItemDropManagerComponent`). |
 | Source parity | Verified each related `.codeblock` target matches paired `.mlua` source exactly. |
+
+## 2026-02-25 InGameHUD Implementation (SPEC_InGameHUD)
+
+### InGameHUDComponent (New)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/UI/InGameHUDComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/UI/InGameHUDComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| New in-game HUD runtime | Added `InGameHUDComponent` for client-only unified HUD rendering (timer/gold/hp/exp/ammo/reload/tag/weapon). |
+| Gauge rendering | Horizontal/vertical gauge scale helpers added with 0~1 clamp and `UITransformComponent.UIScale` application. |
+| Lobby visibility policy | Uses `LobbyFlowComponent.IsLobbyActive` to hide HUD in lobby. |
+| Fallback-safe rendering | Path resolve + `nil/isvalid/pcall` guards for every UI field update. |
+| Icon data cache | Added optional client-side `PlayerbleData` + `SkillData` cache to map standby character tag-skill icon. |
+| Legacy UI fallback | When `/ui/DefaultGroup/GRInGameHUD` is missing, auto-falls back to legacy text HUD paths (`GRTimerText`, `GRHPText`, `GRAmmoText`, `GRCooldownText`, `GRWeaponText`). |
+
+### ReloadComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ReloadComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ReloadComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Reload sync window | Added `CurrentReloadStartAt`, `CurrentReloadEndAt` sync properties for HUD progress gauge. |
+| Consistent lifecycle writes | Start/complete/cancel/slot-switch/endplay paths now keep reload window sync values coherent. |
+| Time helper | Added `GetServerNowSeconds()` to keep sync timestamps resilient when elapsed-seconds read fails. |
+
+### TagManagerComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/TagManagerComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/TagManagerComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Tag cooldown sync | Added `TagCooldownEndAt` sync property for client HUD cooldown gauge ratio calculation. |
+| Cooldown lifecycle writes | `StartTagCooldownServer()` writes end timestamp, timer completion/endplay clears it to `0`. |
+| Time helper | Added `GetServerNowSeconds()` for timestamp creation. |
+
+### WeaponLevelUpComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponLevelUpComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponLevelUpComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Current-weapon sync fields | Added `CurrentWeaponLevel`, `CurrentWeaponExp`, `CurrentWeaponRequiredExp` sync properties. |
+| Sync refresh API | Added `RefreshCurrentWeaponProgressSyncServer(string weaponId)` for HUD snapshot refresh. |
+| Refresh integration | On begin/map enter/add-exp/import/apply-attack paths now refresh current weapon progress sync values. |
+
+### WeaponSwapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Weapon HUD sync fields | Added `CurrentWeaponSpriteRuid`, `CurrentWeaponName` sync properties. |
+| Visual sync API | Added `SyncCurrentWeaponVisualFromRowServer(string weaponId)` reading `WeaponData.name/sprite_ruid`. |
+| Swap apply bridge | `ApplySlotDataToCombat()` now updates weapon HUD sync fields when slot data is applied. |
+
+### Map01BootstrapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.codeblock`
+- **Updated:** `2026-02-25`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Required component list | Replaced legacy `HUDComponent` auto-attach with `InGameHUDComponent` to avoid duplicated in-game HUD display. |

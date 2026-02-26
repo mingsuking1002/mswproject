@@ -6,6 +6,10 @@ script WeaponSwapComponent extends Component
     property integer WeaponSlotCount = 4
     @Sync
     property boolean IsSwapMenuOpen = false
+    @Sync
+    property string CurrentWeaponSpriteRuid = ""
+    @Sync
+    property string CurrentWeaponName = ""
 
     property table Weapon1_Data = {}
     property table Weapon2_Data = {}
@@ -810,6 +814,7 @@ script WeaponSwapComponent extends Component
         local finalSlot = self:ClampSlot(slot)
         local data = self:NormalizeSlotData(self:GetSlotDataBySlot(finalSlot), finalSlot)
         self:SetSlotDataBySlot(finalSlot, data)
+        self:SyncCurrentWeaponVisualFromRowServer(tostring(data.WeaponId))
         local weaponLevel = self:ResolveComponentSafe(self.Entity, "WeaponLevelUpComponent", "WeaponDataTableName")
         local useLevelAttackFormula = (weaponLevel ~= nil and weaponLevel.ApplyWeaponPowerToFireServer ~= nil)
 
@@ -918,6 +923,30 @@ script WeaponSwapComponent extends Component
         end
 
         self:NotifySwapMenuClient(self.IsSwapMenuOpen, finalSlot, self.CurrentWeaponSlot)
+    end
+
+    -- HUD reads current weapon visual/name from sync fields without table lookups on client.
+    @ExecSpace("ServerOnly")
+    method void SyncCurrentWeaponVisualFromRowServer(string weaponId)
+        local finalWeaponId = weaponId
+        if finalWeaponId == nil then
+            finalWeaponId = ""
+        end
+
+        local weaponName = ""
+        local spriteRuid = ""
+        if finalWeaponId ~= "" then
+            local row = self:GetWeaponRowByIdServer(finalWeaponId)
+            if row ~= nil then
+                weaponName = self:GetRowString(row, "name", finalWeaponId)
+                spriteRuid = self:GetRowString(row, "sprite_ruid", "")
+            else
+                weaponName = finalWeaponId
+            end
+        end
+
+        self.CurrentWeaponName = weaponName
+        self.CurrentWeaponSpriteRuid = spriteRuid
     end
 
     -- Export API is consumed by TagManager so each character can preserve independent 4-slot state.
