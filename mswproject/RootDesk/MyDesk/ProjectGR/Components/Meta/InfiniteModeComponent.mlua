@@ -10,13 +10,14 @@ script InfiniteModeComponent extends Component
     property number ResultDelaySeconds = 3.0
     property string ModeMonsterDataTableName = "ModeMonsterData"
 
-    property string ScoreTextPath = "/ui/MainGroup/GRScoreText"
+    property string ScoreTextPath = "/ui/DefaultGroup/GRScoreText"
     property string ResultPanelPath = "/ui/MainGroup/GRResultPanel"
     property string ReentryPopupPath = "/ui/MainGroup/GRReentryPopup"
     property string ReentryAcceptButtonPath = "/ui/MainGroup/GRReentryPopup/AcceptButton"
     property string ReentryDeclineButtonPath = "/ui/MainGroup/GRReentryPopup/DeclineButton"
     property string UIRootPath = "/ui/MainGroup"
     property string UIRootFallbackPath = "/ui/DefaultGroup"
+    property number ScoreUIRefreshInterval = 0.2
 
     property boolean EnableDebugLogs = true
 
@@ -41,6 +42,7 @@ script InfiniteModeComponent extends Component
     method void OnBeginPlay()
         self:EnsureGRUtil()
         self:BindReentryButtonsClient()
+        self:StartScoreUIRefreshLoopClient()
 
         self:ApplyScoreUIClient()
         self:ApplyReentryPopupClient(false, self.CurrentScore)
@@ -51,6 +53,7 @@ script InfiniteModeComponent extends Component
     @ExecSpace("ClientOnly")
     method void OnMapEnter(Entity enteredMap)
         self:BindReentryButtonsClient()
+        self:StartScoreUIRefreshLoopClient()
         self:ApplyScoreUIClient()
         self:ApplyReentryPopupClient(false, self.CurrentScore)
     end
@@ -497,16 +500,7 @@ script InfiniteModeComponent extends Component
             return
         end
 
-        local visible = true
-        local lobbyFlow = self:ResolveComponentSafe(self.Entity, "LobbyFlowComponent", "IsLobbyActive")
-        if lobbyFlow ~= nil then
-            local lobbyOk, isLobby = pcall(function()
-                return lobbyFlow.IsLobbyActive
-            end)
-            if lobbyOk == true and isLobby == true then
-                visible = false
-            end
-        end
+        local visible = (self:IsLobbyActiveForScoreClient() ~= true)
 
         local textComponent = scoreEntity.TextComponent
         if textComponent ~= nil and isvalid(textComponent) == true then
@@ -519,6 +513,87 @@ script InfiniteModeComponent extends Component
             scoreEntity.Enable = visible
             scoreEntity.Visible = visible
         end)
+    end
+
+    -- Lobby check uses gameplay state fallback so score text appears immediately on run start.
+    @ExecSpace("ClientOnly")
+    method boolean IsLobbyActiveForScoreClient()
+        local isLobby = false
+        local lobbyFlow = self:ResolveComponentSafe(self.Entity, "LobbyFlowComponent", "IsLobbyActive")
+        if lobbyFlow ~= nil then
+            local lobbyOk, lobbyValue = pcall(function()
+                return lobbyFlow.IsLobbyActive
+            end)
+            if lobbyOk == true and lobbyValue ~= nil then
+                isLobby = (lobbyValue == true)
+            end
+        end
+
+        if isLobby ~= true then
+            return false
+        end
+
+        if self:IsGameplayRunningForScoreClient() == true then
+            return false
+        end
+
+        return true
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean IsGameplayRunningForScoreClient()
+        local timer = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "ElapsedTime")
+        if timer ~= nil then
+            local isRunning = false
+            local elapsed = 0
+            pcall(function()
+                isRunning = (timer.IsRunning == true)
+            end)
+            pcall(function()
+                elapsed = timer.ElapsedTime
+            end)
+            if isRunning == true then
+                return true
+            end
+            if elapsed ~= nil and elapsed > 0 then
+                return true
+            end
+        end
+
+        local spawn = self:ResolveComponentSafe(self.Entity, "MonsterSpawnComponent", "IsSpawnActive")
+        if spawn ~= nil then
+            local spawnActive = false
+            local spawnOk, _ = pcall(function()
+                spawnActive = (spawn.IsSpawnActive == true)
+            end)
+            if spawnOk == true and spawnActive == true then
+                return true
+            end
+        end
+
+        local movement = self:ResolveComponentSafe(self.Entity, "MovementComponent", "CanMove")
+        if movement ~= nil then
+            local canMove = false
+            local moveOk, _ = pcall(function()
+                canMove = (movement.CanMove == true)
+            end)
+            if moveOk == true and canMove == true then
+                return true
+            end
+        end
+
+        local fire = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "CanAttack")
+        if fire ~= nil then
+            local canAttack = false
+            local attackOk, _ = pcall(function()
+                canAttack = (fire.CanAttack == true)
+            end)
+            if attackOk == true and canAttack == true then
+                return true
+            end
+        end
+
+        return false
     end
 
     -- Reentry popup toggles with current score and keyboard hint fallback.
@@ -706,6 +781,11 @@ script InfiniteModeComponent extends Component
     end
 
     method void OnEndPlay()
+        if self._T.ScoreUIRefreshTimerId ~= nil and self._T.ScoreUIRefreshTimerId > 0 then
+            _TimerService:ClearTimer(self._T.ScoreUIRefreshTimerId)
+            self._T.ScoreUIRefreshTimerId = 0
+        end
+
         if self._T.ResultTimerId ~= nil and self._T.ResultTimerId > 0 then
             _TimerService:ClearTimer(self._T.ResultTimerId)
             self._T.ResultTimerId = 0
@@ -728,6 +808,25 @@ script InfiniteModeComponent extends Component
         self._T.ReentryDeclineHandler = nil
 
         self._T.ClientPopupVisible = false
+    end
+
+    -- Light client-side refresh loop keeps score visibility stable during sync-transition frames.
+    @ExecSpace("ClientOnly")
+    method void StartScoreUIRefreshLoopClient()
+        if self._T.ScoreUIRefreshTimerId ~= nil and self._T.ScoreUIRefreshTimerId > 0 then
+            return
+        end
+
+        local interval = self.ScoreUIRefreshInterval
+        if interval <= 0 then
+            interval = 0.2
+        end
+
+        local tick = function()
+            self:ApplyScoreUIClient()
+        end
+
+        self._T.ScoreUIRefreshTimerId = _TimerService:SetTimerRepeat(tick, interval, 0)
     end
 
     -- Utility bootstrap first; fallback local lookup remains for partial map setup.

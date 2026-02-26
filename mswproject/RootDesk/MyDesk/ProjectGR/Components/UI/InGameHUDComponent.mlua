@@ -11,6 +11,8 @@ script InGameHUDComponent extends Component
     property Entity LegacyHPBarForeEntity = nil
     property Entity LegacyEXPBarBackEntity = nil
     property Entity LegacyEXPBarForeEntity = nil
+    property Entity LegacyHPBarValueTextEntity = nil
+    property Entity LegacyAmmoBarValueTextEntity = nil
     property Entity WeaponRightBottomRootEntity = nil
     property Entity TimerTextEntity = nil
     property Entity GoldTextEntity = nil
@@ -38,6 +40,8 @@ script InGameHUDComponent extends Component
     property string LegacyHPBarForePath = "/ui/DefaultGroup/GRHUD_HPBack/Fore"
     property string LegacyEXPBarBackPath = "/ui/DefaultGroup/GRHUD_EXPBack"
     property string LegacyEXPBarForePath = "/ui/DefaultGroup/GRHUD_EXPBack/Fore"
+    property string LegacyHPBarValueTextPath = "/ui/DefaultGroup/GRHUD_HPBack/HPValueText"
+    property string LegacyAmmoBarValueTextPath = "/ui/DefaultGroup/GRHUD_EXPBack/AmmoValueText"
     property string WeaponRightBottomRootPath = "/ui/DefaultGroup/GRWeaponRightBottomHUD"
     property string WeaponSwapIconPath = "/ui/DefaultGroup/GRWeaponRightBottomHUD/weapon_swap_icon"
     property string TimerTextPath = "/ui/DefaultGroup/GRInGameHUD/TimerText"
@@ -171,6 +175,7 @@ script InGameHUDComponent extends Component
     @ExecSpace("ClientOnly")
     method void RefreshHUDClient()
         self:ResolveUIEntitiesClient()
+        self:HideDeprecatedTopLeftLegacyTextsClient()
         self:UpdateHUDModeClient()
         local isLobby = self:ResolveLobbyStateClient()
         if self:IsLegacyHUDModeClient() == true then
@@ -196,6 +201,15 @@ script InGameHUDComponent extends Component
         self:RefreshWeaponVisualClient()
         self:RefreshWeaponRightBottomClient()
         self:RefreshTagStatusClient()
+    end
+
+    -- Deprecated top-left text HUD is forced hidden to keep only bottom bar + right-bottom HUD layout.
+    @ExecSpace("ClientOnly")
+    method void HideDeprecatedTopLeftLegacyTextsClient()
+        self:SetEntityVisibleClient(self.LegacyHPTextEntity, false)
+        self:SetEntityVisibleClient(self.LegacyAmmoTextEntity, false)
+        self:SetEntityVisibleClient(self.LegacyCooldownTextEntity, false)
+        self:SetEntityVisibleClient(self.LegacyWeaponTextEntity, false)
     end
 
     -- Lobby policy keeps in-game HUD hidden while lobby flow is active.
@@ -267,14 +281,12 @@ script InGameHUDComponent extends Component
     method void SetLegacyHUDVisibilityClient(boolean visible)
         local entities = {
             self.LegacyTimerTextEntity,
-            self.LegacyHPTextEntity,
-            self.LegacyAmmoTextEntity,
-            self.LegacyCooldownTextEntity,
-            self.LegacyWeaponTextEntity,
             self.LegacyHPBarBackEntity,
             self.LegacyHPBarForeEntity,
             self.LegacyEXPBarBackEntity,
             self.LegacyEXPBarForeEntity,
+            self.LegacyHPBarValueTextEntity,
+            self.LegacyAmmoBarValueTextEntity,
             self.CharacterReloadBarBackEntity,
             self.CharacterReloadBarForeEntity
         }
@@ -282,6 +294,9 @@ script InGameHUDComponent extends Component
         for _, entity in pairs(entities) do
             self:SetEntityVisibleClient(entity, visible)
         end
+
+        -- Keep deprecated top-left text widgets hidden regardless of legacy mode visibility.
+        self:HideDeprecatedTopLeftLegacyTextsClient()
 
         self:SetWeaponRightBottomVisibilityClient(visible)
     end
@@ -316,7 +331,6 @@ script InGameHUDComponent extends Component
         self:RefreshLegacyBarGaugeClient()
         self:RefreshLegacyHPTextClient()
         self:RefreshLegacyAmmoAndCooldownTextClient()
-        self:RefreshLegacyWeaponTextClient()
     end
 
     -- Legacy bar fallback drives 2-panel HP/Ammo gauges when new GRInGameHUD prefab is not present.
@@ -463,8 +477,9 @@ script InGameHUDComponent extends Component
             end)
         end
 
-        local label = "HP " .. tostring(currentHp) .. " / " .. tostring(maxHp)
-        self:SetTextByPathClient(self.LegacyHPTextEntity, self.LegacyHPTextPath, label)
+        local label = "체력 : " .. tostring(currentHp) .. "/" .. tostring(maxHp)
+        self:SetTextByPathClient(self.LegacyHPBarValueTextEntity, self.LegacyHPBarValueTextPath, label)
+        self:SetEntityVisibleClient(self.LegacyHPBarValueTextEntity, true)
     end
 
     @ExecSpace("ClientOnly")
@@ -492,13 +507,10 @@ script InGameHUDComponent extends Component
             end
         end
 
-        local ammoLabel = "AMMO " .. tostring(math.max(0, math.floor(ammo)))
-        if maxAmmo > 0 then
-            ammoLabel = ammoLabel .. " / " .. tostring(math.max(0, math.floor(maxAmmo)))
-        end
-        self:SetTextByPathClient(self.LegacyAmmoTextEntity, self.LegacyAmmoTextPath, ammoLabel)
+        local ammoLabel = "탄창 " .. tostring(math.max(0, math.floor(ammo))) .. "/" .. tostring(math.max(0, math.floor(maxAmmo)))
+        self:SetTextByPathClient(self.LegacyAmmoBarValueTextEntity, self.LegacyAmmoBarValueTextPath, ammoLabel)
+        self:SetEntityVisibleClient(self.LegacyAmmoBarValueTextEntity, true)
 
-        local cooldownLabel = "READY"
         local showGauge = false
         local reloadRatio = 0
         if isReloading == true and reloadEndAt > reloadStartAt then
@@ -516,57 +528,91 @@ script InGameHUDComponent extends Component
                 showGauge = false
                 reloadRatio = 1
             end
-            if showGauge == true then
-                cooldownLabel = "RELOAD " .. tostring(math.floor(reloadRatio * 100)) .. "%"
-            end
         end
-        self:SetTextByPathClient(self.LegacyCooldownTextEntity, self.LegacyCooldownTextPath, cooldownLabel)
         self:RefreshCharacterReloadBarClient(showGauge, reloadRatio)
     end
 
     @ExecSpace("ClientOnly")
     method void RefreshLegacyWeaponTextClient()
-        local weaponName = ""
-        local slot = 1
-        local level = 1
-
-        local swap = self:ResolveComponentSafe(self.Entity, "WeaponSwapComponent", "CurrentWeaponSlot")
-        if swap ~= nil then
-            pcall(function()
-                slot = math.max(1, math.floor(swap.CurrentWeaponSlot))
-            end)
-            pcall(function()
-                weaponName = tostring(swap.CurrentWeaponName)
-            end)
-        end
-
-        local levelUp = self:ResolveComponentSafe(self.Entity, "WeaponLevelUpComponent", "CurrentWeaponLevel")
-        if levelUp ~= nil then
-            pcall(function()
-                level = math.max(1, math.floor(levelUp.CurrentWeaponLevel))
-            end)
-        end
-
-        local weaponLabel = "SLOT " .. tostring(slot)
-        if weaponName ~= nil and weaponName ~= "" then
-            weaponLabel = tostring(weaponName)
-        end
-        weaponLabel = weaponLabel .. "  LV " .. tostring(level)
-        self:SetTextByPathClient(self.LegacyWeaponTextEntity, self.LegacyWeaponTextPath, weaponLabel)
+        self:SetEntityVisibleClient(self.LegacyWeaponTextEntity, false)
     end
 
     @ExecSpace("ClientOnly")
     method boolean ResolveLobbyStateClient()
         local lobbyFlow = self:ResolveComponentSafe(self.Entity, "LobbyFlowComponent", "IsLobbyActive")
+        local isLobby = false
         if lobbyFlow == nil then
-            return false
+            return isLobby
         end
 
         local readOk, readValue = pcall(function()
             return lobbyFlow.IsLobbyActive
         end)
         if readOk == true and readValue ~= nil then
-            return readValue == true
+            isLobby = (readValue == true)
+        end
+
+        -- Fallback: when gameplay already started, force in-game HUD even if lobby sync is stale.
+        if isLobby == true and self:IsGameplayRunningClient() == true then
+            return false
+        end
+
+        return isLobby
+    end
+
+    -- Gameplay-active heuristic protects HUD visibility from transient lobby sync delays.
+    @ExecSpace("ClientOnly")
+    method boolean IsGameplayRunningClient()
+        local timer = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "ElapsedTime")
+        if timer ~= nil then
+            local isRunning = false
+            local elapsed = 0
+            pcall(function()
+                isRunning = (timer.IsRunning == true)
+            end)
+            pcall(function()
+                elapsed = timer.ElapsedTime
+            end)
+
+            if isRunning == true then
+                return true
+            end
+            if elapsed ~= nil and elapsed > 0 then
+                return true
+            end
+        end
+
+        local spawn = self:ResolveComponentSafe(self.Entity, "MonsterSpawnComponent", "IsSpawnActive")
+        if spawn ~= nil then
+            local spawnActive = false
+            local spawnOk, _ = pcall(function()
+                spawnActive = (spawn.IsSpawnActive == true)
+            end)
+            if spawnOk == true and spawnActive == true then
+                return true
+            end
+        end
+
+        local movement = self:ResolveComponentSafe(self.Entity, "MovementComponent", "CanMove")
+        if movement ~= nil then
+            local canMove = false
+            local readOk, _ = pcall(function()
+                canMove = (movement.CanMove == true)
+            end)
+            if readOk == true and canMove == true then
+                return true
+            end
+        end
+
+        local fire = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "CanAttack")
+        if fire ~= nil then
+            local canAttack = false
+            local attackOk, _ = pcall(function()
+                canAttack = (fire.CanAttack == true)
+            end)
+            if attackOk == true and canAttack == true then
+                return true
+            end
         end
 
         return false
@@ -1242,6 +1288,8 @@ script InGameHUDComponent extends Component
         self.LegacyHPBarForeEntity = self:ResolveEntityWithCacheClient(self.LegacyHPBarForeEntity, self.LegacyHPBarForePath)
         self.LegacyEXPBarBackEntity = self:ResolveEntityWithCacheClient(self.LegacyEXPBarBackEntity, self.LegacyEXPBarBackPath)
         self.LegacyEXPBarForeEntity = self:ResolveEntityWithCacheClient(self.LegacyEXPBarForeEntity, self.LegacyEXPBarForePath)
+        self.LegacyHPBarValueTextEntity = self:ResolveEntityWithCacheClient(self.LegacyHPBarValueTextEntity, self.LegacyHPBarValueTextPath)
+        self.LegacyAmmoBarValueTextEntity = self:ResolveEntityWithCacheClient(self.LegacyAmmoBarValueTextEntity, self.LegacyAmmoBarValueTextPath)
         self.WeaponRightBottomRootEntity = self:ResolveEntityWithCacheClient(self.WeaponRightBottomRootEntity, self.WeaponRightBottomRootPath)
         self.TimerTextEntity = self:ResolveEntityWithCacheClient(self.TimerTextEntity, self.TimerTextPath)
         self.GoldTextEntity = self:ResolveEntityWithCacheClient(self.GoldTextEntity, self.GoldTextPath)

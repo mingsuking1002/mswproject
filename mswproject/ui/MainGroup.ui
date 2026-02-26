@@ -1,4 +1,4 @@
-{
+﻿{
     "Id":  "",
     "GameId":  "",
     "EntryKey":  "ui://427b694e-795f-4666-ae5a-ddf6b4a607d1",
@@ -24,7 +24,7 @@
                                                                  "enable":  true,
                                                                  "visible":  true,
                                                                  "localize":  true,
-                                                                 "displayOrder":  0,
+                                                                 "displayOrder":  1,
                                                                  "pathConstraints":  "//",
                                                                  "revision":  1,
                                                                  "origin":  {
@@ -96,7 +96,7 @@
                                                                                      {
                                                                                          "@type":  "MOD.Core.UIGroupComponent",
                                                                                          "DefaultShow":  true,
-                                                                                         "GroupOrder":  0,
+                                                                                         "GroupOrder":  1,
                                                                                          "GroupType":  1,
                                                                                          "Enable":  true
                                                                                      },
@@ -122,7 +122,7 @@
                                                                  "enable":  true,
                                                                  "visible":  true,
                                                                  "localize":  true,
-                                                                 "displayOrder":  2,
+                                                                 "displayOrder":  0,
                                                                  "pathConstraints":  "///",
                                                                  "revision":  1,
                                                                  "origin":  {
@@ -345,192 +345,6 @@
                                                              }
                                           },
                                           {
-                                              "id":  "3dc3bb0b-0581-449f-a6dd-fe184562e7e3",
-                                              "path":  "/ui/MainGroup/GRScoreText",
-                                              "componentNames":  "MOD.Core.UITransformComponent,MOD.Core.SpriteGUIRendererComponent,MOD.Core.TextComponent",
-                                              "jsonString":  {
-                                                                 "name":  "GRScoreText",
-                                                                 "path":  "/ui/MainGroup/GRScoreText",
-                                                                 "nameEditable":  true,
-                                                                 "enable":  false,
-                                                                 "visible":  false,
-                                                                 "localize":  true,
-                                                                 "displayOrder":  11,
-                                                                 "pathConstraints":  "///",
-                                                                 "revision":  1,
-                                                                 "origin":  {
-                                                                                "type":  "Model",
-                                                                                "entry_id":  "UIText",
-                                                                                "sub_entity_id":  null,
-                                                                                "root_entity_id":  null,
-                                                                                "replaced_model_id":  null
-                                                                            },
-                                                                 "modelId":  "uitext",
-                                                                 "@components":  [
-                                                                                     {
-                                                                                         "@type":  "MOD.Core.UITransformComponent",
-                                                                                         "AlignmentOption":  0,
-                                                                                         "AnchorsMax":  {
-                                                                                                            "x":  0.5,
-                                                                                                            "y":  0.5
-                                                                                                        },
-                                                                                         "AnchorsMin":  {
-                                                                                                            "x":  0.5,
-                                                                                                            "y":  0.5
-                                                                                                        },
-                                                                                         "MobileOnly":  false,
-                                                                                         "OffsetMax":  {
-                                                                                                           "x":  920.0,
-                                                                                                           "y":  500.0
-                                                                                                       },
-                                                                                         "OffsetMin":  {
-                                                                                                           "x":  600.0,
-                                                                                                           "y":  440.0
-                                                                                                       },
-                                                                                         "Pivot":  {
-                                                                                                       "x":  0.5,
-                                                                                                       "y":  0.5
-                                                                                                   },
-                                                                                         "RectSize":  {
-                                                                                                          "x":  320.0,
-                                                                                                          "y":  60.0
-                                                                                                      },
-                                                                                         "UIMode":  1,
-                                                                                         "UIScale":  {
-                                                                                                         "x":  1.0,
-                                                                                                         "y":  1.0,
-                                                                                                         "z":  1.0
-                                                                                                     },
-                                                                                         "UIVersion":  2,
-                                                                                         "anchoredPosition":  {
-                                                                                                                  "x":  760.0,
-                                                                                                                  "y":  470.0
-                                                                                                              },
-                                                                                         "Position":  {
-                                                                                                          "x":  760.0,
-                                                                                                          "y":  470.0,
-                                                                                                          "z":  0.0
-                                                                                                      },
-                                                                                         "QuaternionRotation":  {
-                                                                                                                    "x":  0.0,
-                                                                                                                    "y":  0.0,
-                                                                                                                    "z":  0.0,
-                                                                                                                    "w":  1.0
-                                                                                                                },
-                                                                                         "Scale":  {
-                                                                                                       "x":  1.0,
-                                                                                                       "y":  1.0,
-                                                                                                       "z":  1.0
-                                                                                                   },
-                                                                                         "Enable":  true
-                                                                                     },
-                                                                                     {
-                                                                                         "@type":  "MOD.Core.SpriteGUIRendererComponent",
-                                                                                         "AnimClipPlayType":  0,
-                                                                                         "EndFrameIndex":  2147483647,
-                                                                                         "ImageRUID":  {
-                                                                                                           "DataId":  ""
-                                                                                                       },
-                                                                                         "LocalPosition":  {
-                                                                                                               "x":  0.0,
-                                                                                                               "y":  0.0
-                                                                                                           },
-                                                                                         "LocalScale":  {
-                                                                                                            "x":  1.0,
-                                                                                                            "y":  1.0
-                                                                                                        },
-                                                                                         "OverrideSorting":  false,
-                                                                                         "PlayRate":  1.0,
-                                                                                         "PreserveSprite":  0,
-                                                                                         "StartFrameIndex":  0,
-                                                                                         "Color":  {
-                                                                                                       "r":  0.0,
-                                                                                                       "g":  0.0,
-                                                                                                       "b":  0.0,
-                                                                                                       "a":  0.45
-                                                                                                   },
-                                                                                         "DropShadow":  false,
-                                                                                         "DropShadowAngle":  30.0,
-                                                                                         "DropShadowColor":  {
-                                                                                                                 "r":  0.0,
-                                                                                                                 "g":  0.0,
-                                                                                                                 "b":  0.0,
-                                                                                                                 "a":  0.72
-                                                                                                             },
-                                                                                         "DropShadowDistance":  32.0,
-                                                                                         "FillAmount":  1.0,
-                                                                                         "FillCenter":  true,
-                                                                                         "FillClockWise":  true,
-                                                                                         "FillMethod":  0,
-                                                                                         "FillOrigin":  0,
-                                                                                         "FlipX":  false,
-                                                                                         "FlipY":  false,
-                                                                                         "FrameColumn":  1,
-                                                                                         "FrameRate":  0,
-                                                                                         "FrameRow":  1,
-                                                                                         "Outline":  false,
-                                                                                         "OutlineColor":  {
-                                                                                                              "r":  0.0,
-                                                                                                              "g":  0.0,
-                                                                                                              "b":  0.0,
-                                                                                                              "a":  1.0
-                                                                                                          },
-                                                                                         "OutlineWidth":  3.0,
-                                                                                         "RaycastTarget":  false,
-                                                                                         "Type":  1,
-                                                                                         "Enable":  true
-                                                                                     },
-                                                                                     {
-                                                                                         "@type":  "MOD.Core.TextComponent",
-                                                                                         "Alignment":  5,
-                                                                                         "Bold":  false,
-                                                                                         "DropShadow":  false,
-                                                                                         "DropShadowAngle":  30.0,
-                                                                                         "DropShadowColor":  {
-                                                                                                                 "r":  0.0,
-                                                                                                                 "g":  0.0,
-                                                                                                                 "b":  0.0,
-                                                                                                                 "a":  0.72
-                                                                                                             },
-                                                                                         "DropShadowDistance":  32.0,
-                                                                                         "Font":  0,
-                                                                                         "FontColor":  {
-                                                                                                           "r":  1.0,
-                                                                                                           "g":  1.0,
-                                                                                                           "b":  1.0,
-                                                                                                           "a":  1.0
-                                                                                                       },
-                                                                                         "FontSize":  28,
-                                                                                         "MaxSize":  40,
-                                                                                         "MinSize":  10,
-                                                                                         "OutlineColor":  {
-                                                                                                              "r":  0.698039234,
-                                                                                                              "g":  0.698039234,
-                                                                                                              "b":  0.698039234,
-                                                                                                              "a":  1.0
-                                                                                                          },
-                                                                                         "OutlineDistance":  {
-                                                                                                                 "x":  1.0,
-                                                                                                                 "y":  -1.0
-                                                                                                             },
-                                                                                         "Overflow":  1,
-                                                                                         "OverrideSorting":  false,
-                                                                                         "Padding":  {
-                                                                                                         "left":  8,
-                                                                                                         "right":  8,
-                                                                                                         "top":  4,
-                                                                                                         "bottom":  4
-                                                                                                     },
-                                                                                         "SizeFit":  false,
-                                                                                         "Text":  "SCORE: 0",
-                                                                                         "UseOutLine":  false,
-                                                                                         "Enable":  true
-                                                                                     }
-                                                                                 ],
-                                                                 "@version":  1
-                                                             }
-                                          },
-                                          {
                                               "id":  "a8af0097-c072-43c4-b550-715a47d9bbe8",
                                               "path":  "/ui/MainGroup/GRResultPanel",
                                               "componentNames":  "MOD.Core.UITransformComponent,MOD.Core.SpriteGUIRendererComponent,MOD.Core.TextComponent",
@@ -541,7 +355,7 @@
                                                                  "enable":  false,
                                                                  "visible":  false,
                                                                  "localize":  true,
-                                                                 "displayOrder":  12,
+                                                                 "displayOrder":  2,
                                                                  "pathConstraints":  "///",
                                                                  "revision":  1,
                                                                  "origin":  {
@@ -727,7 +541,7 @@
                                                                  "enable":  false,
                                                                  "visible":  false,
                                                                  "localize":  true,
-                                                                 "displayOrder":  13,
+                                                                 "displayOrder":  3,
                                                                  "pathConstraints":  "///",
                                                                  "revision":  1,
                                                                  "origin":  {
@@ -1379,7 +1193,7 @@
                                                                  "enable":  true,
                                                                  "visible":  true,
                                                                  "localize":  true,
-                                                                 "displayOrder":  14,
+                                                                 "displayOrder":  4,
                                                                  "pathConstraints":  "///",
                                                                  "revision":  1,
                                                                  "origin":  {
@@ -1938,7 +1752,7 @@
                                                                  "enable":  false,
                                                                  "visible":  false,
                                                                  "localize":  true,
-                                                                 "displayOrder":  15,
+                                                                 "displayOrder":  5,
                                                                  "pathConstraints":  "///",
                                                                  "revision":  1,
                                                                  "origin":  {
@@ -4151,7 +3965,7 @@
                                                                  "enable":  true,
                                                                  "visible":  true,
                                                                  "localize":  true,
-                                                                 "displayOrder":  40,
+                                                                 "displayOrder":  6,
                                                                  "pathConstraints":  "///",
                                                                  "revision":  1,
                                                                  "origin":  {
@@ -4176,20 +3990,20 @@
                                                                                                         },
                                                                                          "MobileOnly":  false,
                                                                                          "OffsetMax":  {
-                                                                                                           "x":  220,
-                                                                                                           "y":  270
+                                                                                                           "x":  220.0,
+                                                                                                           "y":  270.0
                                                                                                        },
                                                                                          "OffsetMin":  {
-                                                                                                           "x":  -220,
-                                                                                                           "y":  190
+                                                                                                           "x":  -220.0,
+                                                                                                           "y":  190.0
                                                                                                        },
                                                                                          "Pivot":  {
                                                                                                        "x":  0.5,
                                                                                                        "y":  0.5
                                                                                                    },
                                                                                          "RectSize":  {
-                                                                                                          "x":  440,
-                                                                                                          "y":  80
+                                                                                                          "x":  440.0,
+                                                                                                          "y":  80.0
                                                                                                       },
                                                                                          "UIMode":  1,
                                                                                          "UIScale":  {
@@ -4199,12 +4013,12 @@
                                                                                                      },
                                                                                          "UIVersion":  2,
                                                                                          "anchoredPosition":  {
-                                                                                                                  "x":  0,
-                                                                                                                  "y":  230
+                                                                                                                  "x":  0.0,
+                                                                                                                  "y":  230.0
                                                                                                               },
                                                                                          "Position":  {
-                                                                                                          "x":  0,
-                                                                                                          "y":  230,
+                                                                                                          "x":  0.0,
+                                                                                                          "y":  230.0,
                                                                                                           "z":  0.0
                                                                                                       },
                                                                                          "QuaternionRotation":  {
@@ -4240,10 +4054,10 @@
                                                                                          "PreserveSprite":  0,
                                                                                          "StartFrameIndex":  0,
                                                                                          "Color":  {
-                                                                                                       "r":  0,
-                                                                                                       "g":  0,
-                                                                                                       "b":  0,
-                                                                                                       "a":  0
+                                                                                                       "r":  0.0,
+                                                                                                       "g":  0.0,
+                                                                                                       "b":  0.0,
+                                                                                                       "a":  0.0
                                                                                                    },
                                                                                          "DropShadow":  false,
                                                                                          "DropShadowAngle":  30.0,
@@ -4337,7 +4151,7 @@
                                                                  "enable":  true,
                                                                  "visible":  true,
                                                                  "localize":  true,
-                                                                 "displayOrder":  41,
+                                                                 "displayOrder":  7,
                                                                  "pathConstraints":  "///",
                                                                  "revision":  1,
                                                                  "origin":  {
@@ -4362,20 +4176,20 @@
                                                                                                         },
                                                                                          "MobileOnly":  false,
                                                                                          "OffsetMax":  {
-                                                                                                           "x":  220,
-                                                                                                           "y":  205
+                                                                                                           "x":  220.0,
+                                                                                                           "y":  205.0
                                                                                                        },
                                                                                          "OffsetMin":  {
-                                                                                                           "x":  -220,
-                                                                                                           "y":  125
+                                                                                                           "x":  -220.0,
+                                                                                                           "y":  125.0
                                                                                                        },
                                                                                          "Pivot":  {
                                                                                                        "x":  0.5,
                                                                                                        "y":  0.5
                                                                                                    },
                                                                                          "RectSize":  {
-                                                                                                          "x":  440,
-                                                                                                          "y":  80
+                                                                                                          "x":  440.0,
+                                                                                                          "y":  80.0
                                                                                                       },
                                                                                          "UIMode":  1,
                                                                                          "UIScale":  {
@@ -4385,12 +4199,12 @@
                                                                                                      },
                                                                                          "UIVersion":  2,
                                                                                          "anchoredPosition":  {
-                                                                                                                  "x":  0,
-                                                                                                                  "y":  165
+                                                                                                                  "x":  0.0,
+                                                                                                                  "y":  165.0
                                                                                                               },
                                                                                          "Position":  {
-                                                                                                          "x":  0,
-                                                                                                          "y":  165,
+                                                                                                          "x":  0.0,
+                                                                                                          "y":  165.0,
                                                                                                           "z":  0.0
                                                                                                       },
                                                                                          "QuaternionRotation":  {
@@ -4426,10 +4240,10 @@
                                                                                          "PreserveSprite":  0,
                                                                                          "StartFrameIndex":  0,
                                                                                          "Color":  {
-                                                                                                       "r":  0,
-                                                                                                       "g":  0,
-                                                                                                       "b":  0,
-                                                                                                       "a":  0
+                                                                                                       "r":  0.0,
+                                                                                                       "g":  0.0,
+                                                                                                       "b":  0.0,
+                                                                                                       "a":  0.0
                                                                                                    },
                                                                                          "DropShadow":  false,
                                                                                          "DropShadowAngle":  30.0,

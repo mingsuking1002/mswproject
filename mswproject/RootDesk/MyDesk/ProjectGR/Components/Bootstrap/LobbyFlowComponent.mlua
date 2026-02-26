@@ -309,6 +309,14 @@ script LobbyFlowComponent extends Component
             end)
         end
 
+        -- Score visibility must refresh on lobby-state transition, not only on score sync updates.
+        local infiniteMode = self:ResolveComponentSafe(self.Entity, "InfiniteModeComponent", "CurrentScore")
+        if infiniteMode ~= nil and infiniteMode.ApplyScoreUIClient ~= nil then
+            pcall(function()
+                infiniteMode:ApplyScoreUIClient()
+            end)
+        end
+
         local rankingUI = self:ResolveComponentSafe(self.Entity, "RankingUIComponent", nil)
         if rankingUI ~= nil then
             if rankingUI.ApplyLobbyStateClient ~= nil then
@@ -361,7 +369,7 @@ script LobbyFlowComponent extends Component
     -- Lobby state is derived from sync property; helper exists for startup race handling.
     @ExecSpace("ClientOnly")
     method boolean ResolveEffectiveLobbyStateClient()
-        return self.IsLobbyActive
+        return self.IsLobbyActive == true
     end
 
     -- Lobby entry auto-opens ranking tab and requests fresh snapshot from server-side ranking logic.

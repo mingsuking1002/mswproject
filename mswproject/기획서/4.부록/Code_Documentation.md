@@ -2298,9 +2298,9 @@
 | Item | Detail |
 |---|---|
 | New group | Added `ui/MainGroup.ui` with root `/ui/MainGroup`. |
-| Moved from Default to Main | `GRStartButton`, `GRLobbyPanel*`, `GRRankingPanel*`, `GRScoreText`, `GRResultPanel`, `GRReentryPopup*` moved to `/ui/MainGroup/*`. |
+| Moved from Default to Main | `GRStartButton`, `GRLobbyPanel*`, `GRRankingPanel*`, `GRResultPanel`, `GRReentryPopup*` moved to `/ui/MainGroup/*`. |
 | Legacy summary text restore | Added `/ui/MainGroup/GRRankingText`, `/ui/MainGroup/GRMyRankText` for legacy path compatibility. |
-| DefaultGroup role narrowed | `DefaultGroup` now keeps in-game HUD/combat UI roots only (`GRInGameHUD/legacy HUD/WeaponWheel/Shop/...`). |
+| DefaultGroup role narrowed | `DefaultGroup` now keeps in-game HUD/combat UI roots only (`GRInGameHUD/legacy HUD/GRScoreText/WeaponWheel/Shop/...`). |
 
 ### LobbyFlowComponent (Updated)
 - **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.mlua`
@@ -2335,7 +2335,7 @@
 #### Added/Changed
 | Item | Detail |
 |---|---|
-| Main defaults | `ScoreTextPath`, `ResultPanelPath`, `ReentryPopupPath`, `Reentry*ButtonPath` defaulted to `/ui/MainGroup/*`. |
+| Path split policy | `ResultPanelPath`, `ReentryPopupPath`, `Reentry*ButtonPath`는 `/ui/MainGroup/*` 유지, `ScoreTextPath`는 `/ui/DefaultGroup/GRScoreText`로 설정. |
 | Root fallback | Added `UIRootPath`, `UIRootFallbackPath` and root-based fallback in `ResolveUIEntity`. |
 
 ### Map01BootstrapComponent + games.map (Updated)
@@ -2347,3 +2347,65 @@
 |---|---|
 | Bootstrap default | `LobbyUIRootPath` default changed to `/ui/MainGroup`. |
 | Map override | `/maps/games/LobbyBootstrap` override updated to `/ui/MainGroup`. |
+
+## 2026-02-26 InGame HUD Cleanup (Top-Left Removal + Bottom Bar Numeric Text)
+
+### InGameHUDComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/UI/InGameHUDComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/UI/InGameHUDComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Top-left text HUD forced hidden | Added `HideDeprecatedTopLeftLegacyTextsClient()` and applied it during refresh/legacy visibility to keep `GRHPText`, `GRAmmoText`, `GRCooldownText`, `GRWeaponText` non-visible. |
+| Bottom HP text binding | Added `LegacyHPBarValueTextEntity/Path` and changed HP label output to `체력 : current/max`. |
+| Bottom ammo text binding | Added `LegacyAmmoBarValueTextEntity/Path` and changed ammo label output to `탄창 current/max`. |
+| Legacy visibility policy | `SetLegacyHUDVisibilityClient()` now controls bottom bars + new bar texts, not deprecated top-left text widgets. |
+
+### DefaultGroup.ui (Updated)
+- **File:** `ui/DefaultGroup.ui`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| HP bar value text | Added `/ui/DefaultGroup/GRHUD_HPBack/HPValueText` (bar 내부 중앙 텍스트). |
+| Ammo bar value text | Added `/ui/DefaultGroup/GRHUD_EXPBack/AmmoValueText` (bar 내부 중앙 텍스트). |
+| Ammo bar thickness | Increased `/ui/DefaultGroup/GRHUD_EXPBack` and `/Fore` height for better numeric readability. |
+
+## 2026-02-26 HUD/Score Visibility Stabilization Hotfix
+
+### InGameHUDComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/UI/InGameHUDComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/UI/InGameHUDComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Value text hard visibility | During legacy HUD refresh, `HPValueText`/`AmmoValueText` are explicitly re-enabled so external visibility toggles do not keep them hidden in-game. |
+| Gameplay fallback 강화 | `IsGameplayRunningClient()` now additionally checks `MonsterSpawnComponent.IsSpawnActive` and `FireSystemComponent.CanAttack` to avoid stale lobby-state hiding. |
+
+### InfiniteModeComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/InfiniteModeComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/InfiniteModeComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Score UI refresh loop | Added lightweight client timer (`ScoreUIRefreshInterval`, default `0.2s`) to continuously correct `GRScoreText` visibility. |
+| Lobby fallback 강화 | `IsLobbyActiveForScoreClient()` now delegates to `IsGameplayRunningForScoreClient()` with timer/spawn/movement/attack checks. |
+| Timer cleanup | Added `ScoreUIRefreshTimerId` cleanup in `OnEndPlay`. |
+
+### LobbyFlowComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Main UI recovery | Restored `ResolveEffectiveLobbyStateClient()` to sync-authoritative `IsLobbyActive` so lobby `MainGroup` widgets are not hidden by client-side false positives. |
+| Heuristic rollback | Removed `IsGameplayRunningClient()` fallback path from `LobbyFlowComponent` because it could classify lobby as in-game in edge states. |
