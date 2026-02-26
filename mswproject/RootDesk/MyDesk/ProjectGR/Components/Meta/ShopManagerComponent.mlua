@@ -187,7 +187,31 @@ script ShopManagerComponent extends Component
         if slotData == nil then
             return
         end
-        if slotData.IsSoldOut == true then
+
+        local maxPurchaseCount = 1
+        if slotData.MaxPurchaseCount ~= nil then
+            local parsedMax = tonumber(slotData.MaxPurchaseCount)
+            if parsedMax ~= nil then
+                maxPurchaseCount = math.max(1, math.floor(parsedMax))
+            end
+        end
+        local purchasedCount = 0
+        if slotData.PurchasedCount ~= nil then
+            local parsedCount = tonumber(slotData.PurchasedCount)
+            if parsedCount ~= nil then
+                purchasedCount = math.max(0, math.floor(parsedCount))
+            end
+        end
+
+        if slotData.IsSoldOut == true or purchasedCount >= maxPurchaseCount then
+            slotData.Type = "soldout"
+            slotData.Name = "품절"
+            slotData.Description = "이미 구매 완료"
+            slotData.Price = 0
+            slotData.IsSoldOut = true
+            slotData.PurchasedCount = maxPurchaseCount
+            slotData.MaxPurchaseCount = maxPurchaseCount
+            self:SetSlotDataServer(finalSlotIndex, slotData)
             return
         end
 
@@ -223,11 +247,19 @@ script ShopManagerComponent extends Component
 
         self:ApplyPurchaseEffectServer(slotData.Type, slotData)
 
-        slotData.Type = "soldout"
-        slotData.Name = "품절"
-        slotData.Description = "이미 구매 완료"
-        slotData.Price = 0
-        slotData.IsSoldOut = true
+        purchasedCount += 1
+        slotData.PurchasedCount = purchasedCount
+        slotData.MaxPurchaseCount = maxPurchaseCount
+
+        if purchasedCount >= maxPurchaseCount then
+            slotData.Type = "soldout"
+            slotData.Name = "품절"
+            slotData.Description = "이미 구매 완료"
+            slotData.Price = 0
+            slotData.IsSoldOut = true
+        else
+            slotData.IsSoldOut = false
+        end
         self:SetSlotDataServer(finalSlotIndex, slotData)
     end
 
@@ -572,6 +604,10 @@ script ShopManagerComponent extends Component
         if normalizedType == "potion" then
             local price = self:GetRowIntegerWithAlias(row, "Price", "price", self.HealPrice)
             local effectValue = self:GetRowNumberWithAlias(row, "EffectValue", "effect_value", 1)
+            local maxPurchaseCount = self:GetRowIntegerWithAlias(row, "Maximum", "maximum", 1)
+            if maxPurchaseCount <= 0 then
+                maxPurchaseCount = 1
+            end
             local itemName = self:GetRowStringWithAlias(row, "ItemName", "name", "체력 포션")
             local description = self:GetRowStringWithAlias(row, "Description", "description", "체력 포션 1개 획득")
             return {
@@ -580,6 +616,8 @@ script ShopManagerComponent extends Component
                 Description = description,
                 Price = price,
                 EffectValue = effectValue,
+                MaxPurchaseCount = maxPurchaseCount,
+                PurchasedCount = 0,
                 IsSoldOut = false
             }
         end
@@ -587,6 +625,10 @@ script ShopManagerComponent extends Component
         if normalizedType == "ammo" then
             local price = self:GetRowIntegerWithAlias(row, "Price", "price", self.AmmoPrice)
             local effectValue = self:GetRowNumberWithAlias(row, "EffectValue", "effect_value", 1)
+            local maxPurchaseCount = self:GetRowIntegerWithAlias(row, "Maximum", "maximum", 1)
+            if maxPurchaseCount <= 0 then
+                maxPurchaseCount = 1
+            end
             local itemName = self:GetRowStringWithAlias(row, "ItemName", "name", "탄창 보충")
             local description = self:GetRowStringWithAlias(row, "Description", "description", "현재 캐릭터 탄창 1개 획득")
             return {
@@ -595,11 +637,18 @@ script ShopManagerComponent extends Component
                 Description = description,
                 Price = price,
                 EffectValue = effectValue,
+                MaxPurchaseCount = maxPurchaseCount,
+                PurchasedCount = 0,
                 IsSoldOut = false
             }
         end
 
         if normalizedType == "passive" then
+            local maxPurchaseCount = self:GetRowIntegerWithAlias(row, "Maximum", "maximum", 1)
+            if maxPurchaseCount <= 0 then
+                maxPurchaseCount = 1
+            end
+
             local passiveSystem = self:ResolveComponentSafe(self.Entity, "PassiveSystemComponent", "AcquiredPassiveCount")
             if passiveSystem ~= nil and passiveSystem.GetNextPassiveCandidateServer ~= nil then
                 local candidate = nil
@@ -617,6 +666,8 @@ script ShopManagerComponent extends Component
                         Description = "",
                         Price = 0,
                         EffectValue = 0,
+                        MaxPurchaseCount = 0,
+                        PurchasedCount = 0,
                         IsSoldOut = true
                     }
                 end
@@ -629,6 +680,8 @@ script ShopManagerComponent extends Component
                     EffectValue = 0,
                     PassiveId = tostring(candidate.Id or ""),
                     PassiveGrade = tostring(candidate.Grade or "상시"),
+                    MaxPurchaseCount = maxPurchaseCount,
+                    PurchasedCount = 0,
                     IsSoldOut = false
                 }
             end
@@ -642,6 +695,8 @@ script ShopManagerComponent extends Component
                 Description = description,
                 Price = price,
                 EffectValue = 0,
+                MaxPurchaseCount = maxPurchaseCount,
+                PurchasedCount = 0,
                 IsSoldOut = false
             }
         end
@@ -652,6 +707,8 @@ script ShopManagerComponent extends Component
             Description = "",
             Price = 0,
             EffectValue = 0,
+            MaxPurchaseCount = 0,
+            PurchasedCount = 0,
             IsSoldOut = true
         }
     end

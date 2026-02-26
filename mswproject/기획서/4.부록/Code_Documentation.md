@@ -3217,3 +3217,31 @@
 | Item | Detail |
 |---|---|
 | Reload inventory resolve | 재장전 시작 시 `ResolveOrAttachInventoryComponentServer`로 인벤토리 누락 상태를 복구 후 탄창 소모 게이트를 수행. |
+
+## 2026-02-26 Shop Maximum Purchase Limit
+
+### ShopManagerComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/ShopManagerComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/ShopManagerComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+| Item | Detail |
+|---|---|
+| Maximum column binding | `ShopItemData.maximum`(또는 `Maximum`)을 슬롯별 최대 구매 횟수로 적용. |
+| Runtime counters | 슬롯 데이터에 `MaxPurchaseCount`, `PurchasedCount`를 저장하고 구매 시 누적. |
+| Sold-out condition | `PurchasedCount >= MaxPurchaseCount` 시 해당 슬롯을 `품절` 처리. |
+| Scope | 구매 횟수 카운트는 상점 오픈 시 `BuildCurrentSlotsServer()`에서 재생성되어 샵 오픈 단위로 초기화. |
+
+## 2026-02-26 Tag HP Swap Consistency Hotfix
+
+### TagManagerComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/TagManagerComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/TagManagerComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+| Item | Detail |
+|---|---|
+| Initial state seeding | `BuildInitialCharacterStateByIndexServer()`를 추가해 대상 캐릭터 상태가 비어 있을 때 현재 활성 캐릭터 HP를 복사하지 않고 대상 캐릭터 기본 HP로 초기화. |
+| Base HP resolver | `ResolveCharacterBaseHPServer()`를 추가해 `CharacterDataInitComponent`의 `player_hp`를 우선 사용, 실패 시 현재 `HPSystem.MaxHP`로 폴백. |
+| Snapshot schema extension | `CaptureCurrentCharacterState()`에 `state.MaxHP` 캡처를 추가해 스왑 복원 시 HP/MaxHP 정합성 보강. |
+| Restore hardening | `ApplyCharacterState()`에서 상태 누락 시 초기 상태를 생성하고 `MaxHP` 먼저 반영 후 `CurrentHP`를 적용하도록 변경. |

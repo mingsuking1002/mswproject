@@ -37,14 +37,14 @@ script TagManagerComponent extends Component
         self._T.CharacterIdByIndex[1] = "player_a"
         self._T.CharacterIdByIndex[2] = "player_b"
 
-        self._T.CharacterStates = {}
-        self._T.CharacterStates[1] = self:CaptureCurrentCharacterState()
-        -- Character B state must start empty; cloning A here makes first tag-to-B overwrite B weapon data with A snapshot.
-        self._T.CharacterStates[2] = nil
-
         if self.EnsureCharacterDataOnInit == true then
             self:EnsureCharacterDataComponentServer()
         end
+
+        self._T.CharacterStates = {}
+        self._T.CharacterStates[1] = self:CaptureCurrentCharacterState()
+        -- Character B initial state is seeded from player_b base HP to prevent first-swap HP mirroring from current active character.
+        self._T.CharacterStates[2] = self:BuildInitialCharacterStateByIndexServer(2)
     end
 
     -- Client bootstraps utility so owner validation and component lookup conventions match other scripts.
@@ -235,6 +235,12 @@ script TagManagerComponent extends Component
 
         local hpComponent = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "CurrentHP")
         if hpComponent ~= nil then
+            local maxOk, maxValue = pcall(function()
+                return hpComponent.MaxHP
+            end)
+            if maxOk == true and maxValue ~= nil then
+                state.MaxHP = math.max(1, math.floor(tonumber(maxValue) or 1))
+            end
             local hpOk, hpValue = pcall(function()
                 return hpComponent.CurrentHP
             end)
@@ -301,25 +307,108 @@ script TagManagerComponent extends Component
         return state
     end
 
+    -- Missing target snapshots are initialized from character base HP so first swap never reuses current character HP.
+    @ExecSpace("ServerOnly")
+    method table BuildInitialCharacterStateByIndexServer(integer charIndex)
+        local targetIndex = self:ClampCharacterIndex(charIndex)
+        local state = {}
+        state.Timestamp = _UtilLogic.ServerElapsedSeconds
+
+        local characterId = self:GetCharacterIdByIndex(targetIndex)
+        local baseHp = self:ResolveCharacterBaseHPServer(characterId)
+        state.MaxHP = baseHp
+        state.CurrentHP = baseHp
+        state.CharacterId = characterId
+
+        return state
+    end
+
+    -- Base HP resolver uses CharacterDataInit row first and falls back to runtime HP component max value.
+    @ExecSpace("ServerOnly")
+    method integer ResolveCharacterBaseHPServer(string characterId)
+        local fallbackHp = 1
+        local hpComponent = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "MaxHP")
+        if hpComponent ~= nil then
+            local maxOk, maxValue = pcall(function()
+                return hpComponent.MaxHP
+            end)
+            if maxOk == true and maxValue ~= nil then
+                fallbackHp = math.max(1, math.floor(tonumber(maxValue) or 1))
+            end
+        end
+
+        if characterId == nil or characterId == "" then
+            return fallbackHp
+        end
+
+        local characterData = self:ResolveComponentSafe(self.Entity, "CharacterDataInitComponent", "CurrentCharacterId")
+        if characterData == nil then
+            self:EnsureCharacterDataComponentServer()
+            characterData = self:ResolveComponentSafe(self.Entity, "CharacterDataInitComponent", "CurrentCharacterId")
+        end
+        if characterData == nil or characterData.GetCharacterDataRowServer == nil then
+            return fallbackHp
+        end
+
+        local row = nil
+        local rowOk, rowValue = pcall(function()
+            return characterData:GetCharacterDataRowServer(characterId)
+        end)
+        if rowOk == true then
+            row = rowValue
+        end
+        if row == nil then
+            return fallbackHp
+        end
+
+        local hpText = ""
+        local hpReadOk, hpReadValue = pcall(function()
+            return row:GetItem("player_hp")
+        end)
+        if hpReadOk == true and hpReadValue ~= nil then
+            hpText = tostring(hpReadValue)
+        end
+        if hpText == "" then
+            return fallbackHp
+        end
+
+        local parsedHp = tonumber(hpText)
+        if parsedHp == nil then
+            return fallbackHp
+        end
+
+        return math.max(1, math.floor(parsedHp))
+    end
+
     -- Applies target character snapshot and restores linked components to that state.
     @ExecSpace("ServerOnly")
     method void ApplyCharacterState(integer charIndex)
         local targetIndex = self:ClampCharacterIndex(charIndex)
         local state = self._T.CharacterStates[targetIndex]
         if state == nil then
-            state = self:CaptureCurrentCharacterState()
-            self._T.CharacterStates[targetIndex] = state
+            state = self:BuildInitialCharacterStateByIndexServer(targetIndex)
+            self._T.CharacterStates[targetIndex] = self:CloneCharacterState(state)
         end
 
-        local hpComponent = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "CurrentHP")
-        if hpComponent ~= nil and state.CurrentHP ~= nil then
+        local hpComponent = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "MaxHP")
+        if hpComponent ~= nil then
             pcall(function()
-                local maxHp = hpComponent.MaxHP
-                if maxHp == nil or maxHp <= 0 then
-                    maxHp = 1
+                local maxHp = 1
+                if state.MaxHP ~= nil then
+                    maxHp = math.max(1, math.floor(tonumber(state.MaxHP) or 1))
+                else
+                    local runtimeMax = tonumber(hpComponent.MaxHP)
+                    if runtimeMax ~= nil then
+                        maxHp = math.max(1, math.floor(runtimeMax))
+                    end
                 end
 
-                local restoredHp = math.max(0, math.floor(state.CurrentHP))
+                hpComponent.MaxHP = maxHp
+
+                local restoredHp = maxHp
+                if state.CurrentHP ~= nil then
+                    restoredHp = math.max(0, math.floor(tonumber(state.CurrentHP) or 0))
+                end
                 if restoredHp > maxHp then
                     restoredHp = maxHp
                 end

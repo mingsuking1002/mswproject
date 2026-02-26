@@ -120,7 +120,7 @@
           "path": "/ui/MainGroup/GRBG",
           "nameEditable": true,
           "enable": true,
-          "visible": true,
+          "visible": false,
           "localize": true,
           "displayOrder": 0,
           "pathConstraints": "///",
