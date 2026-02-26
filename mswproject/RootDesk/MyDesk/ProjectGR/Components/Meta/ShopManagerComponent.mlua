@@ -12,7 +12,7 @@ script ShopManagerComponent extends Component
     property Entity ShopEntity3 = nil
     property Entity ShopEntity4 = nil
 
-    property string ShopDataTableName = "ShopItemData"
+    property string ShopDataTableName = "ShopItemData.userdataset"
     property number HealPercent = 30
     property integer HealPrice = 100
     property integer AmmoPrice = 50

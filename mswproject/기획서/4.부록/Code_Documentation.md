@@ -3245,3 +3245,14 @@
 | Base HP resolver | `ResolveCharacterBaseHPServer()`를 추가해 `CharacterDataInitComponent`의 `player_hp`를 우선 사용, 실패 시 현재 `HPSystem.MaxHP`로 폴백. |
 | Snapshot schema extension | `CaptureCurrentCharacterState()`에 `state.MaxHP` 캡처를 추가해 스왑 복원 시 HP/MaxHP 정합성 보강. |
 | Restore hardening | `ApplyCharacterState()`에서 상태 누락 시 초기 상태를 생성하고 `MaxHP` 먼저 반영 후 `CurrentHP`를 적용하도록 변경. |
+
+## 2026-02-26 Shop Table Source (userdataset)
+
+### ShopManagerComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/ShopManagerComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/ShopManagerComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+| Item | Detail |
+|---|---|
+| Shop table source | `ShopDataTableName` 기본값을 `ShopItemData.userdataset`으로 변경하여 `.userdataset` 테이블을 직접 로드하도록 조정. |
