@@ -1,0 +1,27 @@
+{
+  "Id": "",
+  "GameId": "",
+  "EntryKey": "tileset://1a9d9bb4-4d5e-4f39-90d0-5c8ec2c3d26b",
+  "ContentType": "x-mod/tileset",
+  "Content": "",
+  "Usage": 0,
+  "UsePublish": 1,
+  "UseService": 0,
+  "CoreVersion": "26.1.0.0",
+  "StudioVersion": "0.1.0.0",
+  "DynamicLoading": 0,
+  "ContentProto": {
+    "Use": "Json",
+    "Json": {
+      "name": "games_base",
+      "id": "tileset://1a9d9bb4-4d5e-4f39-90d0-5c8ec2c3d26b",
+      "datas": [
+        {
+          "Id": "c2e42c0bf3754e73979553c8d0f32ac1",
+          "Name": "BaseTile",
+          "IsCollidable": false
+        }
+      ]
+    }
+  }
+}

@@ -6,6 +6,9 @@ script Map01BootstrapComponent extends Component
     property boolean AutoAttachMissingComponents = true
     property boolean EnablePeriodicConfigure = true
     property number PeriodicConfigureInterval = 1.0
+    property boolean PeriodicConfigureOnlyForUnconfiguredUsers = true
+    property boolean StopPeriodicConfigureAfterWarmup = true
+    property integer PeriodicConfigureWarmupTicks = 10
 
     property boolean EnableLobbyMapSplit = false
     property string LobbyMapName = "games"
@@ -14,12 +17,21 @@ script Map01BootstrapComponent extends Component
     property integer LobbyRankingTab = 1
     property string LobbyUIRootPath = "/ui/MainGroup"
     property boolean ForcePlayerTransformMovement = true
+    property boolean SpawnAtRectTileCenterOnConfigure = true
+    property string CenterSpawnRectTilePath = "/maps/games/MapleMapLayer/GRBaseRectTileMap"
+    property integer CenterSpawnTileCountX = 48
+    property integer CenterSpawnTileCountY = 48
+    property boolean ApplyCenterSpawnOncePerUser = true
 
     -- Server initializes utility and sets up per-user configuration flow.
     @ExecSpace("ServerOnly")
     method void OnInitialize()
         self:EnsureGRUtil()
         self._T.PeriodicConfigureTimerId = 0
+        self._T.PeriodicConfigureTickCount = 0
+        self._T.ConfiguredEntityByUserId = {}
+        self._T.CenterSpawnAppliedByUser = {}
+        self._T.CenterSpawnAppliedByEntity = {}
     end
 
     -- BeginPlay configures already connected users so bootstrap works after hot-reload/rejoin.
@@ -59,12 +71,24 @@ script Map01BootstrapComponent extends Component
             return
         end
 
-        self:ConfigurePlayerByUserIdServer(event.UserId)
+        self:ResetUserConfigureStateServer(event.UserId)
+        self:ConfigurePlayerByUserIdServer(event.UserId, true)
+        self:StartPeriodicConfigureTimerServer()
+    end
+
+    -- User leave clears configure cache so rejoin can run full setup again.
+    @EventSender("Service", "UserService")
+    handler HandleUserLeaveEvent(UserLeaveEvent event)
+        if event == nil then
+            return
+        end
+
+        self:ResetUserConfigureStateServer(event.UserId)
     end
 
     -- User-id resolver entry keeps configuration path tolerant to timing of entity creation.
     @ExecSpace("ServerOnly")
-    method void ConfigurePlayerByUserIdServer(string userId)
+    method void ConfigurePlayerByUserIdServer(string userId, boolean forceReconfigure)
         if userId == nil or userId == "" then
             return
         end
@@ -74,7 +98,14 @@ script Map01BootstrapComponent extends Component
             return
         end
 
+        if forceReconfigure ~= true and self.PeriodicConfigureOnlyForUnconfiguredUsers == true then
+            if self:IsUserConfigureCurrentServer(userId, userEntity) == true then
+                return
+            end
+        end
+
         self:ConfigurePlayer(userEntity)
+        self:MarkUserConfiguredServer(userId, userEntity)
     end
 
     -- Periodic reconciliation fixes late user-entity creation races where UserEnter event fires before entity is ready.
@@ -101,11 +132,38 @@ script Map01BootstrapComponent extends Component
                 return
             end
 
+            local pendingCount = 0
             for userId, _ in pairs(users) do
-                self:ConfigurePlayerByUserIdServer(userId)
+                local userEntity = _UserService:GetUserEntityByUserId(userId)
+                if userEntity == nil or isvalid(userEntity) == false then
+                    pendingCount += 1
+                    continue
+                end
+
+                if self.PeriodicConfigureOnlyForUnconfiguredUsers == true and self:IsUserConfigureCurrentServer(userId, userEntity) == true then
+                    continue
+                end
+
+                pendingCount += 1
+                self:ConfigurePlayerByUserIdServer(userId, false)
+            end
+
+            local tickCount = self._T.PeriodicConfigureTickCount
+            if tickCount == nil then
+                tickCount = 0
+            end
+            tickCount += 1
+            self._T.PeriodicConfigureTickCount = tickCount
+
+            if self.StopPeriodicConfigureAfterWarmup == true and self.PeriodicConfigureOnlyForUnconfiguredUsers == true then
+                local warmupTicks = math.max(1, math.floor(self.PeriodicConfigureWarmupTicks))
+                if pendingCount <= 0 and tickCount >= warmupTicks then
+                    self:StopPeriodicConfigureTimerServer()
+                end
             end
         end
 
+        self._T.PeriodicConfigureTickCount = 0
         self._T.PeriodicConfigureTimerId = _TimerService:SetTimerRepeat(tick, interval, 0)
     end
 
@@ -115,6 +173,57 @@ script Map01BootstrapComponent extends Component
             _TimerService:ClearTimer(self._T.PeriodicConfigureTimerId)
             self._T.PeriodicConfigureTimerId = 0
         end
+    end
+
+    -- Configure mark stores user->entity pair so periodic pass can skip already-initialized entities.
+    @ExecSpace("ServerOnly")
+    method void MarkUserConfiguredServer(string userId, Entity userEntity)
+        if userId == nil or userId == "" then
+            return
+        end
+        if userEntity == nil or isvalid(userEntity) == false then
+            return
+        end
+        if self._T.ConfiguredEntityByUserId == nil then
+            self._T.ConfiguredEntityByUserId = {}
+        end
+        self._T.ConfiguredEntityByUserId[userId] = userEntity
+    end
+
+    -- Current-state check compares cached entity reference to avoid redundant full configure every timer tick.
+    @ExecSpace("ServerOnly")
+    method boolean IsUserConfigureCurrentServer(string userId, Entity userEntity)
+        if userId == nil or userId == "" then
+            return false
+        end
+        if userEntity == nil or isvalid(userEntity) == false then
+            return false
+        end
+        if self._T.ConfiguredEntityByUserId == nil then
+            return false
+        end
+
+        local cachedEntity = self._T.ConfiguredEntityByUserId[userId]
+        if cachedEntity == nil or isvalid(cachedEntity) == false then
+            return false
+        end
+
+        return (cachedEntity == userEntity)
+    end
+
+    -- User cache reset allows rejoin/recreate cases to receive one-time setup again.
+    @ExecSpace("ServerOnly")
+    method void ResetUserConfigureStateServer(string userId)
+        if userId == nil or userId == "" then
+            return
+        end
+        if self._T.ConfiguredEntityByUserId ~= nil then
+            self._T.ConfiguredEntityByUserId[userId] = nil
+        end
+        if self._T.CenterSpawnAppliedByUser ~= nil then
+            self._T.CenterSpawnAppliedByUser[userId] = nil
+        end
+        self._T.PeriodicConfigureTickCount = 0
     end
 
     -- Public configuration API is used by workspace runbook and can be called manually if needed.
@@ -202,6 +311,137 @@ script Map01BootstrapComponent extends Component
                 end)
             end
         end
+
+        self:ApplyCenterSpawnServer(playerEntity)
+    end
+
+    -- Player start position is aligned to tile-field center so first spawn always lands at map center.
+    @ExecSpace("ServerOnly")
+    method void ApplyCenterSpawnServer(Entity playerEntity)
+        if self.SpawnAtRectTileCenterOnConfigure ~= true then
+            return
+        end
+        if playerEntity == nil or isvalid(playerEntity) == false then
+            return
+        end
+
+        if self.ApplyCenterSpawnOncePerUser == true and self._T.CenterSpawnAppliedByEntity ~= nil then
+            if self._T.CenterSpawnAppliedByEntity[playerEntity] == true then
+                return
+            end
+        end
+
+        local userKey = self:ResolveCenterSpawnUserKey(playerEntity)
+        if self.ApplyCenterSpawnOncePerUser == true and userKey ~= nil and userKey ~= "" then
+            if self._T.CenterSpawnAppliedByUser ~= nil and self._T.CenterSpawnAppliedByUser[userKey] == true then
+                return
+            end
+        end
+
+        local tileEntity = nil
+        if self.CenterSpawnRectTilePath ~= nil and self.CenterSpawnRectTilePath ~= "" then
+            tileEntity = _EntityService:GetEntityByPath(self.CenterSpawnRectTilePath)
+        end
+        if tileEntity == nil or isvalid(tileEntity) == false then
+            return
+        end
+
+        local tileMap = nil
+        local readOk, readValue = pcall(function()
+            return tileEntity.RectTileMapComponent
+        end)
+        if readOk == true then
+            tileMap = readValue
+        end
+        if tileMap == nil then
+            local getOk, getValue = pcall(function()
+                return tileEntity:GetComponent("MOD.Core.RectTileMapComponent")
+            end)
+            if getOk == true then
+                tileMap = getValue
+            end
+        end
+        if tileMap == nil then
+            return
+        end
+
+        local maxX = math.max(0, self.CenterSpawnTileCountX - 1)
+        local maxY = math.max(0, self.CenterSpawnTileCountY - 1)
+        local minWorld = nil
+        local maxWorld = nil
+        local minOk, minValue = pcall(function()
+            return tileMap:ToWorldPosition(Vector2Int(0, 0))
+        end)
+        if minOk == true then
+            minWorld = minValue
+        end
+        local maxOk, maxValue = pcall(function()
+            return tileMap:ToWorldPosition(Vector2Int(maxX, maxY))
+        end)
+        if maxOk == true then
+            maxWorld = maxValue
+        end
+        if minWorld == nil or maxWorld == nil then
+            return
+        end
+
+        local centerX = (minWorld.x + maxWorld.x) * 0.5
+        local centerY = (minWorld.y + maxWorld.y) * 0.5
+        local transform = playerEntity.TransformComponent
+        if transform == nil then
+            return
+        end
+
+        local currentZ = 0
+        local currentOk, currentValue = pcall(function()
+            return transform.WorldPosition
+        end)
+        if currentOk == true and currentValue ~= nil then
+            currentZ = currentValue.z
+        end
+
+        pcall(function()
+            transform.WorldPosition = Vector3(centerX, centerY, currentZ)
+        end)
+
+        if self.ApplyCenterSpawnOncePerUser == true and userKey ~= nil and userKey ~= "" then
+            if self._T.CenterSpawnAppliedByUser == nil then
+                self._T.CenterSpawnAppliedByUser = {}
+            end
+            self._T.CenterSpawnAppliedByUser[userKey] = true
+        end
+
+        if self.ApplyCenterSpawnOncePerUser == true then
+            if self._T.CenterSpawnAppliedByEntity == nil then
+                self._T.CenterSpawnAppliedByEntity = {}
+            end
+            self._T.CenterSpawnAppliedByEntity[playerEntity] = true
+        end
+    end
+
+    method string ResolveCenterSpawnUserKey(Entity playerEntity)
+        if playerEntity == nil or isvalid(playerEntity) == false then
+            return ""
+        end
+
+        local playerComponent = playerEntity.PlayerComponent
+        if playerComponent ~= nil then
+            local userOk, userValue = pcall(function()
+                return playerComponent.UserId
+            end)
+            if userOk == true and userValue ~= nil and tostring(userValue) ~= "" then
+                return tostring(userValue)
+            end
+        end
+
+        local nameOk, nameValue = pcall(function()
+            return playerEntity.Name
+        end)
+        if nameOk == true and nameValue ~= nil then
+            return tostring(nameValue)
+        end
+
+        return ""
     end
 
     -- Required component list is attached idempotently via shared utility resolver.

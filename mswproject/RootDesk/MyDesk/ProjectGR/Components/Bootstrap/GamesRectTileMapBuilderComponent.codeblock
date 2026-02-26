@@ -1,0 +1,33 @@
+{
+  "Id": "",
+  "GameId": "",
+  "EntryKey": "codeblock://8c5c26c9-99ae-4416-9dfc-67113e057280",
+  "ContentType": "x-mod/codeblock",
+  "Content": "",
+  "Usage": 0,
+  "UsePublish": 1,
+  "UseService": 0,
+  "CoreVersion": "26.1.0.0",
+  "StudioVersion": "",
+  "DynamicLoading": 0,
+  "ContentProto": {
+    "Use": "Json",
+    "Json": {
+      "CoreVersion": {
+        "Major": 0,
+        "Minor": 2
+      },
+      "ScriptVersion": {
+        "Major": 1,
+        "Minor": 1
+      },
+      "Description": "",
+      "Id": "8c5c26c9-99ae-4416-9dfc-67113e057280",
+      "Language": 1,
+      "Name": "GamesRectTileMapBuilderComponent",
+      "Type": 1,
+      "Source": 1,
+      "Target": "@Component\nscript GamesRectTileMapBuilderComponent extends Component\n\n    property Entity RectTileMapEntity = nil\n    property string RectTileMapPath = \"/maps/games/MapleMapLayer/GRBaseRectTileMap\"\n    property string TileSetRuid = \"tileset://1a9d9bb4-4d5e-4f39-90d0-5c8ec2c3d26b\"\n    property string FillTileName = \"BaseTile\"\n    property integer GridPixelSize = 48\n    property integer TileCountX = 48\n    property integer TileCountY = 48\n    property boolean RebuildOnBeginPlay = true\n    property boolean ClearBeforeFill = true\n\n    -- Build once on server start so games map always has a deterministic 48x48 rect tile field.\n    @ExecSpace(\"ServerOnly\")\n    method void OnBeginPlay()\n        if self.RebuildOnBeginPlay ~= true then\n            return\n        end\n        self:BuildTileMapServer()\n    end\n\n    @ExecSpace(\"ServerOnly\")\n    method void BuildTileMapServer()\n        local tileMapComponent = self:ResolveRectTileMapComponentServer()\n        if tileMapComponent == nil then\n            return\n        end\n\n        self:ApplyRectTileMapDefaultsServer(tileMapComponent)\n\n        local fromCell = Vector2Int(0, 0)\n        local toCell = Vector2Int(math.max(0, self.TileCountX - 1), math.max(0, self.TileCountY - 1))\n\n        if self.ClearBeforeFill == true then\n            pcall(function()\n                tileMapComponent:Clear()\n            end)\n        end\n\n        local fillOk = false\n        if self.FillTileName ~= nil and self.FillTileName ~= \"\" then\n            local ok, _ = pcall(function()\n                tileMapComponent:BoxFill(self.FillTileName, fromCell, toCell)\n            end)\n            if ok == true then\n                fillOk = true\n            end\n        end\n\n        if fillOk ~= true then\n            pcall(function()\n                tileMapComponent:BoxFill(1, fromCell, toCell)\n            end)\n        end\n    end\n\n    @ExecSpace(\"ServerOnly\")\n    method any ResolveRectTileMapComponentServer()\n        local tileEntity = self.RectTileMapEntity\n        if tileEntity == nil or isvalid(tileEntity) == false then\n            if self.RectTileMapPath ~= nil and self.RectTileMapPath ~= \"\" then\n                tileEntity = _EntityService:GetEntityByPath(self.RectTileMapPath)\n            end\n            self.RectTileMapEntity = tileEntity\n        end\n\n        if tileEntity == nil or isvalid(tileEntity) == false then\n            return nil\n        end\n\n        local tileMapComponent = nil\n        local readOk, readValue = pcall(function()\n            return tileEntity.RectTileMapComponent\n        end)\n        if readOk == true then\n            tileMapComponent = readValue\n        end\n\n        if tileMapComponent == nil then\n            local getOk1, getValue1 = pcall(function()\n                return tileEntity:GetComponent(\"MOD.Core.RectTileMapComponent\")\n            end)\n            if getOk1 == true then\n                tileMapComponent = getValue1\n            end\n        end\n\n        if tileMapComponent == nil then\n            local addOk, addValue = pcall(function()\n                return tileEntity:AddComponent(\"MOD.Core.RectTileMapComponent\")\n            end)\n            if addOk == true then\n                tileMapComponent = addValue\n            end\n        end\n\n        return tileMapComponent\n    end\n\n    -- Grid/tile set defaults are applied every rebuild to keep map settings consistent after edits.\n    @ExecSpace(\"ServerOnly\")\n    method void ApplyRectTileMapDefaultsServer(any tileMapComponent)\n        if tileMapComponent == nil then\n            return\n        end\n\n        local grid = math.max(1, math.floor(self.GridPixelSize))\n        pcall(function()\n            tileMapComponent.GridSize = Vector2(grid, grid)\n        end)\n        pcall(function()\n            tileMapComponent.TileSetRUID = tostring(self.TileSetRuid)\n        end)\n        pcall(function()\n            tileMapComponent.OrderInLayer = 0\n        end)\n        pcall(function()\n            tileMapComponent.SortingLayer = \"Default\"\n        end)\n        pcall(function()\n            tileMapComponent.IsOddGridPosition = false\n        end)\n        pcall(function()\n            tileMapComponent.IgnoreMapLayerCheck = false\n        end)\n        pcall(function()\n            tileMapComponent.Enable = true\n        end)\n    end\nend\n"
+    }
+  }
+}

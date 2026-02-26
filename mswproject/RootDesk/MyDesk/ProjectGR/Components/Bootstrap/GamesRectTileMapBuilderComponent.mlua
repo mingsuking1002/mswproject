@@ -1,0 +1,193 @@
+@Component
+script GamesRectTileMapBuilderComponent extends Component
+
+    property Entity RectTileMapEntity = nil
+    property string RectTileMapPath = "/maps/games/MapleMapLayer/GRBaseRectTileMap"
+    property string TileSetRuid = "tileset://1a9d9bb4-4d5e-4f39-90d0-5c8ec2c3d26b"
+    property string FillTileName = "BaseTile"
+    property integer GridPixelSize = 48
+    property integer TileCountX = 48
+    property integer TileCountY = 48
+    property integer TileOrderInLayer = -100
+    property string TileSortingLayer = "Default"
+    property boolean AlignTileFieldCenterToWorldOrigin = true
+    property boolean SkipRebuildWhenAlreadyPrepared = true
+    property boolean RebuildOnBeginPlay = true
+    property boolean ClearBeforeFill = true
+
+    -- Build once on server start so games map always has a deterministic 48x48 rect tile field.
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        if self.RebuildOnBeginPlay ~= true then
+            return
+        end
+        self:BuildTileMapServer()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void BuildTileMapServer()
+        local tileEntity = self:ResolveRectTileMapEntityServer()
+        if tileEntity == nil or isvalid(tileEntity) == false then
+            return
+        end
+
+        local tileMapComponent = self:ResolveRectTileMapComponentServer(tileEntity)
+        if tileMapComponent == nil then
+            return
+        end
+
+        self:ApplyRectTileMapDefaultsServer(tileEntity, tileMapComponent)
+
+        if self.SkipRebuildWhenAlreadyPrepared == true and self:IsTileMapPreparedServer(tileMapComponent) == true then
+            return
+        end
+
+        local fromCell = Vector2Int(0, 0)
+        local toCell = Vector2Int(math.max(0, self.TileCountX - 1), math.max(0, self.TileCountY - 1))
+
+        if self.ClearBeforeFill == true then
+            pcall(function()
+                tileMapComponent:Clear()
+            end)
+        end
+
+        local fillOk = false
+        if self.FillTileName ~= nil and self.FillTileName ~= "" then
+            local ok, _ = pcall(function()
+                tileMapComponent:BoxFill(self.FillTileName, fromCell, toCell)
+            end)
+            if ok == true then
+                fillOk = true
+            end
+        end
+
+        if fillOk ~= true then
+            pcall(function()
+                tileMapComponent:BoxFill(1, fromCell, toCell)
+            end)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method Entity ResolveRectTileMapEntityServer()
+        local tileEntity = self.RectTileMapEntity
+        if tileEntity == nil or isvalid(tileEntity) == false then
+            if self.RectTileMapPath ~= nil and self.RectTileMapPath ~= "" then
+                tileEntity = _EntityService:GetEntityByPath(self.RectTileMapPath)
+            end
+            self.RectTileMapEntity = tileEntity
+        end
+
+        return tileEntity
+    end
+
+    @ExecSpace("ServerOnly")
+    method any ResolveRectTileMapComponentServer(Entity tileEntity)
+        if tileEntity == nil or isvalid(tileEntity) == false then
+            return nil
+        end
+
+        local tileMapComponent = nil
+        local readOk, readValue = pcall(function()
+            return tileEntity.RectTileMapComponent
+        end)
+        if readOk == true then
+            tileMapComponent = readValue
+        end
+
+        if tileMapComponent == nil then
+            local getOk1, getValue1 = pcall(function()
+                return tileEntity:GetComponent("MOD.Core.RectTileMapComponent")
+            end)
+            if getOk1 == true then
+                tileMapComponent = getValue1
+            end
+        end
+
+        if tileMapComponent == nil then
+            local addOk, addValue = pcall(function()
+                return tileEntity:AddComponent("MOD.Core.RectTileMapComponent")
+            end)
+            if addOk == true then
+                tileMapComponent = addValue
+            end
+        end
+
+        return tileMapComponent
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean IsTileMapPreparedServer(any tileMapComponent)
+        if tileMapComponent == nil then
+            return false
+        end
+
+        local expectedCount = math.max(1, self.TileCountX) * math.max(1, self.TileCountY)
+        local currentCount = -1
+        local countOk, countValue = pcall(function()
+            return tileMapComponent.TileCount
+        end)
+        if countOk == true and countValue ~= nil then
+            currentCount = math.floor(tonumber(countValue) or -1)
+        end
+
+        local currentTileSet = ""
+        local ruidOk, ruidValue = pcall(function()
+            return tileMapComponent.TileSetRUID
+        end)
+        if ruidOk == true and ruidValue ~= nil then
+            currentTileSet = tostring(ruidValue)
+        end
+
+        if currentCount == expectedCount and currentTileSet == tostring(self.TileSetRuid) then
+            return true
+        end
+        return false
+    end
+
+    -- Grid/tile set/render defaults are applied every rebuild to keep map settings consistent after edits.
+    @ExecSpace("ServerOnly")
+    method void ApplyRectTileMapDefaultsServer(Entity tileEntity, any tileMapComponent)
+        if tileMapComponent == nil then
+            return
+        end
+
+        local grid = math.max(1, math.floor(self.GridPixelSize))
+        pcall(function()
+            tileMapComponent.GridSize = Vector2(grid, grid)
+        end)
+        pcall(function()
+            tileMapComponent.TileSetRUID = tostring(self.TileSetRuid)
+        end)
+        pcall(function()
+            tileMapComponent.OrderInLayer = self.TileOrderInLayer
+        end)
+        pcall(function()
+            tileMapComponent.SortingLayer = tostring(self.TileSortingLayer)
+        end)
+        pcall(function()
+            tileMapComponent.IsOddGridPosition = false
+        end)
+        pcall(function()
+            tileMapComponent.IgnoreMapLayerCheck = true
+        end)
+        pcall(function()
+            tileMapComponent.Enable = true
+        end)
+
+        if self.AlignTileFieldCenterToWorldOrigin == true and tileEntity ~= nil and isvalid(tileEntity) == true and tileEntity.TransformComponent ~= nil then
+            local halfX = ((math.max(1, self.TileCountX) - 1) * grid) * 0.5
+            local halfY = ((math.max(1, self.TileCountY) - 1) * grid) * 0.5
+            local zValue = 0
+            local posOk, posValue = pcall(function()
+                return tileEntity.TransformComponent.Position
+            end)
+            if posOk == true and posValue ~= nil then
+                zValue = posValue.z
+            end
+            pcall(function()
+                tileEntity.TransformComponent.Position = Vector3(-halfX, -halfY, zValue)
+            end)
+        end
+    end
+end

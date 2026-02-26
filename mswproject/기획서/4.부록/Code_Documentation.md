@@ -2514,3 +2514,114 @@
 |---|---|
 | Confirm input policy | `HandleKeyDownEvent()` confirm condition changed from `Mouse0 or Space` to `Space` only. |
 | UX alignment | Wheel icon click selects slot, and `Space` confirms selected slot for consistent two-step selection/confirm flow. |
+
+## 2026-02-26 games Map 48x48 RectTile Field Build
+
+### GamesRectTileMapBuilderComponent (New)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/GamesRectTileMapBuilderComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/GamesRectTileMapBuilderComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Server build flow | On begin play, resolves target RectTileMap and rebuilds deterministic tile field. |
+| Grid/tile defaults | Applies `GridPixelSize=48`, `TileSetRuid=tileset://4e5436fa-e939-4c4d-9dfc-c441842dfe1e`, and enable/order defaults. |
+| Fill size | Fills `(0,0) -> (47,47)` for exact `48 x 48` tile count. |
+| Fill fallback | Tries tile name `Henesys_soil_1` first, then index `1` fallback if name fill fails. |
+
+### games.map (Updated)
+- **File:** `map/games.map`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Root bootstrap attach | Added `script.GamesRectTileMapBuilderComponent` to `/maps/games` root components. |
+| RectTile entity | Added `/maps/games/MapleMapLayer/GRBaseRectTileMap` with `MOD.Core.RectTileMapComponent`. |
+| RectTile defaults | Set `GridSize=(48,48)` and tileset `tileset://4e5436fa-e939-4c4d-9dfc-c441842dfe1e`. |
+
+## 2026-02-26 games TileSet Global Switch + Center Spawn
+
+### games_base.tileset (New)
+- **File:** `RootDesk/MyDesk/games_base.tileset`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Global tileset resource | Added single-tile tileset resource for games map field rendering. |
+| Tile image source | Uses image id `c2e42c0bf3754e73979553c8d0f32ac1` as the single tile entry (`BaseTile`). |
+| TileSet id | `tileset://1a9d9bb4-4d5e-4f39-90d0-5c8ec2c3d26b`. |
+
+### GamesRectTileMapBuilderComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/GamesRectTileMapBuilderComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/GamesRectTileMapBuilderComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| TileSet reference switch | Default `TileSetRuid` changed to `tileset://1a9d9bb4-4d5e-4f39-90d0-5c8ec2c3d26b`. |
+| Fill tile key | Default `FillTileName` changed to `BaseTile` (single-tile set). |
+
+### Map01BootstrapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Center spawn properties | Added `SpawnAtRectTileCenterOnConfigure`, `CenterSpawnRectTilePath`, `CenterSpawnTileCountX/Y`, `ApplyCenterSpawnOncePerUser`. |
+| Center spawn logic | Added `ApplyCenterSpawnServer()` to place player at tile-field center using `RectTileMapComponent:ToWorldPosition()` midpoint. |
+| One-time guard | Added per-user once guard (`_T.CenterSpawnAppliedByUser`) to avoid repeated recentering by periodic configure. |
+
+### games.map (Updated)
+- **File:** `map/games.map`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Builder override | Updated root builder override to new tileset id + `FillTileName=BaseTile`. |
+| RectTile override | Updated `/maps/games/MapleMapLayer/GRBaseRectTileMap` `TileSetRUID` to new tileset id. |
+| Bootstrap override | Added center spawn override values on `LobbyBootstrap.script.Map01BootstrapComponent`. |
+
+## 2026-02-26 In-Game Lag Hotfix (Bootstrap Configure Loop)
+
+### Map01BootstrapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Periodic reconfigure scope | Added `PeriodicConfigureOnlyForUnconfiguredUsers` to skip full `ConfigurePlayer()` for already-configured user entities. |
+| Warmup auto-stop | Added `StopPeriodicConfigureAfterWarmup` + `PeriodicConfigureWarmupTicks` so periodic timer stops after initial stabilization. |
+| Configure cache | Added `_T.ConfiguredEntityByUserId`, `MarkUserConfiguredServer()`, `IsUserConfigureCurrentServer()` to track user-entity configure state. |
+| User lifecycle reset | Added `HandleUserLeaveEvent` and `ResetUserConfigureStateServer()` so rejoin/recreate path can reconfigure once safely. |
+| Source sync | `.codeblock(Target mLua)` synchronized to patched `.mlua`. |
+
+### games.map (Updated)
+- **File:** `map/games.map`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Tile rebuild clear pass | Changed `LobbyBootstrap.script.GamesRectTileMapBuilderComponent.ClearBeforeFill` to `false` to reduce initial map-load hitch while keeping full-field `BoxFill` behavior. |
+
+## 2026-02-26 Temporary TileMap Load Disable
+
+### games.map (Updated)
+- **File:** `map/games.map`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Tile builder off | `script.GamesRectTileMapBuilderComponent.Enable=false`, `RebuildOnBeginPlay=false`. |
+| Center spawn off | `script.Map01BootstrapComponent.SpawnAtRectTileCenterOnConfigure=false`. |
+| Tile entity off | `/maps/games/MapleMapLayer/GRBaseRectTileMap` entity `enable/visible=false`, `RectTileMapComponent.Enable=false`. |

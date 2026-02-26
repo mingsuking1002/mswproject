@@ -6,123 +6,115 @@
 
 ## 1. 개요
 
-`mon_type == "elite"` 몬스터가 현재 normal과 동일하게 `spawn_time` 이후 **매 틱 반복 스폰**되는 문제를 수정한다. elite는 `spawn_time` 도달 시 **딱 1마리만** 스폰하고, 이후 반복 스폰 풀에서 제외한다.
+`mon_type == "elite"` 몬스터를 기존 `SpawnTick`에서 **완전 분리**한다. `MonsterSpawnComponent.StateMonitorTimer`의 주기적 콜백 내에서 `GameTimerComponent.ElapsedTime`이 해당 elite의 `spawn_time(분)`에 도달했는지 체크하고, 도달 시 해당 ID의 elite를 **1마리만** 스폰한다.
 
 ---
 
 ## 2. 수정 대상
 
-* **Component Name:** `MonsterSpawnComponent`
+* **Component:** `MonsterSpawnComponent`
 * **파일:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.mlua`
 * **Execution Space:** `[Server Only]`
 
 ---
 
-## 3. 현재 문제
+## 3. 수정 사항
 
-`ResolveSpawnCandidates` (873행)에서:
-```
-if IsBossRow(row) then → BossRows
-else → NormalRows   ← elite도 여기에 포함됨
-```
-→ `SpawnTick`에서 `NormalRows`를 매 틱 `SpawnPerTick`개씩 랜덤 선택하므로, elite가 normal과 섞여 **반복 스폰**됨.
-
----
-
-## 4. 수정 사항
-
-### 4-1. `ResolveSpawnCandidates` 수정
-
-기존 2분류(`NormalRows`/`BossRows`)를 3분류로 변경:
+### 3-1. `ResolveSpawnCandidates` — elite 제외
 
 ```pseudocode
-result.NormalRows = {}
-result.EliteRows = {}   -- [NEW]
-result.BossRows = {}
-
-for row in MonsterRows:
-    -- 기존 stage/spawn_time 필터 유지
-
-    if IsBossRow(row) then
-        table.insert(result.BossRows, row)
-    elseif IsEliteRow(row) then          -- [NEW]
-        table.insert(result.EliteRows, row)
-    else
-        table.insert(result.NormalRows, row)
-    end
+if IsBossRow(row) then → BossRows
+elseif IsEliteRow(row) then → continue  -- NormalRows에 넣지 않음
+else → NormalRows
 ```
 
-### 4-2. `IsEliteRow` 신규 메서드
+### 3-2. `IsEliteRow` 신규
 
 ```pseudocode
 method boolean IsEliteRow(row)
-    local monType = string.lower(GetRowString(row, "mon_type", ""))
-    return monType == "elite"
+    return string.lower(GetRowString(row, "mon_type", "")) == "elite"
 end
 ```
 
-### 4-3. `SpawnTick` 수정 — elite 1회 스폰 로직
+### 3-3. `CheckEliteSpawnsServer` 신규 — StateMonitorTimer 콜백에 추가
 
-보스 처리 직후, normal 루프 직전에 삽입:
+`RefreshSpawnStateServer` 호출 시점에 함께 실행 (기존 StateMonitorTimer 콜백에 1줄 추가):
 
 ```pseudocode
--- [NEW] Elite 1회 스폰
-local eliteRows = candidates.EliteRows
-if eliteRows ~= nil and #eliteRows > 0 then
-    for _, eliteRow in pairs(eliteRows) do
-        local eliteId = GetRowString(eliteRow, "id", "")
-        if _T.EliteSpawnedSet[eliteId] ~= true then
-            local pos = CalcDonutPosition()
-            if pos ~= nil and IsValidSpawnPosition(pos) then
-                local spawned = SpawnMonsterByRow(eliteRow, pos, false)
-                if spawned ~= nil and isvalid(spawned) then
-                    _T.EliteSpawnedSet[eliteId] = true
-                end
-            end
+-- StateMonitorTimer 콜백 (610행 부근)
+local callback = function()
+    self:RefreshSpawnStateServer()
+    self:UpdateMonsterHPBarsServer()
+    self:ProcessMonsterDeathSequenceServer()
+    self:CheckEliteSpawnsServer()   -- [NEW]
+end
+```
+
+```pseudocode
+method void CheckEliteSpawnsServer()
+    if _T.MonsterRows == nil then return end
+    if IsSafeZoneActiveServer() then return end  -- IsLobby 가드
+
+    local timerComp = ResolveComponentSafe(Entity, "GameTimerComponent", "ElapsedTime")
+    if timerComp == nil then return end
+    local elapsed = timerComp.ElapsedTime
+
+    for _, row in pairs(_T.MonsterRows) do
+        if IsEliteRow(row) == false then continue end
+
+        local eliteId = GetRowString(row, "id", "")
+        if eliteId == "" then continue end
+        if _T.EliteSpawnedSet[eliteId] == true then continue end
+
+        local spawnSec = GetSpawnMinuteFromRow(row) * 60
+        if spawnSec < 0 then continue end
+        if elapsed < spawnSec then continue end
+
+        -- 도달 → 1마리 스폰
+        SpawnEliteOnceServer(row, eliteId)
+    end
+end
+```
+
+### 3-4. `SpawnEliteOnceServer` 신규
+
+```pseudocode
+method void SpawnEliteOnceServer(row, eliteId)
+    if _T.EliteSpawnedSet[eliteId] == true then return end
+
+    local pos = CalcDonutPosition()
+    if pos ~= nil and IsValidSpawnPosition(pos) then
+        local spawned = SpawnMonsterByRow(row, pos, false)
+        if spawned ~= nil and isvalid(spawned) then
+            _T.EliteSpawnedSet[eliteId] = true
         end
     end
 end
 ```
 
-### 4-4. `_T.EliteSpawnedSet` 초기화
+### 3-5. 초기화/리셋
 
 | 위치 | 처리 |
 |---|---|
 | `OnInitialize` | `_T.EliteSpawnedSet = {}` |
-| `LoadMonsterDataFromTable` | `_T.EliteSpawnedSet = {}` (테이블 리로드 시 리셋) |
-| `ActivateInfiniteModeServer` | `_T.EliteSpawnedSet = {}` (모드 전환 시 리셋) |
-
-### 4-5. LobbyFlow 런 리셋 연동
-
-`ResetShopStateServer`나 `HandleRunCompletedServer` 경로에서 이미 `MonsterSpawnComponent` 데이터를 리로드하므로, 4-4의 리셋이 자동 적용됨. 별도 작업 불필요.
+| `LoadMonsterDataFromTable` | `_T.EliteSpawnedSet = {}` |
+| `ActivateInfiniteModeServer` | 리로드 시 자동 리셋 |
 
 ---
 
-## 5. 연동 컴포넌트
-
-| 컴포넌트 | 영향 |
-|---|---|
-| `PenaltySystemComponent` | elite 판별 로직(222행)이 `mon_type`을 읽으므로 변경 없음. cull 대상에서 elite 제외가 이미 되어 있다면 유지 |
-| `InfiniteModeComponent` | `ActivateInfiniteModeServer` 경로에서 `EliteSpawnedSet` 리셋만 추가 |
-
----
-
-## 6. 기획서 참조
+## 4. 기획서 참조
 
 * PD 직접 지시 (2026-02-26)
 
----
-
-## 7. 구현 방식
+## 5. 구현 방식
 
 MCP 이용해서 직접 workspace에서 작업해줘야하는 방식
 
----
+## 6. 주의/최적화 포인트
 
-## 8. 주의/최적화 포인트
-
-* **`_T.EliteSpawnedSet`은 row ID 기반**: 동일 elite 행이 다른 stage에서 재등장할 수 있으므로, `stage + id` 복합키가 필요한지 PD 확인 필요
-* **elite 스폰 위치**: normal과 동일하게 도넛 랜덤 위치 사용
-* **elite 사망 후 재스폰 여부**: 현재 설계는 **1회 한정** (사망 후에도 재스폰 안 함). PD 의도와 다르면 `EliteSpawnedSet`에서 사망 시 제거 로직 추가
+* **SpawnTick과 완전 독립**: elite는 NormalRows에 진입하지 않음
+* **GameTimerComponent.ElapsedTime 기반**: Pause 시 자동으로 멈춤 → 별도 보정 불필요
+* **StateMonitorTimer 주기(0.2s)**: elite 스폰 정밀도는 ±0.2초 → 충분
+* **IsLobby 가드**: `IsSafeZoneActiveServer()` 체크로 로비 중 스폰 차단
 
 ---
