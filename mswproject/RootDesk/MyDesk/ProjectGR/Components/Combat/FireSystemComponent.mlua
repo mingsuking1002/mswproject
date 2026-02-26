@@ -226,7 +226,7 @@ script FireSystemComponent extends Component
                 self:WarnMissingSummonConfigServer("CurrentTurretModelId")
                 return false
             end
-        elseif projectileType ~= "smite" then
+        else
             local hasModelId = (self.ProjectileModelId ~= nil and self.ProjectileModelId ~= "")
             local templateEntity = self:ResolveProjectileTemplateEntity()
             if hasModelId == false and templateEntity == nil then
@@ -527,10 +527,12 @@ script FireSystemComponent extends Component
         return templateEntity
     end
 
-    -- Smite applies server-authoritative damage without gameplay projectile spawn, with optional delay for timing sync.
+    -- Smite damage is now trigger-contact based: only spawned hit-tile projectile trigger can apply damage.
     @ExecSpace("ServerOnly")
     method boolean SmiteAttackServer(Vector2 targetWorldPosition)
-        local didSpawnVisual = self:SpawnSmiteVisualServer(targetWorldPosition)
+        local smitePosition = self:ResolveSmiteTargetPosition(targetWorldPosition)
+
+        local didSpawnVisual = self:SpawnSmiteVisualServer(smitePosition)
         local damage = self:CalculateFinalDamage()
         if damage <= 0 then
             return didSpawnVisual
@@ -539,11 +541,11 @@ script FireSystemComponent extends Component
         local radiusSnapshot = math.max(self.SplashSize, 0)
         local delaySnapshot = math.max(self.SmiteDamageDelay, 0)
         if delaySnapshot > 0 then
-            self:ScheduleSmiteDamageServer(targetWorldPosition, damage, radiusSnapshot, delaySnapshot)
+            self:ScheduleSmiteDamageServer(smitePosition, damage, radiusSnapshot, delaySnapshot)
             return true
         end
 
-        local didDamage = self:ApplySmiteDamageAtPositionServer(targetWorldPosition, radiusSnapshot, damage)
+        local didDamage = self:ApplySmiteDamageAtPositionServer(smitePosition, radiusSnapshot, damage)
         if didDamage == true then
             return true
         end
@@ -551,7 +553,49 @@ script FireSystemComponent extends Component
         return didSpawnVisual
     end
 
-    -- Smite damage can be delayed to match animation timing, while using shot-time snapshots for deterministic hit values.
+    -- Smite target mode is currently hardcoded by weapon id and will be migrated to WeaponData in next phase.
+    @ExecSpace("ServerOnly")
+    method Vector2 ResolveSmiteTargetPosition(Vector2 targetWorldPosition)
+        if self:IsPlayerPositionSmite(self.CurrentWeaponId) == true then
+            local playerPos = self.Entity.TransformComponent.WorldPosition
+            if playerPos ~= nil then
+                return Vector2(playerPos.x, playerPos.y)
+            end
+        end
+
+        if targetWorldPosition ~= nil then
+            return Vector2(targetWorldPosition.x, targetWorldPosition.y)
+        end
+
+        local fallbackPos = self.Entity.TransformComponent.WorldPosition
+        if fallbackPos ~= nil then
+            return Vector2(fallbackPos.x, fallbackPos.y)
+        end
+        return Vector2.zero
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean IsPlayerPositionSmite(string weaponId)
+        local targetMode = self:GetSmiteTargetModeFromWeaponData(weaponId)
+        return targetMode == "self"
+    end
+
+    -- TODO: Replace hardcoded mapping with WeaponData.smite_target_mode lookup in next implementation step.
+    @ExecSpace("ServerOnly")
+    method string GetSmiteTargetModeFromWeaponData(string weaponId)
+        local normalizedId = ""
+        if weaponId ~= nil then
+            normalizedId = string.lower(tostring(weaponId))
+        end
+
+        if normalizedId == "deathperado" then
+            return "self"
+        end
+
+        return "cursor"
+    end
+
+    -- Smite delay now schedules trigger-hit projectile spawn (not direct damage), preserving shot-time snapshots.
     @ExecSpace("ServerOnly")
     method void ScheduleSmiteDamageServer(Vector2 targetWorldPosition, integer damage, number radius, number delay)
         if targetWorldPosition == nil then
@@ -590,36 +634,150 @@ script FireSystemComponent extends Component
         self._T.SmiteDamageTimerById[timerId] = true
     end
 
-    -- Shared hit resolver keeps instant and delayed smite paths behavior-identical.
+    -- Trigger-hit smite projectile spawn keeps smite damage strictly contact-based with ProjectileComponent authority.
     @ExecSpace("ServerOnly")
-    method boolean ApplySmiteDamageAtPositionServer(Vector2 targetWorldPosition, number radius, integer damage)
+    method boolean SpawnSmiteHitProjectileServer(Vector2 targetWorldPosition, integer damage, number radius)
         if targetWorldPosition == nil then
             return false
         end
-        if damage == nil or damage <= 0 then
+
+        local damageSnapshot = math.max(0, math.floor(damage))
+        if damageSnapshot <= 0 then
+            return false
+        end
+
+        local parentEntity = self.Entity.CurrentMap
+        if parentEntity == nil or isvalid(parentEntity) == false then
+            parentEntity = self.Entity
+        end
+
+        local spawnPosition3D = Vector3(targetWorldPosition.x, targetWorldPosition.y, 0)
+        local projectileEntity = nil
+        if self.ProjectileModelId ~= nil and self.ProjectileModelId ~= "" then
+            projectileEntity = _SpawnService:SpawnByModelId(self.ProjectileModelId, "SmiteHit", spawnPosition3D, parentEntity)
+        else
+            local templateEntity = self:ResolveProjectileTemplateEntity()
+            if templateEntity == nil or isvalid(templateEntity) == false then
+                return false
+            end
+            projectileEntity = _SpawnService:SpawnByEntity(templateEntity, "SmiteHit", spawnPosition3D, parentEntity, true)
+        end
+
+        if projectileEntity == nil or isvalid(projectileEntity) == false then
             return false
         end
 
         local hitRadius = math.max(radius, 0)
+        local hitDiameter = 0.45
         if hitRadius > 0 then
-            self:ApplySmiteDamageInRadiusServer(targetWorldPosition, hitRadius, damage)
-            return true
+            hitDiameter = math.max(hitDiameter, hitRadius * 2)
         end
 
-        local nearestTarget = self:FindNearestDamageTargetServer(targetWorldPosition)
-        if nearestTarget == nil or isvalid(nearestTarget) == false then
+        local triggerComponent = projectileEntity.TriggerComponent
+        if triggerComponent == nil then
+            local triggerOk, _ = pcall(function()
+                projectileEntity:AddComponent("MOD.Core.TriggerComponent")
+            end)
+            if triggerOk == true then
+                triggerComponent = projectileEntity.TriggerComponent
+            end
+        end
+
+        if triggerComponent ~= nil and isvalid(triggerComponent) == true then
+            triggerComponent.BoxSize = Vector2(hitDiameter, hitDiameter)
+            triggerComponent.IsPassive = false
+            pcall(function()
+                triggerComponent.Enable = true
+            end)
+        end
+
+        local physicsCollider = self:FindOrAddComponentSafe(projectileEntity, "PhysicsColliderComponent")
+        if physicsCollider ~= nil and isvalid(physicsCollider) == true then
+            pcall(function()
+                physicsCollider.Enable = true
+            end)
+            if triggerComponent ~= nil and isvalid(triggerComponent) == true then
+                pcall(function()
+                    physicsCollider.BoxSize = triggerComponent.BoxSize
+                end)
+            else
+                pcall(function()
+                    physicsCollider.BoxSize = Vector2(hitDiameter, hitDiameter)
+                end)
+            end
+            pcall(function()
+                physicsCollider.IsSensor = true
+            end)
+            -- Smite hit-tile ignores physical contact fallback and relies on trigger enter/stay only.
+            pcall(function()
+                physicsCollider.EnableContactEvent = false
+            end)
+            if triggerComponent ~= nil and isvalid(triggerComponent) == true then
+                pcall(function()
+                    physicsCollider.CollisionGroup = triggerComponent.CollisionGroup
+                end)
+            end
+        end
+
+        local physicsBody = self:FindOrAddComponentSafe(projectileEntity, "PhysicsRigidbodyComponent")
+        if physicsBody ~= nil and isvalid(physicsBody) == true then
+            pcall(function()
+                physicsBody.Enable = true
+            end)
+            pcall(function()
+                physicsBody.BodyType = BodyType.Dynamic
+            end)
+            pcall(function()
+                physicsBody.CollisionDetectionMode = PhysicsCollisionDetectionMode.Continuous
+            end)
+            pcall(function()
+                physicsBody.SleepingMode = PhysicsSleepingMode.NeverSleep
+            end)
+            pcall(function()
+                physicsBody.GravityScale = 0
+            end)
+            pcall(function()
+                physicsBody.FixedRotation = true
+            end)
+            pcall(function()
+                physicsBody:SetServerAsPhysicsOwner()
+            end)
+            pcall(function()
+                physicsBody:SetPosition(targetWorldPosition)
+            end)
+            pcall(function()
+                physicsBody:SetLinearVelocity(Vector2.zero)
+            end)
+        end
+
+        local projectileComponent = self:FindOrAddComponentSafe(projectileEntity, "ProjectileComponent")
+        if projectileComponent == nil then
+            _EntityService:Destroy(projectileEntity)
             return false
         end
 
-        local hpSystem = self:ResolveComponentSafe(nearestTarget, "HPSystemComponent", "CurrentHP")
-        if hpSystem == nil then
-            return false
+        projectileComponent.Speed = 0
+        projectileComponent.MaxRange = 9999
+        projectileComponent.Lifetime = math.max(self.SmiteVisualLifetime, 0.2)
+        projectileComponent.Damage = damageSnapshot
+        projectileComponent.Spread = 0
+        if hitRadius > 0 then
+            projectileComponent.ProjectileType = "area_projectile"
+            projectileComponent.SplashSize = hitRadius
+        else
+            projectileComponent.ProjectileType = "single_projectile"
+            projectileComponent.SplashSize = 0
         end
+        projectileComponent.EnableTriggerStayFallback = true
+        projectileComponent.EnablePhysicsContactFallback = false
+        projectileComponent:InitializeProjectile(Vector2.right, targetWorldPosition, self.Entity)
+        return true
+    end
 
-        local applyOk, _ = pcall(function()
-            hpSystem:ApplyDamage(damage)
-        end)
-        return (applyOk == true)
+    -- Legacy entry point kept for compatibility; actual damage now occurs only via trigger contact on spawned smite hit-tile.
+    @ExecSpace("ServerOnly")
+    method boolean ApplySmiteDamageAtPositionServer(Vector2 targetWorldPosition, number radius, integer damage)
+        return self:SpawnSmiteHitProjectileServer(targetWorldPosition, damage, radius)
     end
 
     -- Smite can spawn projectile model as short-lived visual-only marker without collision or damage logic.

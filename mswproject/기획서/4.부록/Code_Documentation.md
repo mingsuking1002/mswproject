@@ -160,7 +160,7 @@
 
 ## FireSystemComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.mlua`
-- **수정일:** `2026-02-18`
+- **수정일:** `2026-02-26`
 
 ### Properties
 | 이름 | 타입 | 설명 |
@@ -189,9 +189,18 @@
 | `RequestFireServer` | `targetWorldPosition: Vector2` | void | 서버 소유자 검증 후 발사 시도 |
 | `CanFireServer` | void | boolean | 탄약/재장전/쿨다운/스폰 조건 종합 판정 |
 | `SpawnProjectileServer` | `direction: Vector2, shooterPosition: Vector2` | void | 투사체 생성 및 초기화 |
+| `SmiteAttackServer` | `targetWorldPosition: Vector2` | boolean | smite 타격 좌표를 무기별 정책으로 해석한 뒤 이펙트/데미지 적용 |
+| `ResolveSmiteTargetPosition` | `targetWorldPosition: Vector2` | Vector2 | 현재 무기의 smite 타겟 모드에 따라 최종 타격 좌표 반환 |
+| `IsPlayerPositionSmite` | `weaponId: string` | boolean | 무기 ID 기준 self-타겟 smite 여부 판정 |
+| `GetSmiteTargetModeFromWeaponData` | `weaponId: string` | string | smite 좌표 모드 반환 (`self`/`cursor`) |
 | `CalculateFinalDamage` | void | integer | 최종 공격력 공식 계산 |
 | `StartFireCooldown` | void | void | 발사 쿨다운 타이머 시작 |
 | `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
+
+### Notes
+- `SPEC_SmiteRework` 1단계는 사용자 지시에 따라 임시 하드코딩 적용:
+- `weaponId == "deathperado"`는 `self`, 그 외는 `cursor` 처리.
+- 차기 단계에서 `WeaponData.smite_target_mode` 컬럼 기반으로 전환 예정.
 
 ## ProjectileComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ProjectileComponent.mlua`
@@ -2793,3 +2802,26 @@
 | Item | Detail |
 |---|---|
 | Explicit backdrop auto-bounds overrides | Added `UseBackdropEntityAutoBounds=true`, `BackdropEntityPath=/maps/games/MapleMapLayer/GRWorldBackdrop`, `BackdropBoundsRefreshInterval=1.0`, `SpawnAtBackdropCenterOnConfigure=true` on `LobbyBootstrap.script.Map01BootstrapComponent`. |
+
+## 2026-02-26 Smite Trigger-Contact Damage Gate
+
+### FireSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Smite hit rule | `SmiteAttackServer()` no longer applies direct positional damage; damage path is now trigger-contact only via spawned smite hit projectile. |
+| New spawn method | Added `SpawnSmiteHitProjectileServer(targetWorldPosition, damage, radius)` to spawn stationary trigger hit-tile with `ProjectileComponent`. |
+| Delay semantics | `ScheduleSmiteDamageServer()` now delays hit-projectile spawn timing (not direct delayed damage). |
+| Compatibility bridge | `ApplySmiteDamageAtPositionServer()` now delegates to hit-projectile spawn to preserve call-site compatibility. |
+| Fire config validation | `CanFireServer()` now requires smite to also have `ProjectileModelId` or `GRProjectileTemplate`, same as other projectile fire types. |
+
+### Runtime Behavior Note
+| Scenario | Result |
+|---|---|
+| Smite cast without trigger contact | No damage is applied. |
+| Trigger enter/stay with monster | Damage is applied by `ProjectileComponent` server-side impact path. |
+| Smite with splash (`SplashSize > 0`) | Spawned hit-tile uses `area_projectile`, and splash damage executes after trigger-based impact. |
