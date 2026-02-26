@@ -166,8 +166,8 @@
                 "z": 0.0
               },
               "Position": {
-                "x": 0.0,
-                "y": 0.0,
+                "x": 4.76837158E-07,
+                "y": -0.204082727,
                 "z": 0.0
               },
               "QuaternionRotation": {
@@ -350,8 +350,8 @@
                 "z": 0.0
               },
               "Position": {
-                "x": 2.99220085,
-                "y": 1.04293823,
+                "x": -20.8562946,
+                "y": -0.4474306,
                 "z": 0.0
               },
               "QuaternionRotation": {
@@ -505,6 +505,249 @@
               "OrderInLayer": 1,
               "RenderSetting": 0,
               "StartFrameIndex": 0,
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "aabd5d8b-ddbd-424d-b484-25499c37e111",
+        "path": "/maps/games/Shop_West",
+        "componentNames": "MOD.Core.TransformComponent,MOD.Core.SpriteRendererComponent,MOD.Core.TriggerComponent",
+        "jsonString": {
+          "name": "Shop_West",
+          "path": "/maps/games/Shop_West",
+          "nameEditable": true,
+          "enable": false,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 7,
+          "pathConstraints": "///",
+          "revision": 1,
+          "modelId": null,
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "Position": {
+                "x": 20.3215256,
+                "y": -0.301594973,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "ZRotation": 0.0,
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.SpriteRendererComponent",
+              "ActionSheet": {},
+              "EndFrameIndex": 2147483647,
+              "OrderInLayer": 0,
+              "RenderSetting": 0,
+              "SortingLayer": "Default",
+              "SpriteRUID": "ba7443a453644bccb209350b4ab780c5",
+              "StartFrameIndex": 0,
+              "Color": {
+                "r": 1.0,
+                "g": 1.0,
+                "b": 1.0,
+                "a": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.TriggerComponent",
+              "BoxOffset": {
+                "x": 0.0,
+                "y": 0.0
+              },
+              "BoxSize": {
+                "x": 5.0,
+                "y": 5.0
+              },
+              "CircleRadius": 10.0,
+              "ColliderOffset": {
+                "x": 0.103317261,
+                "y": 0.4303832
+              },
+              "ColliderType": 1,
+              "CollisionGroup": {
+                "Id": "MOD@TriggerBox"
+              },
+              "IsLegacy": false,
+              "IsPassive": false,
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "4ea1ab63-b18a-4dc9-8660-1319b7d09112",
+        "path": "/maps/games/Shop_South",
+        "componentNames": "MOD.Core.TransformComponent,MOD.Core.SpriteRendererComponent,MOD.Core.TriggerComponent",
+        "jsonString": {
+          "name": "Shop_South",
+          "path": "/maps/games/Shop_South",
+          "nameEditable": true,
+          "enable": false,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 8,
+          "pathConstraints": "///",
+          "revision": 1,
+          "modelId": null,
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "Position": {
+                "x": -0.0748934746,
+                "y": -21.6889877,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "ZRotation": 0.0,
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.SpriteRendererComponent",
+              "ActionSheet": {},
+              "EndFrameIndex": 2147483647,
+              "OrderInLayer": 0,
+              "RenderSetting": 0,
+              "SortingLayer": "Default",
+              "SpriteRUID": "ba7443a453644bccb209350b4ab780c5",
+              "StartFrameIndex": 0,
+              "Color": {
+                "r": 1.0,
+                "g": 1.0,
+                "b": 1.0,
+                "a": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.TriggerComponent",
+              "BoxOffset": {
+                "x": 0.0,
+                "y": 0.0
+              },
+              "BoxSize": {
+                "x": 5.0,
+                "y": 5.0
+              },
+              "CircleRadius": 10.0,
+              "ColliderOffset": {
+                "x": 0.103317261,
+                "y": 0.4303832
+              },
+              "ColliderType": 1,
+              "CollisionGroup": {
+                "Id": "MOD@TriggerBox"
+              },
+              "IsLegacy": false,
+              "IsPassive": false,
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "e6b0c0a0-14ad-4cb3-8ace-b600de817e27",
+        "path": "/maps/games/Shop_North",
+        "componentNames": "MOD.Core.TransformComponent,MOD.Core.SpriteRendererComponent,MOD.Core.TriggerComponent",
+        "jsonString": {
+          "name": "Shop_North",
+          "path": "/maps/games/Shop_North",
+          "nameEditable": true,
+          "enable": false,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 9,
+          "pathConstraints": "///",
+          "revision": 1,
+          "modelId": null,
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "Position": {
+                "x": -0.134670258,
+                "y": 19.84399,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "ZRotation": 0.0,
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.SpriteRendererComponent",
+              "ActionSheet": {},
+              "EndFrameIndex": 2147483647,
+              "OrderInLayer": 0,
+              "RenderSetting": 0,
+              "SortingLayer": "Default",
+              "SpriteRUID": "ba7443a453644bccb209350b4ab780c5",
+              "StartFrameIndex": 0,
+              "Color": {
+                "r": 1.0,
+                "g": 1.0,
+                "b": 1.0,
+                "a": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.TriggerComponent",
+              "BoxOffset": {
+                "x": 0.0,
+                "y": 0.0
+              },
+              "BoxSize": {
+                "x": 5.0,
+                "y": 5.0
+              },
+              "CircleRadius": 10.0,
+              "ColliderOffset": {
+                "x": 0.103317261,
+                "y": 0.4303832
+              },
+              "ColliderType": 1,
+              "CollisionGroup": {
+                "Id": "MOD@TriggerBox"
+              },
+              "IsLegacy": false,
+              "IsPassive": false,
               "Enable": true
             }
           ],

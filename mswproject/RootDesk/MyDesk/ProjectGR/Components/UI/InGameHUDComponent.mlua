@@ -776,7 +776,10 @@ script InGameHUDComponent extends Component
         local potionCount = 0
         local magazineCount = 0
 
-        local inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", "PotionCount")
+        local inventory = self:ResolveComponentSafe(self.Entity, "GRInventoryComponent", "PotionCount")
+        if inventory == nil then
+            inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", "PotionCount")
+        end
         if inventory ~= nil then
             local readOk, _ = pcall(function()
                 potionCount = math.max(0, math.floor(inventory.PotionCount))

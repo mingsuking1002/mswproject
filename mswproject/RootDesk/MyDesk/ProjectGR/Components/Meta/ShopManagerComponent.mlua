@@ -1106,17 +1106,38 @@ script ShopManagerComponent extends Component
     -- Inventory is required for mag/potion purchases; attach-on-demand covers missing bootstrap cases.
     @ExecSpace("ServerOnly")
     method Component ResolveOrAttachInventoryComponentServer(string markerField)
-        local inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", markerField)
+        local inventory = self:ResolveComponentSafe(self.Entity, "GRInventoryComponent", markerField)
+        if inventory == nil then
+            inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", markerField)
+        end
         if inventory ~= nil then
             return inventory
         end
 
         local added = nil
-        local addOkPrefixed, addResultPrefixed = pcall(function()
-            return self.Entity:AddComponent("script.InventoryComponent")
+        local addOkGRPrefixed, addResultGRPrefixed = pcall(function()
+            return self.Entity:AddComponent("script.GRInventoryComponent")
         end)
-        if addOkPrefixed == true then
-            added = addResultPrefixed
+        if addOkGRPrefixed == true then
+            added = addResultGRPrefixed
+        end
+
+        if added == nil then
+            local addOkGRPlain, addResultGRPlain = pcall(function()
+                return self.Entity:AddComponent("GRInventoryComponent")
+            end)
+            if addOkGRPlain == true then
+                added = addResultGRPlain
+            end
+        end
+
+        if added == nil then
+            local addOkPrefixed, addResultPrefixed = pcall(function()
+                return self.Entity:AddComponent("script.InventoryComponent")
+            end)
+            if addOkPrefixed == true then
+                added = addResultPrefixed
+            end
         end
 
         if added == nil then
@@ -1141,6 +1162,10 @@ script ShopManagerComponent extends Component
             end
         end
 
+        local resolved = self:ResolveComponentSafe(self.Entity, "GRInventoryComponent", markerField)
+        if resolved ~= nil then
+            return resolved
+        end
         return self:ResolveComponentSafe(self.Entity, "InventoryComponent", markerField)
     end
 
@@ -1170,6 +1195,11 @@ script ShopManagerComponent extends Component
     -- Shop lock policy is fixed to timer pause/resume only (no shop-near invincibility semantics).
     @ExecSpace("ServerOnly")
     method void SetGameplayLockServer(boolean locked)
+        -- Close swap first so swap-close unlock path cannot override shop lock.
+        if locked == true then
+            self:TryCloseWeaponSwapMenuServer()
+        end
+
         local timerComponent = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "IsRunning")
         if timerComponent ~= nil then
             pcall(function()
@@ -1179,10 +1209,6 @@ script ShopManagerComponent extends Component
                     timerComponent:ResumeGame()
                 end
             end)
-        end
-
-        if locked == true then
-            self:TryCloseWeaponSwapMenuServer()
         end
     end
 

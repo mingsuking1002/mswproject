@@ -139,20 +139,41 @@ script ReloadComponent extends Component
         self._T.ReloadTimerBySlot[slot] = _TimerService:SetTimerOnce(completeReload, delay)
     end
 
-    -- Reload gate depends on InventoryComponent; attach-on-demand avoids broken reload after partial setup.
+    -- Reload gate depends on GRInventoryComponent; attach-on-demand avoids broken reload after partial setup.
     @ExecSpace("ServerOnly")
     method Component ResolveOrAttachInventoryComponentServer(string markerField)
-        local inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", markerField)
+        local inventory = self:ResolveComponentSafe(self.Entity, "GRInventoryComponent", markerField)
+        if inventory == nil then
+            inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", markerField)
+        end
         if inventory ~= nil then
             return inventory
         end
 
         local added = nil
-        local addOkPrefixed, addResultPrefixed = pcall(function()
-            return self.Entity:AddComponent("script.InventoryComponent")
+        local addOkGRPrefixed, addResultGRPrefixed = pcall(function()
+            return self.Entity:AddComponent("script.GRInventoryComponent")
         end)
-        if addOkPrefixed == true then
-            added = addResultPrefixed
+        if addOkGRPrefixed == true then
+            added = addResultGRPrefixed
+        end
+
+        if added == nil then
+            local addOkGRPlain, addResultGRPlain = pcall(function()
+                return self.Entity:AddComponent("GRInventoryComponent")
+            end)
+            if addOkGRPlain == true then
+                added = addResultGRPlain
+            end
+        end
+
+        if added == nil then
+            local addOkPrefixed, addResultPrefixed = pcall(function()
+                return self.Entity:AddComponent("script.InventoryComponent")
+            end)
+            if addOkPrefixed == true then
+                added = addResultPrefixed
+            end
         end
 
         if added == nil then
@@ -177,6 +198,10 @@ script ReloadComponent extends Component
             end
         end
 
+        local resolved = self:ResolveComponentSafe(self.Entity, "GRInventoryComponent", markerField)
+        if resolved ~= nil then
+            return resolved
+        end
         return self:ResolveComponentSafe(self.Entity, "InventoryComponent", markerField)
     end
 

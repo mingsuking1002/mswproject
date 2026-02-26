@@ -73,6 +73,9 @@ script PenaltySystemComponent extends Component
                     return
                 end
             end
+            if self:IsGameplayPausedServer() == true then
+                return
+            end
             self:CheckMonsterCountServer()
         end
         self._T.MonitorTimerId = _TimerService:SetTimerRepeat(callback, interval, 0)
@@ -431,6 +434,24 @@ script PenaltySystemComponent extends Component
             self._T.CachedHPSystem = resolved
         end
         return resolved
+    end
+
+    -- Penalty monitor is disabled while gameplay is paused so menu-open state cannot trigger HP penalties.
+    @ExecSpace("ServerOnly")
+    method boolean IsGameplayPausedServer()
+        local timerComponent = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "IsPaused")
+        if timerComponent == nil then
+            return false
+        end
+
+        local paused = false
+        local pauseOk, pauseValue = pcall(function()
+            return timerComponent.IsPaused
+        end)
+        if pauseOk == true and pauseValue == true then
+            paused = true
+        end
+        return paused
     end
 
     -- Utility bootstrap first; fallback lookup stays available in partially configured maps.

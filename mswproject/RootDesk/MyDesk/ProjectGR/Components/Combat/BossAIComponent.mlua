@@ -63,6 +63,9 @@ script BossAIComponent extends Component
                 return
             end
         end
+        if self:IsGameplayPausedForPlayerServer(ownerPlayer) == true then
+            return
+        end
 
         local spawnComponent = self:ResolveComponentSafe(ownerPlayer, "MonsterSpawnComponent", "IsSpawnActive")
         if spawnComponent == nil then
@@ -194,6 +197,28 @@ script BossAIComponent extends Component
         end
 
         return nil
+    end
+
+    -- Boss summon tick is paused with gameplay pause so menu-open state never advances boss pressure.
+    @ExecSpace("ServerOnly")
+    method boolean IsGameplayPausedForPlayerServer(Entity playerEntity)
+        if playerEntity == nil or isvalid(playerEntity) == false then
+            return false
+        end
+
+        local timerComponent = self:ResolveComponentSafe(playerEntity, "GameTimerComponent", "IsPaused")
+        if timerComponent == nil then
+            return false
+        end
+
+        local paused = false
+        local pauseOk, pauseValue = pcall(function()
+            return timerComponent.IsPaused
+        end)
+        if pauseOk == true and pauseValue == true then
+            paused = true
+        end
+        return paused
     end
 
     -- Utility bootstrap first; fallback local lookup remains for partially configured entities.

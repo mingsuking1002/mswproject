@@ -220,6 +220,9 @@ script HPSystemComponent extends Component
         if self.IsDead == true then
             return
         end
+        if self:IsGameplayPausedForPlayerServer() == true then
+            return
+        end
         if self:IsMonsterHitCooldownActiveServer() == true then
             return
         end
@@ -286,6 +289,9 @@ script HPSystemComponent extends Component
     @ExecSpace("ServerOnly")
     method void ApplyPenaltyDamage(integer rawDamage)
         if self.IsDead == true then
+            return
+        end
+        if self:IsGameplayPausedForPlayerServer() == true then
             return
         end
         if rawDamage <= 0 then
@@ -689,6 +695,41 @@ script HPSystemComponent extends Component
             end
         end
         return nowSeconds
+    end
+
+    -- Player damage intake is blocked while game timer is paused so panel-open state is hit-safe.
+    method boolean IsGameplayPausedForPlayerServer()
+        if self.IsMonster == true then
+            return false
+        end
+        if self.Entity == nil or isvalid(self.Entity) == false then
+            return false
+        end
+
+        local playerComponent = nil
+        local playerOk, playerValue = pcall(function()
+            return self.Entity.PlayerComponent
+        end)
+        if playerOk == true then
+            playerComponent = playerValue
+        end
+        if playerComponent == nil then
+            return false
+        end
+
+        local timerComponent = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "IsPaused")
+        if timerComponent == nil then
+            return false
+        end
+
+        local paused = false
+        local pauseOk, pauseValue = pcall(function()
+            return timerComponent.IsPaused
+        end)
+        if pauseOk == true and pauseValue == true then
+            paused = true
+        end
+        return paused
     end
 
     -- Utility bootstrap first; fallback flag enables local direct path when global util is unavailable.

@@ -1,5 +1,5 @@
 @Component
-script InventoryComponent extends Component
+script GRInventoryComponent extends Component
 
     @Sync
     property integer MagazineA = 0

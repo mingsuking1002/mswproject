@@ -771,7 +771,7 @@ script Map01BootstrapComponent extends Component
             "RoundTransitionComponent",
             "RankingComponent",
             "InfiniteModeComponent",
-            "InventoryComponent",
+            "GRInventoryComponent",
             "PassiveSystemComponent",
             "WeaponWheelUIComponent",
             "RankingUIComponent",

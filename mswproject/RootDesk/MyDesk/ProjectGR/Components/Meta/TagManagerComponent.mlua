@@ -294,7 +294,10 @@ script TagManagerComponent extends Component
             end
         end
 
-        local inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", "MagazineA")
+        local inventory = self:ResolveComponentSafe(self.Entity, "GRInventoryComponent", "MagazineA")
+        if inventory == nil then
+            inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", "MagazineA")
+        end
         if inventory ~= nil and inventory.GetCurrentCharMagazine ~= nil then
             local magOk, magValue = pcall(function()
                 return inventory:GetCurrentCharMagazine()
@@ -456,7 +459,10 @@ script TagManagerComponent extends Component
             end
         end
 
-        local inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", "MagazineA")
+        local inventory = self:ResolveComponentSafe(self.Entity, "GRInventoryComponent", "MagazineA")
+        if inventory == nil then
+            inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", "MagazineA")
+        end
         if inventory ~= nil and state.MagazineCount ~= nil then
             local maxMagazine = 99
             local maxOk, maxValue = pcall(function()

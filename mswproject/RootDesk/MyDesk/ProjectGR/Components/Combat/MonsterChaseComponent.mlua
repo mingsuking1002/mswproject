@@ -86,6 +86,12 @@ script MonsterChaseComponent extends Component
             return
         end
 
+        -- Gameplay pause freezes chase and contact damage so menu-open state is combat-safe.
+        if self:IsGameplayPausedForPlayerServer(ownerPlayer) == true then
+            self:PushDirectionToMovementServer(movement, Vector2.zero)
+            return
+        end
+
         if self:IsValidContactTargetServer(self._T.ContactTargetPlayer) == false then
             self._T.ContactTargetPlayer = nil
         end
@@ -241,6 +247,28 @@ script MonsterChaseComponent extends Component
         end
 
         return (targetMap == currentMap)
+    end
+
+    -- Pause gate resolves from owner player's timer so monsters fully stop while menu panels are open.
+    @ExecSpace("ServerOnly")
+    method boolean IsGameplayPausedForPlayerServer(Entity playerEntity)
+        if playerEntity == nil or isvalid(playerEntity) == false then
+            return false
+        end
+
+        local timerComponent = self:ResolveComponentSafe(playerEntity, "GameTimerComponent", "IsPaused")
+        if timerComponent == nil then
+            return false
+        end
+
+        local paused = false
+        local pauseOk, pauseValue = pcall(function()
+            return timerComponent.IsPaused
+        end)
+        if pauseOk == true and pauseValue == true then
+            paused = true
+        end
+        return paused
     end
 
     -- Contact target must be a real user-player entity; monster/other HP actors are excluded.

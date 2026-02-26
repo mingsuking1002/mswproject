@@ -83,6 +83,8 @@ script WeaponSwapComponent extends Component
     @ExecSpace("ServerOnly")
     method void OnInitialize()
         self:EnsureGRUtil()
+        -- Swap panel policy is fixed to gameplay pause during open.
+        self.PauseGameplayByFlag = true
         self._T.WeaponRowById = {}
         self._T.WeaponRowsLoaded = false
         self._T.ProjectileRowById = {}
@@ -1203,22 +1205,38 @@ script WeaponSwapComponent extends Component
     -- Gameplay lock toggles movement, attack, and timer pause in one place for open/close consistency.
     @ExecSpace("ServerOnly")
     method void SetGameplayLockServer(boolean locked)
-        self:SetCanMoveSafely(not locked)
-        self:SetCanAttackSafely(not locked)
+        local shopOpen = false
+        local shopManager = self:ResolveComponentSafe(self.Entity, "ShopManagerComponent", "IsShopOpen")
+        if shopManager ~= nil then
+            local shopOk, shopValue = pcall(function()
+                return shopManager.IsShopOpen
+            end)
+            if shopOk == true and shopValue == true then
+                shopOpen = true
+            end
+        end
+
+        local effectiveLocked = locked
+        if effectiveLocked == false and shopOpen == true then
+            effectiveLocked = true
+        end
+
+        self:SetCanMoveSafely(not effectiveLocked)
+        self:SetCanAttackSafely(not effectiveLocked)
 
         local timerComponent = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "IsRunning")
-        if timerComponent ~= nil and self.PauseGameplayByFlag == true then
+        if timerComponent ~= nil then
             pcall(function()
-                if locked == true and timerComponent.PauseGame ~= nil then
+                if effectiveLocked == true and timerComponent.PauseGame ~= nil then
                     timerComponent:PauseGame()
-                elseif locked == false and timerComponent.ResumeGame ~= nil then
+                elseif effectiveLocked == false and timerComponent.ResumeGame ~= nil then
                     timerComponent:ResumeGame()
                 end
             end)
         end
 
         if self.UseClientTimeScalePause == true then
-            if locked == true then
+            if effectiveLocked == true then
                 self:ApplyClientTimeScale(0)
             else
                 self:ApplyClientTimeScale(1)
