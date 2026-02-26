@@ -10,6 +10,8 @@ script WeaponSwapComponent extends Component
     property string CurrentWeaponSpriteRuid = ""
     @Sync
     property string CurrentWeaponName = ""
+    @Sync
+    property string CurrentWeaponId = ""
 
     property table Weapon1_Data = {}
     property table Weapon2_Data = {}
@@ -947,6 +949,7 @@ script WeaponSwapComponent extends Component
 
         self.CurrentWeaponName = weaponName
         self.CurrentWeaponSpriteRuid = spriteRuid
+        self.CurrentWeaponId = tostring(finalWeaponId)
     end
 
     -- Export API is consumed by TagManager so each character can preserve independent 4-slot state.
