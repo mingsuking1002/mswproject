@@ -112,6 +112,98 @@
         }
       },
       {
+        "id": "dd1a7879-7f03-4a14-99c6-316390e0ca80",
+        "path": "/ui/MainGroup/GRBG",
+        "componentNames": "MOD.Core.UITransformComponent,MOD.Core.SpriteGUIRendererComponent",
+        "jsonString": {
+          "name": "GRBG",
+          "path": "/ui/MainGroup/GRBG",
+          "nameEditable": true,
+          "enable": true,
+          "visible": true,
+          "localize": true,
+          "displayOrder": 0,
+          "pathConstraints": "///",
+          "revision": 1,
+          "origin": {
+            "type": "Model",
+            "entry_id": "uisprite",
+            "sub_entity_id": null,
+            "root_entity_id": "dd1a7879-7f03-4a14-99c6-316390e0ca80",
+            "replaced_model_id": null
+          },
+          "modelId": "uisprite",
+          "@components": [
+            {
+              "@type": "MOD.Core.UITransformComponent",
+              "AlignmentOption": 0,
+              "AnchorsMax": {
+                "x": 0.5,
+                "y": 0.5
+              },
+              "AnchorsMin": {
+                "x": 0.5,
+                "y": 0.5
+              },
+              "MobileOnly": false,
+              "OffsetMax": {
+                "x": 968.6648,
+                "y": 537.95575
+              },
+              "OffsetMin": {
+                "x": -968.668945,
+                "y": -535.2314
+              },
+              "Pivot": {
+                "x": 0.5,
+                "y": 0.5
+              },
+              "RectSize": {
+                "x": 1937.33374,
+                "y": 1073.18713
+              },
+              "UIMode": 1,
+              "UIScale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              "UIVersion": 2,
+              "anchoredPosition": {
+                "x": -0.0021,
+                "y": 1.3622
+              },
+              "Position": {
+                "x": -0.0021,
+                "y": 1.3622,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.SpriteGUIRendererComponent",
+              "ImageRUID": {
+                "DataId": "7e77f34d1e53485798b893122af89ebd"
+              },
+              "OverrideSorting": false,
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
         "id": "499e98b5-1d7d-461f-b1a7-80eea7352577",
         "path": "/ui/MainGroup/GRStartButton",
         "componentNames": "MOD.Core.UITransformComponent,MOD.Core.SpriteGUIRendererComponent,MOD.Core.ButtonComponent,MOD.Core.TextComponent",
@@ -122,7 +214,7 @@
           "enable": true,
           "visible": true,
           "localize": true,
-          "displayOrder": 0,
+          "displayOrder": 1,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {
@@ -147,19 +239,19 @@
               },
               "MobileOnly": false,
               "OffsetMax": {
-                "x": 180.0,
-                "y": -195.0
+                "x": 204.533859,
+                "y": -195.0001
               },
               "OffsetMin": {
-                "x": -180.0,
-                "y": -305.0
+                "x": -180.000259,
+                "y": -305.000122
               },
               "Pivot": {
                 "x": 0.5,
                 "y": 0.5
               },
               "RectSize": {
-                "x": 360.0,
+                "x": 384.534119,
                 "y": 110.0
               },
               "UIMode": 1,
@@ -170,12 +262,12 @@
               },
               "UIVersion": 2,
               "anchoredPosition": {
-                "x": 0.0,
-                "y": -250.0
+                "x": 12.2668,
+                "y": -250.0001
               },
               "Position": {
-                "x": 0.0,
-                "y": -250.0,
+                "x": 12.2668,
+                "y": -250.0001,
                 "z": 0.0
               },
               "QuaternionRotation": {
@@ -196,7 +288,7 @@
               "AnimClipPlayType": 0,
               "EndFrameIndex": 2147483647,
               "ImageRUID": {
-                "DataId": "83b7e4bf01f5ba14abf3adaa68cb3ad3"
+                "DataId": "c5bfc51bfc2d45c1baf94ebcf1957280"
               },
               "LocalPosition": {
                 "x": 0.0,
@@ -211,9 +303,9 @@
               "PreserveSprite": 0,
               "StartFrameIndex": 0,
               "Color": {
-                "r": 0.2,
-                "g": 0.2,
-                "b": 0.2,
+                "r": 1.0,
+                "g": 1.0,
+                "b": 1.0,
                 "a": 0.9
               },
               "DropShadow": false,
@@ -336,9 +428,9 @@
                 "bottom": 0
               },
               "SizeFit": false,
-              "Text": "GAME START",
+              "Text": "",
               "UseOutLine": false,
-              "Enable": true
+              "Enable": false
             }
           ],
           "@version": 1
@@ -355,7 +447,7 @@
           "enable": false,
           "visible": false,
           "localize": true,
-          "displayOrder": 1,
+          "displayOrder": 2,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {
@@ -541,7 +633,7 @@
           "enable": false,
           "visible": false,
           "localize": true,
-          "displayOrder": 2,
+          "displayOrder": 3,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {
@@ -1193,7 +1285,7 @@
           "enable": true,
           "visible": true,
           "localize": true,
-          "displayOrder": 3,
+          "displayOrder": 4,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {
@@ -1218,20 +1310,20 @@
               },
               "MobileOnly": false,
               "OffsetMax": {
-                "x": 490.0,
-                "y": 400.0
+                "x": 955.904663,
+                "y": 542.9723
               },
               "OffsetMin": {
-                "x": -490.0,
-                "y": -120.0
+                "x": -964.3275,
+                "y": -533.1727
               },
               "Pivot": {
                 "x": 0.5,
                 "y": 0.5
               },
               "RectSize": {
-                "x": 980.0,
-                "y": 520.0
+                "x": 1920.23218,
+                "y": 1076.145
               },
               "UIMode": 1,
               "UIScale": {
@@ -1241,12 +1333,12 @@
               },
               "UIVersion": 2,
               "anchoredPosition": {
-                "x": 0.0,
-                "y": 140.0
+                "x": -4.2114,
+                "y": 4.8998
               },
               "Position": {
-                "x": 0.0,
-                "y": 140.0,
+                "x": -4.2114,
+                "y": 4.8998,
                 "z": 0.0
               },
               "QuaternionRotation": {
@@ -1282,10 +1374,10 @@
               "PreserveSprite": 0,
               "StartFrameIndex": 0,
               "Color": {
-                "r": 0.05,
-                "g": 0.05,
-                "b": 0.05,
-                "a": 0.75
+                "r": 1.0,
+                "g": 1.0,
+                "b": 1.0,
+                "a": 0.0
               },
               "DropShadow": false,
               "DropShadowAngle": 30.0,
@@ -1358,12 +1450,12 @@
               },
               "MobileOnly": false,
               "OffsetMax": {
-                "x": 310.0,
-                "y": 280.0
+                "x": 312.7258,
+                "y": 528.067
               },
               "OffsetMin": {
-                "x": -310.0,
-                "y": 160.0
+                "x": -307.2742,
+                "y": 97.30139
               },
               "Pivot": {
                 "x": 0.5,
@@ -1371,7 +1463,7 @@
               },
               "RectSize": {
                 "x": 620.0,
-                "y": 120.0
+                "y": 430.765625
               },
               "UIMode": 1,
               "UIScale": {
@@ -1381,12 +1473,12 @@
               },
               "UIVersion": 2,
               "anchoredPosition": {
-                "x": 0.0,
-                "y": 220.0
+                "x": 2.7258,
+                "y": 312.6842
               },
               "Position": {
-                "x": 0.0,
-                "y": 220.0,
+                "x": 2.7258,
+                "y": 312.6842,
                 "z": 0.0
               },
               "QuaternionRotation": {
@@ -1407,7 +1499,7 @@
               "AnimClipPlayType": 0,
               "EndFrameIndex": 2147483647,
               "ImageRUID": {
-                "DataId": ""
+                "DataId": "48b338022b66488d8fe4e1e6c51f3ef2"
               },
               "LocalPosition": {
                 "x": 0.0,
@@ -1422,10 +1514,10 @@
               "PreserveSprite": 0,
               "StartFrameIndex": 0,
               "Color": {
-                "r": 0.0,
-                "g": 0.0,
-                "b": 0.0,
-                "a": 0.0
+                "r": 1.0,
+                "g": 1.0,
+                "b": 1.0,
+                "a": 1.0
               },
               "DropShadow": false,
               "DropShadowAngle": 30.0,
@@ -1500,7 +1592,7 @@
                 "bottom": 4
               },
               "SizeFit": false,
-              "Text": "寃뚯엫 ?쒕ぉ (濡쒓퀬)",
+              "Text": "",
               "UseOutLine": false,
               "Enable": true
             }
@@ -1544,12 +1636,12 @@
               },
               "MobileOnly": false,
               "OffsetMax": {
-                "x": 190.0,
-                "y": -30.0
+                "x": 206.3556,
+                "y": -51.8998032
               },
               "OffsetMin": {
-                "x": -190.0,
-                "y": -130.0
+                "x": -173.6444,
+                "y": -151.899811
               },
               "Pivot": {
                 "x": 0.5,
@@ -1567,12 +1659,12 @@
               },
               "UIVersion": 2,
               "anchoredPosition": {
-                "x": 0.0,
-                "y": -80.0
+                "x": 16.3556,
+                "y": -101.8998
               },
               "Position": {
-                "x": 0.0,
-                "y": -80.0,
+                "x": 16.3556,
+                "y": -101.8998,
                 "z": 0.0
               },
               "QuaternionRotation": {
@@ -1593,7 +1685,7 @@
               "AnimClipPlayType": 0,
               "EndFrameIndex": 2147483647,
               "ImageRUID": {
-                "DataId": ""
+                "DataId": "1661428afdb94320920da5c532e43bca"
               },
               "LocalPosition": {
                 "x": 0.0,
@@ -1608,9 +1700,9 @@
               "PreserveSprite": 0,
               "StartFrameIndex": 0,
               "Color": {
-                "r": 0.18,
-                "g": 0.18,
-                "b": 0.18,
+                "r": 1.0,
+                "g": 1.0,
+                "b": 1.0,
                 "a": 0.92
               },
               "DropShadow": false,
@@ -1733,7 +1825,7 @@
                 "bottom": 4
               },
               "SizeFit": false,
-              "Text": "??궧 蹂닿린",
+              "Text": "",
               "UseOutLine": false,
               "Enable": true
             }
@@ -1752,7 +1844,7 @@
           "enable": false,
           "visible": false,
           "localize": true,
-          "displayOrder": 4,
+          "displayOrder": 5,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {
@@ -3965,7 +4057,7 @@
           "enable": true,
           "visible": true,
           "localize": true,
-          "displayOrder": 5,
+          "displayOrder": 6,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {
@@ -3990,12 +4082,12 @@
               },
               "MobileOnly": false,
               "OffsetMax": {
-                "x": 220.0,
-                "y": 270.0
+                "x": 789.9999,
+                "y": 122.0001
               },
               "OffsetMin": {
-                "x": -220.0,
-                "y": 190.0
+                "x": 349.999878,
+                "y": 42.0001
               },
               "Pivot": {
                 "x": 0.5,
@@ -4013,12 +4105,12 @@
               },
               "UIVersion": 2,
               "anchoredPosition": {
-                "x": 0.0,
-                "y": 230.0
+                "x": 569.9999,
+                "y": 82.0001
               },
               "Position": {
-                "x": 0.0,
-                "y": 230.0,
+                "x": 569.9999,
+                "y": 82.0001,
                 "z": 0.0
               },
               "QuaternionRotation": {
@@ -4151,7 +4243,7 @@
           "enable": true,
           "visible": true,
           "localize": true,
-          "displayOrder": 6,
+          "displayOrder": 7,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {
@@ -4176,12 +4268,12 @@
               },
               "MobileOnly": false,
               "OffsetMax": {
-                "x": 220.0,
-                "y": 205.0
+                "x": 217.301,
+                "y": 30.0002
               },
               "OffsetMin": {
-                "x": -220.0,
-                "y": 125.0
+                "x": -222.699,
+                "y": -49.9998
               },
               "Pivot": {
                 "x": 0.5,
@@ -4199,12 +4291,12 @@
               },
               "UIVersion": 2,
               "anchoredPosition": {
-                "x": 0.0,
-                "y": 165.0
+                "x": -2.699,
+                "y": -9.9998
               },
               "Position": {
-                "x": 0.0,
-                "y": 165.0,
+                "x": -2.699,
+                "y": -9.9998,
                 "z": 0.0
               },
               "QuaternionRotation": {

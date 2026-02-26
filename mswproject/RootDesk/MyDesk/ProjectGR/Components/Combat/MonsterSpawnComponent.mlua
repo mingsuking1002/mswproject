@@ -4,6 +4,7 @@ script MonsterSpawnComponent extends Component
     property string SpawnConfigTableName = "SpawnConfig"
     property string MonsterDataTableName = "MonsterData"
     property string ModeMonsterDataTableName = "ModeMonsterData"
+    property string BossDataTableName = "BossData"
     property string SpawnWaveTableName = ""
 
     @Sync
@@ -45,6 +46,7 @@ script MonsterSpawnComponent extends Component
         self._T.SpawnMetaByEntity = {}
         self._T.Config = nil
         self._T.MonsterRows = {}
+        self._T.BossRows = {}
         self._T.ModelTypeByMonType = nil
         self._T.RowFallbackModelById = nil
         self._T.OptionalColumnAvailability = {}
@@ -218,10 +220,11 @@ script MonsterSpawnComponent extends Component
         return true
     end
 
-    -- MonsterData table is single source of truth for wave and drop metadata in current iteration.
+    -- MonsterData contains normal/elite rows while BossData owns boss rows to keep schemas decoupled.
     @ExecSpace("ServerOnly")
     method boolean LoadMonsterDataFromTable()
         self._T.MonsterRows = {}
+        self._T.BossRows = {}
         self._T.ModelTypeByMonType = nil
         self._T.RowFallbackModelById = nil
         self._T.EliteSpawnedSet = {}
@@ -256,12 +259,102 @@ script MonsterSpawnComponent extends Component
             return false
         end
 
-        self:ValidateMonsterRowsContract(rows, tableName)
-        self._T.MonsterRows = rows
-        self:BuildRowModelFallbackCache(rows)
-        self:BuildOptionalMonsterColumnsCache(rows)
-        self:BuildCreepScoreCache(rows)
+        local mergedRows = {}
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+            if self:IsBossRow(row) == true then
+                continue
+            end
+            table.insert(mergedRows, row)
+        end
+
+        self:ValidateMonsterRowsContract(mergedRows, tableName)
+
+        if self._T.UseModeMonsterData ~= true then
+            local bossRows = self:LoadBossRowsFromTable()
+            if bossRows == nil or #bossRows <= 0 then
+                self:LogError("[MonsterSpawnComponent] BossData has no valid boss rows.")
+                return false
+            end
+
+            self:ValidateMonsterRowsContract(bossRows, self.BossDataTableName)
+            self._T.BossRows = bossRows
+
+            for _, bossRow in pairs(bossRows) do
+                if bossRow ~= nil then
+                    table.insert(mergedRows, bossRow)
+                end
+            end
+        end
+
+        if mergedRows == nil or #mergedRows <= 0 then
+            self:LogError("[MonsterSpawnComponent] Spawn rows are empty after loading MonsterData/BossData.")
+            return false
+        end
+
+        self._T.MonsterRows = mergedRows
+        self:BuildRowModelFallbackCache(mergedRows)
+        self:BuildOptionalMonsterColumnsCache(mergedRows)
+        self:BuildCreepScoreCache(mergedRows)
         return true
+    end
+
+    -- BossData loader reads only mon_type=boss rows so MonsterData can stay boss-free.
+    @ExecSpace("ServerOnly")
+    method table LoadBossRowsFromTable()
+        local result = {}
+
+        if self.BossDataTableName == nil or self.BossDataTableName == "" then
+            self:LogError("[MonsterSpawnComponent] BossDataTableName is empty.")
+            return result
+        end
+
+        local tableData = nil
+        local loadOk, loadResult = pcall(function()
+            return _DataService:GetTable(self.BossDataTableName)
+        end)
+        if loadOk == true then
+            tableData = loadResult
+        end
+        if tableData == nil then
+            self:LogError("[MonsterSpawnComponent] Failed to load BossData table: " .. tostring(self.BossDataTableName))
+            return result
+        end
+
+        local rows = nil
+        local rowsOk, rowsResult = pcall(function()
+            return tableData:GetAllRow()
+        end)
+        if rowsOk == true then
+            rows = rowsResult
+        end
+        if rows == nil or #rows <= 0 then
+            self:LogError("[MonsterSpawnComponent] BossData has no rows.")
+            return result
+        end
+
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+
+            local rowId = self:GetRowString(row, "id", "")
+            if rowId == "" then
+                continue
+            end
+            if self:IsBossRow(row) ~= true then
+                continue
+            end
+
+            table.insert(result, row)
+        end
+
+        if self.EnableDebugLogs == true then
+            log("[MonsterSpawnComponent][DEBUG] BossData rows loaded. count=", #result)
+        end
+        return result
     end
 
     -- Creep-score cache avoids repeated table scans when kill-score callbacks are triggered frequently.
@@ -974,6 +1067,9 @@ script MonsterSpawnComponent extends Component
     end
 
     method number GetSpawnMinuteFromRow(UserDataRow row)
+        if self:IsBossRow(row) == true then
+            return 14
+        end
         return self:GetRowNumber(row, "spawn_time", -1)
     end
 

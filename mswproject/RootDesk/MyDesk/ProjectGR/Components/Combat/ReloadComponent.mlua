@@ -1,4 +1,4 @@
-﻿@Component
+@Component
 script ReloadComponent extends Component
 
     @Sync
@@ -104,18 +104,20 @@ script ReloadComponent extends Component
         end
 
         -- Magazine-gated reload: one inventory magazine is consumed only when reload actually starts.
-        local inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", "MagazineA")
-        if inventory ~= nil and inventory.ConsumeMagazineServer ~= nil then
-            local canReload = false
-            local consumeOk, consumeValue = pcall(function()
-                return inventory:ConsumeMagazineServer("")
-            end)
-            if consumeOk == true and consumeValue == true then
-                canReload = true
-            end
-            if canReload ~= true then
-                return
-            end
+        local inventory = self:ResolveOrAttachInventoryComponentServer("MagazineA")
+        if inventory == nil or inventory.ConsumeMagazineServer == nil then
+            return
+        end
+
+        local canReload = false
+        local consumeOk, consumeValue = pcall(function()
+            return inventory:ConsumeMagazineServer("")
+        end)
+        if consumeOk == true and consumeValue == true then
+            canReload = true
+        end
+        if canReload ~= true then
+            return
         end
 
         if slot == self.CurrentWeaponSlot then
@@ -135,6 +137,47 @@ script ReloadComponent extends Component
         end
 
         self._T.ReloadTimerBySlot[slot] = _TimerService:SetTimerOnce(completeReload, delay)
+    end
+
+    -- Reload gate depends on InventoryComponent; attach-on-demand avoids broken reload after partial setup.
+    @ExecSpace("ServerOnly")
+    method Component ResolveOrAttachInventoryComponentServer(string markerField)
+        local inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", markerField)
+        if inventory ~= nil then
+            return inventory
+        end
+
+        local added = nil
+        local addOkPrefixed, addResultPrefixed = pcall(function()
+            return self.Entity:AddComponent("script.InventoryComponent")
+        end)
+        if addOkPrefixed == true then
+            added = addResultPrefixed
+        end
+
+        if added == nil then
+            local addOkPlain, addResultPlain = pcall(function()
+                return self.Entity:AddComponent("InventoryComponent")
+            end)
+            if addOkPlain == true then
+                added = addResultPlain
+            end
+        end
+
+        if added ~= nil and isvalid(added) == true then
+            if markerField == nil or markerField == "" then
+                return added
+            end
+
+            local markerOk, _ = pcall(function()
+                return added[markerField]
+            end)
+            if markerOk == true then
+                return added
+            end
+        end
+
+        return self:ResolveComponentSafe(self.Entity, "InventoryComponent", markerField)
     end
 
     -- Completion fills ammo only at end time to prevent swap-cancel exploit gains.

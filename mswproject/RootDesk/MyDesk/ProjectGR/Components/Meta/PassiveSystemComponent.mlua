@@ -498,28 +498,11 @@ script PassiveSystemComponent extends Component
         local stat = ""
         if charId == "B" then
             stat = self:GetRowString(row, "player_b_stat", "")
-            if stat == "" then
-                stat = self:GetRowString(row, "player_b", "")
-            end
-            if stat == "" then
-                -- PassiveData currently uses this temporary column name for B stat.
-                stat = self:GetRowString(row, "player_a_stat-copy6", "")
-            end
         else
             stat = self:GetRowString(row, "player_a_stat", "")
-            if stat == "" then
-                stat = self:GetRowString(row, "player_a", "")
-            end
-        end
-
-        if stat == "" then
-            stat = self:GetRowString(row, "target_stat", "")
         end
         if stat == "" then
             stat = self:GetRowString(row, "player_a_stat", "")
-        end
-        if stat == "" then
-            stat = self:GetRowString(row, "player_a_stat-copy6", "")
         end
 
         stat = string.lower(self:TrimText(stat))
@@ -739,4 +722,3 @@ script PassiveSystemComponent extends Component
         return component
     end
 end
-

@@ -1,4 +1,4 @@
-﻿@Component
+@Component
 script ShopManagerComponent extends Component
 
     @Sync
@@ -535,7 +535,7 @@ script ShopManagerComponent extends Component
     -- Slot builder snapshots current shop offers once per open to keep one transaction set consistent.
     @ExecSpace("ServerOnly")
     method void BuildCurrentSlotsServer()
-        local slot1 = self:BuildSlotDataServer("heal")
+        local slot1 = self:BuildSlotDataServer("potion")
         local slot2 = self:BuildSlotDataServer("ammo")
         local slot3 = self:BuildSlotDataServer("passive")
 
@@ -566,15 +566,16 @@ script ShopManagerComponent extends Component
     -- Slot data creation reads DataTable first, then falls back to exposed balance properties.
     @ExecSpace("ServerOnly")
     method table BuildSlotDataServer(string slotType)
-        local row = self:GetShopRowByTypeServer(slotType)
+        local normalizedType = self:NormalizeShopSlotType(slotType)
+        local row = self:GetShopRowByTypeServer(normalizedType)
 
-        if slotType == "heal" then
-            local price = self:GetRowInteger(row, "Price", self.HealPrice)
-            local effectValue = self:GetRowNumber(row, "EffectValue", self.HealPercent)
-            local itemName = self:GetRowString(row, "ItemName", "체력 회복")
-            local description = self:GetRowString(row, "Description", "최대 HP의 30% 회복")
+        if normalizedType == "potion" then
+            local price = self:GetRowIntegerWithAlias(row, "Price", "price", self.HealPrice)
+            local effectValue = self:GetRowNumberWithAlias(row, "EffectValue", "effect_value", 1)
+            local itemName = self:GetRowStringWithAlias(row, "ItemName", "name", "체력 포션")
+            local description = self:GetRowStringWithAlias(row, "Description", "description", "체력 포션 1개 획득")
             return {
-                Type = "heal",
+                Type = "potion",
                 Name = itemName,
                 Description = description,
                 Price = price,
@@ -583,11 +584,11 @@ script ShopManagerComponent extends Component
             }
         end
 
-        if slotType == "ammo" then
-            local price = self:GetRowInteger(row, "Price", self.AmmoPrice)
-            local effectValue = self:GetRowNumber(row, "EffectValue", 1)
-            local itemName = self:GetRowString(row, "ItemName", "탄약 보충")
-            local description = self:GetRowString(row, "Description", "전 무기 탄약 1세트 충전")
+        if normalizedType == "ammo" then
+            local price = self:GetRowIntegerWithAlias(row, "Price", "price", self.AmmoPrice)
+            local effectValue = self:GetRowNumberWithAlias(row, "EffectValue", "effect_value", 1)
+            local itemName = self:GetRowStringWithAlias(row, "ItemName", "name", "탄창 보충")
+            local description = self:GetRowStringWithAlias(row, "Description", "description", "현재 캐릭터 탄창 1개 획득")
             return {
                 Type = "ammo",
                 Name = itemName,
@@ -598,7 +599,7 @@ script ShopManagerComponent extends Component
             }
         end
 
-        if slotType == "passive" then
+        if normalizedType == "passive" then
             local passiveSystem = self:ResolveComponentSafe(self.Entity, "PassiveSystemComponent", "AcquiredPassiveCount")
             if passiveSystem ~= nil and passiveSystem.GetNextPassiveCandidateServer ~= nil then
                 local candidate = nil
@@ -632,9 +633,9 @@ script ShopManagerComponent extends Component
                 }
             end
 
-            local price = self:GetRowInteger(row, "Price", self.PassivePrice)
-            local itemName = self:GetRowString(row, "ItemName", "패시브 스킬")
-            local description = self:GetRowString(row, "Description", "추후 구현 예정")
+            local price = self:GetRowIntegerWithAlias(row, "Price", "price", self.PassivePrice)
+            local itemName = self:GetRowStringWithAlias(row, "ItemName", "name", "패시브 스킬")
+            local description = self:GetRowStringWithAlias(row, "Description", "description", "추후 구현 예정")
             return {
                 Type = "passive",
                 Name = itemName,
@@ -658,12 +659,28 @@ script ShopManagerComponent extends Component
     -- Row resolver supports both FindRow and full-row scan to tolerate varying table authoring styles.
     @ExecSpace("ServerOnly")
     method UserDataRow GetShopRowByTypeServer(string slotType)
-        if self._T.ShopDataTable ~= nil and slotType ~= nil and slotType ~= "" then
-            local findOk, findRow = pcall(function()
-                return self._T.ShopDataTable:FindRow("SlotType", slotType)
-            end)
-            if findOk == true and findRow ~= nil then
+        local normalizedType = self:NormalizeShopSlotType(slotType)
+        if self._T.ShopDataTable ~= nil and normalizedType ~= nil and normalizedType ~= "" then
+            local findRow = self:FindShopRowServer("SlotType", normalizedType)
+            if findRow ~= nil then
                 return findRow
+            end
+
+            findRow = self:FindShopRowServer("slot_type", normalizedType)
+            if findRow ~= nil then
+                return findRow
+            end
+
+            if normalizedType == "potion" then
+                findRow = self:FindShopRowServer("SlotType", "heal")
+                if findRow ~= nil then
+                    return findRow
+                end
+
+                findRow = self:FindShopRowServer("slot_type", "heal")
+                if findRow ~= nil then
+                    return findRow
+                end
             end
         end
 
@@ -673,10 +690,31 @@ script ShopManagerComponent extends Component
         end
 
         for _, row in pairs(rows) do
-            local rowType = self:GetRowString(row, "SlotType", "")
-            if rowType == slotType then
+            local rowType = self:GetRowStringWithAlias(row, "SlotType", "slot_type", "")
+            if self:NormalizeShopSlotType(rowType) == normalizedType then
                 return row
             end
+        end
+
+        return nil
+    end
+
+    method UserDataRow FindShopRowServer(string columnName, string slotType)
+        if self._T.ShopDataTable == nil then
+            return nil
+        end
+        if columnName == nil or columnName == "" then
+            return nil
+        end
+        if slotType == nil or slotType == "" then
+            return nil
+        end
+
+        local findOk, findRow = pcall(function()
+            return self._T.ShopDataTable:FindRow(columnName, slotType)
+        end)
+        if findOk == true and findRow ~= nil then
+            return findRow
         end
 
         return nil
@@ -701,9 +739,35 @@ script ShopManagerComponent extends Component
         return tostring(text)
     end
 
+    method string GetRowStringWithAlias(UserDataRow row, string primaryColumn, string secondaryColumn, string fallbackValue)
+        local text = self:GetRowString(row, primaryColumn, "")
+        if text == "" and secondaryColumn ~= nil and secondaryColumn ~= "" then
+            text = self:GetRowString(row, secondaryColumn, "")
+        end
+        if text == "" then
+            return fallbackValue
+        end
+
+        return text
+    end
+
     -- Integer reader converts table text safely and prevents invalid rows from breaking purchase logic.
     method integer GetRowInteger(UserDataRow row, string columnName, integer fallbackValue)
         local text = self:GetRowString(row, columnName, "")
+        if text == nil or text == "" then
+            return math.max(0, math.floor(fallbackValue))
+        end
+
+        local parsed = tonumber(text)
+        if parsed == nil then
+            return math.max(0, math.floor(fallbackValue))
+        end
+
+        return math.max(0, math.floor(parsed))
+    end
+
+    method integer GetRowIntegerWithAlias(UserDataRow row, string primaryColumn, string secondaryColumn, integer fallbackValue)
+        local text = self:GetRowStringWithAlias(row, primaryColumn, secondaryColumn, "")
         if text == nil or text == "" then
             return math.max(0, math.floor(fallbackValue))
         end
@@ -729,6 +793,46 @@ script ShopManagerComponent extends Component
         end
 
         return parsed
+    end
+
+    method number GetRowNumberWithAlias(UserDataRow row, string primaryColumn, string secondaryColumn, number fallbackValue)
+        local text = self:GetRowStringWithAlias(row, primaryColumn, secondaryColumn, "")
+        if text == nil or text == "" then
+            return fallbackValue
+        end
+
+        local parsed = tonumber(text)
+        if parsed == nil then
+            return fallbackValue
+        end
+
+        return parsed
+    end
+
+    method string NormalizeShopSlotType(string slotType)
+        local token = ""
+        if slotType ~= nil then
+            token = tostring(slotType)
+        end
+
+        token = string.lower(token)
+        token = string.gsub(token, "^%s+", "")
+        token = string.gsub(token, "%s+$", "")
+
+        if token == "heal" then
+            return "potion"
+        end
+        if token == "potion" then
+            return "potion"
+        end
+        if token == "ammo" then
+            return "ammo"
+        end
+        if token == "passive" then
+            return "passive"
+        end
+
+        return token
     end
 
     -- Slot getter returns a clone to ensure callers cannot mutate internal slot cache accidentally.
@@ -826,17 +930,19 @@ script ShopManagerComponent extends Component
     -- Purchase effect router keeps slot-specific reward logic isolated for easy future extension.
     @ExecSpace("ServerOnly")
     method void ApplyPurchaseEffectServer(string slotType, table slotData)
-        if slotType == "heal" then
-            local healPercent = self.HealPercent
+        local normalizedType = self:NormalizeShopSlotType(slotType)
+
+        if normalizedType == "potion" then
+            local potionAmount = 1
             if slotData ~= nil and slotData.EffectValue ~= nil then
-                healPercent = slotData.EffectValue
+                potionAmount = slotData.EffectValue
             end
 
-            self:ApplyHealPurchaseServer(healPercent)
+            self:ApplyPotionPurchaseServer(potionAmount)
             return
         end
 
-        if slotType == "ammo" then
+        if normalizedType == "ammo" then
             local refillValue = 1
             if slotData ~= nil and slotData.EffectValue ~= nil then
                 refillValue = slotData.EffectValue
@@ -846,7 +952,7 @@ script ShopManagerComponent extends Component
             return
         end
 
-        if slotType == "passive" then
+        if normalizedType == "passive" then
             local passiveSystem = self:ResolveComponentSafe(self.Entity, "PassiveSystemComponent", "AcquiredPassiveCount")
             if passiveSystem ~= nil and passiveSystem.ApplyRandomPassiveServer ~= nil then
                 local grade = "상시"
@@ -865,6 +971,27 @@ script ShopManagerComponent extends Component
                 end)
             end
         end
+    end
+
+    -- Potion purchase grants inventory stack instead of immediate HP recovery.
+    @ExecSpace("ServerOnly")
+    method void ApplyPotionPurchaseServer(number effectValue)
+        local inventory = self:ResolveOrAttachInventoryComponentServer("PotionCount")
+        if inventory == nil or inventory.AddPotionServer == nil then
+            return
+        end
+
+        local amount = 1
+        if effectValue ~= nil then
+            amount = math.max(1, math.floor(effectValue))
+        end
+        if amount <= 0 then
+            return
+        end
+
+        pcall(function()
+            inventory:AddPotionServer(amount)
+        end)
     end
 
     -- Heal is server-applied from MaxHP percentage to preserve anti-cheat authority.
@@ -900,7 +1027,7 @@ script ShopManagerComponent extends Component
     -- Ammo purchase now grants magazine inventory for current character instead of filling reload slots directly.
     @ExecSpace("ServerOnly")
     method void ApplyAmmoPurchaseServer(number effectValue)
-        local inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", "MagazineA")
+        local inventory = self:ResolveOrAttachInventoryComponentServer("MagazineA")
         if inventory == nil or inventory.AddMagazineServer == nil then
             return
         end
@@ -913,10 +1040,51 @@ script ShopManagerComponent extends Component
             return
         end
 
-        local charId = self:ResolveCurrentCharIdServer()
         pcall(function()
-            inventory:AddMagazineServer(charId, amount)
+            inventory:AddMagazineServer("A", amount)
+            inventory:AddMagazineServer("B", amount)
         end)
+    end
+
+    -- Inventory is required for mag/potion purchases; attach-on-demand covers missing bootstrap cases.
+    @ExecSpace("ServerOnly")
+    method Component ResolveOrAttachInventoryComponentServer(string markerField)
+        local inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", markerField)
+        if inventory ~= nil then
+            return inventory
+        end
+
+        local added = nil
+        local addOkPrefixed, addResultPrefixed = pcall(function()
+            return self.Entity:AddComponent("script.InventoryComponent")
+        end)
+        if addOkPrefixed == true then
+            added = addResultPrefixed
+        end
+
+        if added == nil then
+            local addOkPlain, addResultPlain = pcall(function()
+                return self.Entity:AddComponent("InventoryComponent")
+            end)
+            if addOkPlain == true then
+                added = addResultPlain
+            end
+        end
+
+        if added ~= nil and isvalid(added) == true then
+            if markerField == nil or markerField == "" then
+                return added
+            end
+
+            local markerOk, _ = pcall(function()
+                return added[markerField]
+            end)
+            if markerOk == true then
+                return added
+            end
+        end
+
+        return self:ResolveComponentSafe(self.Entity, "InventoryComponent", markerField)
     end
 
     -- Boss reward reuses existing shop open flow so lock/slot sync policy stays identical.

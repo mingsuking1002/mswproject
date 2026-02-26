@@ -3109,3 +3109,71 @@
 | 함수명 | 파라미터 | 리턴값 | 설명 |
 |---|---|---|---|
 | `AttachRequiredComponentsServer` | `playerEntity: Entity` | void | `InventoryComponent`, `PassiveSystemComponent`, `RoundTransitionComponent` 부착 포함 |
+
+## 2026-02-26 Boss Fixed Spawn Minute (14m per round)
+
+### MonsterSpawnComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+| Item | Detail |
+|---|---|
+| Boss spawn timing policy | `GetSpawnMinuteFromRow()` now returns fixed `14` for boss rows (`mon_type=boss`), so each round boss spawn is locked to 14 minutes regardless of CSV `spawn_time`. |
+
+## 2026-02-26 PassiveData Schema Normalization
+
+### PassiveData.csv (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Data/PassiveData.csv`
+- **Updated:** `2026-02-26`
+
+| Item | Detail |
+|---|---|
+| Added columns | `price`, `player_b_stat` |
+| Removed columns | `player_a_stat-copy6`, `-copy8`, `-copy9`, `-copy10`, `-copy11`, `-copy12` |
+| Data cleanup | Removed trailing schema description rows and kept only runtime data rows (`pass_*`). |
+| Canonical header | `id,name,grade,description,is_stackable,price,player_a_stat,player_b_stat,pass_value` |
+
+### PassiveSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/PassiveSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/PassiveSystemComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+| Item | Detail |
+|---|---|
+| Target stat resolution | `ResolveTargetStatForCurrentCharacter()` now reads canonical columns only: `player_a_stat` / `player_b_stat`.
+| Legacy fallback removal | Removed fallback usage of `target_stat` and `player_a_stat-copy6`. |
+
+## 2026-02-26 Shop/Inventory Hotfix
+
+### ShopManagerComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/ShopManagerComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/ShopManagerComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+| Item | Detail |
+|---|---|
+| Slot type normalize | `heal`/`potion`을 `potion`으로 정규화하고 슬롯1 기본 타입을 `potion`으로 고정. |
+| CSV column compatibility | `SlotType/ItemName/Description/Price/EffectValue` + `slot_type/name/description/price/effect_value` 동시 지원. |
+| Potion purchase behavior | 포션 구매 시 즉시 회복 대신 `InventoryComponent:AddPotionServer()`로 보유량 증가. |
+| Ammo purchase behavior | 탄약 구매는 `InventoryComponent:AddMagazineServer()`로 현재 캐릭터 탄창 보유량 증가 유지. |
+
+### ReloadComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ReloadComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ReloadComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+| Item | Detail |
+|---|---|
+| Reload gate hardening | `InventoryComponent` 또는 `ConsumeMagazineServer`가 없으면 재장전 시작을 차단(fail-closed)하도록 수정. |
+| Magazine consume path | 재장전 시작 시점에만 탄창 1개 소모 계약 유지. |
+
+### ItemData.csv (Reference)
+- **File:** `RootDesk/MyDesk/ProjectGR/Data/ItemData.csv`
+- **Updated:** `2026-02-26` (검토)
+
+| Item | Detail |
+|---|---|
+| Runtime-required columns | `item_id`, `effect_type`, `effect_value_1` |
+| Current potion bind | `effect_type=heal_hp` 행의 `effect_value_1` 값을 `InventoryComponent.PotionHealAmount`로 로드 후 E키 사용 시 회복량으로 적용. |
+| Schema change | 이번 핫픽스에서 `ItemData.csv` 컬럼 추가/삭제 없음. |

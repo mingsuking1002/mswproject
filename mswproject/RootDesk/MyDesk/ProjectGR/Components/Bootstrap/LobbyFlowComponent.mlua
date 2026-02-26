@@ -16,6 +16,7 @@ script LobbyFlowComponent extends Component
     property string MyRankTextPath = "/ui/MainGroup/GRMyRankText"
     property string UIRootPath = "/ui/MainGroup"
     property string UIRootFallbackPath = "/ui/DefaultGroup"
+    property string GRBGPath = "/ui/MainGroup/GRBG"
     property boolean EnableDebugLogs = true
 
     -- Server initializes utility and runtime-only button/debounce state.
@@ -107,6 +108,9 @@ script LobbyFlowComponent extends Component
             self._T.StartButtonDebounceTimerId = 0
         end
         self._T.StartButtonDebounceTimerId = _TimerService:SetTimerOnce(clearDebounce, 0.25)
+
+        -- Hide lobby widgets immediately on click to prevent one-frame GRBG linger before sync arrives.
+        self:ApplyLobbyUIClient(false)
 
         local requestUserId = self:GetOwnerUserId()
         log("[LobbyFlow] Start clicked. requestUserId=", requestUserId, ", map=", self.InGameMapName)
@@ -471,6 +475,14 @@ script LobbyFlowComponent extends Component
             pcall(function()
                 myRankText.Enable = isLobby
                 myRankText.Visible = isLobby
+            end)
+        end
+
+        local grbg = self:ResolveUIEntity(self.GRBGPath)
+        if grbg ~= nil and isvalid(grbg) == true then
+            pcall(function()
+                grbg.Enable = isLobby
+                grbg.Visible = isLobby
             end)
         end
     end

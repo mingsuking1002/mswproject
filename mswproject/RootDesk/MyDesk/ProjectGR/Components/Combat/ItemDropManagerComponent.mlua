@@ -425,6 +425,7 @@ script ItemDropManagerComponent extends Component
         if itemId == "" then
             return
         end
+        local normalizedItemId = string.lower(itemId)
 
         local payloadAmount = 1
         if runtime.PayloadAmount ~= nil then
@@ -449,8 +450,9 @@ script ItemDropManagerComponent extends Component
             end
         end
 
-        if effectType == "heal_hp" then
-            local inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", "PotionCount")
+        local isPotion = (effectType == "heal_hp" or normalizedItemId == "heal_hp" or normalizedItemId == "potion_hp")
+        if isPotion == true then
+            local inventory = self:ResolveOrAttachInventoryComponentServer("PotionCount")
             if inventory ~= nil and inventory.AddPotionServer ~= nil then
                 local addAmount = math.max(1, payloadAmount)
                 pcall(function()
@@ -460,11 +462,13 @@ script ItemDropManagerComponent extends Component
             return
         end
 
-        if effectType == "a_mag" or effectType == "b_mag" then
-            local inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", "MagazineA")
+        local isMagA = (effectType == "a_mag" or normalizedItemId == "a_mag" or normalizedItemId == "mag_a")
+        local isMagB = (effectType == "b_mag" or normalizedItemId == "b_mag" or normalizedItemId == "mag_b")
+        if isMagA == true or isMagB == true then
+            local inventory = self:ResolveOrAttachInventoryComponentServer("MagazineA")
             if inventory ~= nil and inventory.AddMagazineServer ~= nil then
                 local charId = "A"
-                if effectType == "b_mag" then
+                if isMagB == true then
                     charId = "B"
                 end
 
@@ -484,6 +488,47 @@ script ItemDropManagerComponent extends Component
                 end)
             end
         end
+    end
+
+    -- Inventory add-on-demand prevents silent pickup loss when bootstrap attach order is delayed.
+    @ExecSpace("ServerOnly")
+    method Component ResolveOrAttachInventoryComponentServer(string markerField)
+        local inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", markerField)
+        if inventory ~= nil then
+            return inventory
+        end
+
+        local added = nil
+        local addOkPrefixed, addResultPrefixed = pcall(function()
+            return self.Entity:AddComponent("script.InventoryComponent")
+        end)
+        if addOkPrefixed == true then
+            added = addResultPrefixed
+        end
+
+        if added == nil then
+            local addOkPlain, addResultPlain = pcall(function()
+                return self.Entity:AddComponent("InventoryComponent")
+            end)
+            if addOkPlain == true then
+                added = addResultPlain
+            end
+        end
+
+        if added ~= nil and isvalid(added) == true then
+            if markerField == nil or markerField == "" then
+                return added
+            end
+
+            local markerOk, _ = pcall(function()
+                return added[markerField]
+            end)
+            if markerOk == true then
+                return added
+            end
+        end
+
+        return self:ResolveComponentSafe(self.Entity, "InventoryComponent", markerField)
     end
 
     @ExecSpace("ServerOnly")
