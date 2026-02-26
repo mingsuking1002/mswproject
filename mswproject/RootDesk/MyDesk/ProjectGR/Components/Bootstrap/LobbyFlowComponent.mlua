@@ -141,6 +141,7 @@ script LobbyFlowComponent extends Component
         self:SetLobbyStateServer(false)
         self:NotifyRunStartServer()
         self:TryStartRunTimerServer()
+        self:TryResumeMonsterSpawnServer()
 
         if targetUserId == nil or targetUserId == "" then
             log_warning("[LobbyFlow] Start request has empty user id. Applied in-game state without map move.")
@@ -213,6 +214,12 @@ script LobbyFlowComponent extends Component
         self:TryClearFieldItemsForOwnerServer()
         self:TryResetGoldForOwnerServer()
         self:TryResetShopForOwnerServer()
+        self:TryResetPlayerHPServer()
+        self:TryResetTimerServer()
+        self:TryResetMonsterSpawnServer()
+        self:TryResetWeaponServer()
+        self:TryResetInventoryServer()
+        self:TryResetPassivesServer()
         self:SetLobbyStateServer(true)
         self:MoveOwnerToLobbyMapIfNeeded()
     end
@@ -263,6 +270,123 @@ script LobbyFlowComponent extends Component
         pcall(function()
             shopManager:ResetShopStateServer()
         end)
+    end
+
+    -- HP restore is centralized here so run reset always clears death state before next start.
+    @ExecSpace("ServerOnly")
+    method void TryResetPlayerHPServer()
+        local hp = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "CurrentHP")
+        if hp == nil then
+            return
+        end
+        if hp.ReviveToFullHP ~= nil then
+            pcall(function()
+                hp:ReviveToFullHP()
+            end)
+        end
+    end
+
+    -- Timer reset keeps UI elapsed and stage-id policy deterministic across run restart.
+    @ExecSpace("ServerOnly")
+    method void TryResetTimerServer()
+        local timer = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "IsRunning")
+        if timer == nil then
+            return
+        end
+
+        if timer.ResetRun ~= nil then
+            pcall(function()
+                timer:ResetRun()
+            end)
+        else
+            pcall(function()
+                timer.IsRunning = false
+                timer.IsPaused = false
+                timer.ElapsedTime = 0
+            end)
+        end
+
+        pcall(function()
+            timer.CurrentStageId = 1
+            timer.IsPaused = false
+            timer.ElapsedTime = 0
+        end)
+    end
+
+    -- Spawn reset removes remaining monsters and restores stage-local spawn baseline.
+    @ExecSpace("ServerOnly")
+    method void TryResetMonsterSpawnServer()
+        local spawn = self:ResolveComponentSafe(self.Entity, "MonsterSpawnComponent", "IsSpawnActive")
+        if spawn == nil then
+            return
+        end
+
+        if spawn.KillAllMonstersServer ~= nil then
+            pcall(function()
+                spawn:KillAllMonstersServer()
+            end)
+        end
+        if spawn.StopSpawning ~= nil then
+            pcall(function()
+                spawn:StopSpawning()
+            end)
+        end
+        pcall(function()
+            spawn.IsBossPhase = false
+        end)
+        if spawn._T ~= nil then
+            spawn._T.StageStartElapsedTime = 0
+            spawn._T.EliteSpawnedSet = {}
+        end
+    end
+
+    -- Weapon reset restores initial slot contract so next run starts from deterministic baseline.
+    @ExecSpace("ServerOnly")
+    method void TryResetWeaponServer()
+        local swap = self:ResolveComponentSafe(self.Entity, "WeaponSwapComponent", "CurrentWeaponSlot")
+        if swap == nil then
+            return
+        end
+        if swap.ResetToInitialWeaponServer ~= nil then
+            pcall(function()
+                swap:ResetToInitialWeaponServer()
+            end)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TryResetInventoryServer()
+        local inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", "MagazineA")
+        if inventory == nil or inventory.ResetInventoryServer == nil then
+            return
+        end
+        pcall(function()
+            inventory:ResetInventoryServer()
+        end)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TryResetPassivesServer()
+        local passive = self:ResolveComponentSafe(self.Entity, "PassiveSystemComponent", "AcquiredPassiveCount")
+        if passive == nil or passive.ResetPassivesServer == nil then
+            return
+        end
+        pcall(function()
+            passive:ResetPassivesServer()
+        end)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TryResumeMonsterSpawnServer()
+        local spawn = self:ResolveComponentSafe(self.Entity, "MonsterSpawnComponent", "IsSpawnActive")
+        if spawn == nil then
+            return
+        end
+        if spawn.StartSpawning ~= nil then
+            pcall(function()
+                spawn:StartSpawning()
+            end)
+        end
     end
 
     -- Stage-fail alias is referenced by HPSystem fallback flow.

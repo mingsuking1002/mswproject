@@ -70,6 +70,16 @@ script MonsterChaseComponent extends Component
         if self.Entity == nil or isvalid(self.Entity) == false then
             return
         end
+        local ownerPlayer = self:FindNearestPlayerOnCurrentMapServer()
+        local lobbyFlow = self:ResolveComponentSafe(ownerPlayer, "LobbyFlowComponent", "IsLobbyActive")
+        if lobbyFlow ~= nil then
+            local lobbyOk, isLobby = pcall(function()
+                return lobbyFlow.IsLobbyActive
+            end)
+            if lobbyOk == true and isLobby == true then
+                return
+            end
+        end
 
         local movement = self:ResolveComponentSafe(self.Entity, "MovementComponent", "MoveSpeed")
         if movement == nil then
@@ -80,7 +90,7 @@ script MonsterChaseComponent extends Component
             self._T.ContactTargetPlayer = nil
         end
 
-        local targetPlayer = self:FindNearestPlayerOnCurrentMapServer()
+        local targetPlayer = ownerPlayer
         local facingTarget = self._T.ContactTargetPlayer
         if facingTarget == nil then
             facingTarget = targetPlayer

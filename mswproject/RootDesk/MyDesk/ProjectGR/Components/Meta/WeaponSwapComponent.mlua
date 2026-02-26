@@ -325,6 +325,32 @@ script WeaponSwapComponent extends Component
         self:ApplySlotDataToCombat(self.CurrentWeaponSlot)
     end
 
+    -- Run reset API restores current character baseline slots through CharacterDataInit contract when available.
+    @ExecSpace("ServerOnly")
+    method void ResetToInitialWeaponServer()
+        local characterData = self:ResolveComponentSafe(self.Entity, "CharacterDataInitComponent", "CurrentCharacterId")
+        if characterData ~= nil and characterData.ApplyCharacterDataServer ~= nil then
+            local charId = ""
+            local readOk, readValue = pcall(function()
+                return characterData.CurrentCharacterId
+            end)
+            if readOk == true and readValue ~= nil then
+                charId = tostring(readValue)
+            end
+            if charId ~= "" then
+                pcall(function()
+                    characterData:ApplyCharacterDataServer(charId, false)
+                end)
+                return
+            end
+        end
+
+        self:InitializeSlotData()
+        self.CurrentWeaponSlot = self:ClampSlot(1)
+        self:RefreshWheelSlotUISyncServer()
+        self:ApplySlotDataToCombat(self.CurrentWeaponSlot)
+    end
+
     @ExecSpace("ServerOnly")
     method integer ResolveCurrentSlotFromRow(table row)
         if row == nil then

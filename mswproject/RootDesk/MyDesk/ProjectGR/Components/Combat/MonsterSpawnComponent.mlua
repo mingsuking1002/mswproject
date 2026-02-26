@@ -70,6 +70,8 @@ script MonsterSpawnComponent extends Component
         self._T.BackdropBounds = nil
         self._T.BackdropBoundsLastRefreshAt = -9999
         self._T.WarnedMissingBackdropBounds = false
+        self._T.StageStartElapsedTime = 0
+        self._T.EliteSpawnedSet = {}
 
         self.IsSpawnActive = false
         self.IsBossPhase = false
@@ -222,6 +224,7 @@ script MonsterSpawnComponent extends Component
         self._T.MonsterRows = {}
         self._T.ModelTypeByMonType = nil
         self._T.RowFallbackModelById = nil
+        self._T.EliteSpawnedSet = {}
 
         local tableName = self:ResolveMonsterDataTableName()
         if tableName == "" then
@@ -506,6 +509,8 @@ script MonsterSpawnComponent extends Component
 
         self.IsBossPhase = false
         self._T.BossSpawnedEntity = nil
+        self._T.EliteSpawnedSet = {}
+        self._T.StageStartElapsedTime = 0
 
         local loaded = self:LoadMonsterDataFromTable()
         self._T.DataReady = (self._T.Config ~= nil and loaded == true)
@@ -614,6 +619,7 @@ script MonsterSpawnComponent extends Component
             self:RefreshSpawnStateServer()
             self:UpdateMonsterHPBarsServer()
             self:ProcessMonsterDeathSequenceServer()
+            self:CheckEliteSpawnsServer()
         end
         self._T.StateMonitorTimerId = _TimerService:SetTimerRepeat(callback, interval, 0)
         if self.EnableDebugLogs == true then
@@ -750,6 +756,45 @@ script MonsterSpawnComponent extends Component
         self.IsSpawnActive = false
     end
 
+    -- Hard clear API is used by run reset and stage transition to guarantee empty combat field.
+    @ExecSpace("ServerOnly")
+    method void KillAllMonstersServer()
+        local toDestroy = {}
+
+        if self._T.SpawnedMonsters ~= nil then
+            for _, entity in pairs(self._T.SpawnedMonsters) do
+                if entity ~= nil and isvalid(entity) == true then
+                    table.insert(toDestroy, entity)
+                end
+            end
+        end
+
+        if self._T.AutoBoundPlacedMonsters ~= nil then
+            for entity, isBound in pairs(self._T.AutoBoundPlacedMonsters) do
+                if isBound == true and entity ~= nil and isvalid(entity) == true and entity.PlayerComponent == nil then
+                    table.insert(toDestroy, entity)
+                end
+            end
+        end
+
+        self._T.SpawnedMonsters = {}
+        self._T.SpawnMetaByEntity = {}
+        self._T.AutoBoundPlacedMonsters = {}
+        self._T.BossSpawnedEntity = nil
+        self.IsBossPhase = false
+
+        for _, entity in pairs(toDestroy) do
+            if entity ~= nil and isvalid(entity) == true then
+                pcall(function()
+                    _EntityService:Destroy(entity)
+                end)
+            end
+        end
+
+        self:ClearMonsterDeathRuntimeTimersServer()
+        self:ClearMonsterHPBarRuntimeServer()
+    end
+
     -- Spawn tick executes only lightweight loops and defers unknown features to dedicated extension hooks.
     @ExecSpace("ServerOnly")
     method void SpawnTick()
@@ -873,7 +918,11 @@ script MonsterSpawnComponent extends Component
             return timerComponent.ElapsedTime
         end)
         if elapsedOk == true and elapsedValue ~= nil then
-            context.ElapsedSec = math.max(0, elapsedValue)
+            local stageStart = 0
+            if self._T.StageStartElapsedTime ~= nil then
+                stageStart = math.max(0, self._T.StageStartElapsedTime)
+            end
+            context.ElapsedSec = math.max(0, elapsedValue - stageStart)
         end
 
         return context
@@ -914,6 +963,8 @@ script MonsterSpawnComponent extends Component
 
             if self:IsBossRow(row) == true then
                 table.insert(result.BossRows, row)
+            elseif self:IsEliteRow(row) == true then
+                continue
             else
                 table.insert(result.NormalRows, row)
             end
@@ -929,6 +980,113 @@ script MonsterSpawnComponent extends Component
     method boolean IsBossRow(UserDataRow row)
         local monType = string.lower(self:GetRowString(row, "mon_type", ""))
         return monType == "boss"
+    end
+
+    method boolean IsEliteRow(UserDataRow row)
+        local monType = string.lower(self:GetRowString(row, "mon_type", ""))
+        return monType == "elite"
+    end
+
+    -- Elite monsters are spawned by monitor tick only once per id to separate them from normal SpawnTick flow.
+    @ExecSpace("ServerOnly")
+    method void CheckEliteSpawnsServer()
+        if self._T.MonsterRows == nil then
+            return
+        end
+        if self:IsSafeZoneActiveServer() == true then
+            return
+        end
+        if self._T.EliteSpawnedSet == nil then
+            self._T.EliteSpawnedSet = {}
+        end
+
+        local timerComp = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "ElapsedTime")
+        if timerComp == nil then
+            return
+        end
+
+        local elapsed = 0
+        local elapsedOk, elapsedValue = pcall(function()
+            return timerComp.ElapsedTime
+        end)
+        if elapsedOk ~= true or elapsedValue == nil then
+            return
+        end
+
+        local stageStart = 0
+        if self._T.StageStartElapsedTime ~= nil then
+            stageStart = math.max(0, self._T.StageStartElapsedTime)
+        end
+        elapsed = math.max(0, elapsedValue - stageStart)
+
+        local stage = 1
+        local stageOk, stageValue = pcall(function()
+            return timerComp.CurrentStageId
+        end)
+        if stageOk == true and stageValue ~= nil then
+            stage = math.max(1, math.floor(stageValue))
+        end
+
+        local enforceStage = (self._T.UseModeMonsterData ~= true)
+        for _, row in pairs(self._T.MonsterRows) do
+            if row == nil then
+                continue
+            end
+            if self:IsEliteRow(row) ~= true then
+                continue
+            end
+
+            if enforceStage == true then
+                local rowStage = self:GetRowInteger(row, "spawn_stage", 1)
+                if rowStage ~= stage then
+                    continue
+                end
+            end
+
+            local eliteId = self:GetRowString(row, "id", "")
+            if eliteId == "" then
+                continue
+            end
+            if self._T.EliteSpawnedSet[eliteId] == true then
+                continue
+            end
+
+            local spawnSec = self:GetSpawnMinuteFromRow(row) * 60
+            if spawnSec < 0 then
+                continue
+            end
+            if elapsed < spawnSec then
+                continue
+            end
+
+            self:SpawnEliteOnceServer(row, eliteId)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SpawnEliteOnceServer(UserDataRow row, string eliteId)
+        if row == nil then
+            return
+        end
+        if eliteId == nil or eliteId == "" then
+            return
+        end
+        if self._T.EliteSpawnedSet == nil then
+            self._T.EliteSpawnedSet = {}
+        end
+        if self._T.EliteSpawnedSet[eliteId] == true then
+            return
+        end
+
+        local pos = self:CalcDonutPosition()
+        if pos == nil or self:IsValidSpawnPosition(pos) ~= true then
+            return
+        end
+
+        local spawned = self:SpawnMonsterByRow(row, pos, false)
+        if spawned ~= nil and isvalid(spawned) == true then
+            self._T.EliteSpawnedSet[eliteId] = true
+        end
     end
 
     method UserDataRow SelectLatestRowBySpawnTime(table rows)
@@ -1339,6 +1497,42 @@ script MonsterSpawnComponent extends Component
 
         if isBoss == true then
             self._T.BossSpawnedEntity = spawnedEntity
+            local bossAI = self:FindOrAddComponentSafe(spawnedEntity, "BossAIComponent")
+            if bossAI ~= nil then
+                local currentStage = 1
+                local timerComp = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "CurrentStageId")
+                if timerComp ~= nil then
+                    local stageOk, stageValue = pcall(function()
+                        return timerComp.CurrentStageId
+                    end)
+                    if stageOk == true and stageValue ~= nil then
+                        currentStage = math.max(1, math.floor(stageValue))
+                    end
+                end
+
+                local bossId = self:GetRowString(row, "id", "")
+                local attackInterval = 2.0
+                local summonId = "mon_n007"
+                if bossId == "mon_b002" then
+                    attackInterval = 1.5
+                    summonId = "mon_n014"
+                end
+
+                local tableAttackInterval = self:GetRowNumber(row, "atk_interval", 0)
+                if tableAttackInterval ~= nil and tableAttackInterval > 0 then
+                    attackInterval = tableAttackInterval
+                end
+                local tableSummonId = self:GetRowString(row, "summon_id", "")
+                if tableSummonId ~= "" then
+                    summonId = tableSummonId
+                end
+
+                pcall(function()
+                    bossAI.AttackInterval = attackInterval
+                    bossAI.SummonMonsterId = summonId
+                    bossAI.BossStageId = currentStage
+                end)
+            end
         end
 
         return spawnedEntity
@@ -1393,6 +1587,62 @@ script MonsterSpawnComponent extends Component
         meta.IsBoss = self:IsBossRow(row)
 
         return meta
+    end
+
+    -- Boss defeat route branches stage flow and notifies transition/shop systems in one authoritative place.
+    @ExecSpace("ServerOnly")
+    method void OnBossDefeatedServer(Vector3 deathPos)
+        self.IsBossPhase = false
+        self._T.BossSpawnedEntity = nil
+
+        local stage = 1
+        local timerComp = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "CurrentStageId")
+        if timerComp ~= nil then
+            local stageOk, stageValue = pcall(function()
+                return timerComp.CurrentStageId
+            end)
+            if stageOk == true and stageValue ~= nil then
+                stage = math.max(1, math.floor(stageValue))
+            end
+        end
+
+        if stage <= 1 then
+            local shop = self:ResolveComponentSafe(self.Entity, "ShopManagerComponent", "IsShopOpen")
+            if shop ~= nil then
+                if shop.OpenBossRewardShopServer ~= nil then
+                    pcall(function()
+                        shop:OpenBossRewardShopServer()
+                    end)
+                elseif shop.OpenShopServer ~= nil then
+                    pcall(function()
+                        shop:OpenShopServer()
+                    end)
+                end
+            end
+
+            local transition = self:ResolveComponentSafe(self.Entity, "RoundTransitionComponent", "PortalInteractRadius")
+            if transition ~= nil and transition.SpawnPortalAtPositionServer ~= nil and deathPos ~= nil then
+                pcall(function()
+                    transition:SpawnPortalAtPositionServer(deathPos)
+                end)
+            end
+            return
+        end
+
+        local infinite = self:ResolveComponentSafe(self.Entity, "InfiniteModeComponent", "CurrentScore")
+        if infinite ~= nil then
+            if infinite.OnBossKilledServer ~= nil then
+                pcall(function()
+                    infinite:OnBossKilledServer("stage2_boss")
+                end)
+                return
+            end
+            if infinite.ActivateInfiniteModeServer ~= nil then
+                pcall(function()
+                    infinite:ActivateInfiniteModeServer(true)
+                end)
+            end
+        end
     end
 
     -- TODO: Replace this adapter with visual profile resolver when sprite/anim policy is finalized.
@@ -2478,6 +2728,15 @@ script MonsterSpawnComponent extends Component
             return
         end
 
+        local spawnMeta = nil
+        if self._T.SpawnMetaByEntity ~= nil then
+            spawnMeta = self._T.SpawnMetaByEntity[monsterEntity]
+        end
+        if spawnMeta ~= nil and spawnMeta.IsBoss == true then
+            local deathPos = monsterEntity.TransformComponent.WorldPosition
+            self:OnBossDefeatedServer(deathPos)
+        end
+
         self:PrepareDeadMonsterForFadeServer(monsterEntity)
 
         -- Drop pipeline starts at death-sequence entry so visual fade timing does not delay reward spawn.
@@ -2846,11 +3105,7 @@ script MonsterSpawnComponent extends Component
             end)
         end
 
-        if spawnMeta.IsBoss == true and infiniteMode.OnBossKilledServer ~= nil then
-            pcall(function()
-                infiniteMode:OnBossKilledServer(monsterId)
-            end)
-        end
+        -- Boss clear flow is handled in OnBossDefeatedServer() to avoid duplicate popup/event paths.
     end
 
     method integer GetSpawnedMonsterCount()

@@ -162,7 +162,7 @@
           },
           "Value": {
             "$type": "MOD.Core.MODVector2, MOD.Core",
-            "x": 4.36,
+            "x": 3.09896564,
             "y": 3.04
           }
         },
@@ -175,8 +175,8 @@
           },
           "Value": {
             "$type": "MOD.Core.MODVector2, MOD.Core",
-            "x": 0.5000001,
-            "y": 0.06999993
+            "x": -1.33398438,
+            "y": 0.0703125
           }
         },
         {
@@ -187,6 +187,20 @@
             "type": "System.Boolean, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
           },
           "Value": false
+        },
+        {
+          "TargetType": "MOD.Core.TransformComponent",
+          "Name": "Scale",
+          "ValueType": {
+            "$type": "MODNativeType",
+            "type": "MOD.Core.MODVector3, MOD.Core, Version=26.1.0.0, Culture=neutral, PublicKeyToken=null"
+          },
+          "Value": {
+            "$type": "MOD.Core.MODVector3, MOD.Core",
+            "x": 0.5,
+            "y": 0.5,
+            "z": 1.0
+          }
         }
       ],
       "EventLinks": [],

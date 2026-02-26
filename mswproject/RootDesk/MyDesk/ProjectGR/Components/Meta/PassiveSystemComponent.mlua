@@ -1,0 +1,742 @@
+@Component
+script PassiveSystemComponent extends Component
+
+    property string PassiveDataTableName = "PassiveData"
+    @Sync
+    property integer AcquiredPassiveCount = 0
+    property integer MaxPassiveSlots = 20
+    property boolean EnableDebugLogs = true
+
+    -- Server cache tracks passive rows and runtime state for deterministic shop candidate/apply flow.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self:EnsureGRUtil()
+        self._T.PassiveRows = {}
+        self._T.PassiveRowById = {}
+        self._T.AcquiredList = {}
+        self._T.AcquiredSet = {}
+        self._T.UniqueUsed = {}
+        self._T.AttackHitCounter = 0
+        self._T.HasHealOnHitPassive = false
+        self._T.PendingCandidate = nil
+        self.AcquiredPassiveCount = 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self:LoadPassiveDataServer()
+    end
+
+    -- Shop slot build calls this API first so candidate preview and purchase target always match.
+    @ExecSpace("ServerOnly")
+    method table GetNextPassiveCandidateServer()
+        self:LoadPassiveDataServer()
+
+        local preferredGrade = self:ResolvePreferredGradeServer()
+        local pool = self:BuildPassivePoolServer(preferredGrade)
+        if pool == nil or #pool <= 0 then
+            if preferredGrade ~= "common" then
+                pool = self:BuildPassivePoolServer("common")
+            end
+        end
+        if pool == nil or #pool <= 0 then
+            self._T.PendingCandidate = nil
+            return nil
+        end
+
+        local picked = pool[math.random(1, #pool)]
+        if picked == nil then
+            self._T.PendingCandidate = nil
+            return nil
+        end
+
+        local candidate = self:BuildCandidateFromRow(picked)
+        self._T.PendingCandidate = candidate
+        return self:CloneTableShallow(candidate)
+    end
+
+    -- Purchase path supports explicit passive id from slot payload and falls back to pending candidate.
+    @ExecSpace("ServerOnly")
+    method boolean ApplyRandomPassiveServer(string gradeHint, string passiveIdHint)
+        self:LoadPassiveDataServer()
+
+        if self.AcquiredPassiveCount >= math.max(1, self.MaxPassiveSlots) then
+            return false
+        end
+
+        local targetRow = nil
+        local resolvedId = ""
+        if passiveIdHint ~= nil and tostring(passiveIdHint) ~= "" then
+            resolvedId = tostring(passiveIdHint)
+            targetRow = self._T.PassiveRowById[resolvedId]
+        end
+
+        if targetRow == nil and self._T.PendingCandidate ~= nil and self._T.PendingCandidate.Id ~= nil then
+            resolvedId = tostring(self._T.PendingCandidate.Id)
+            targetRow = self._T.PassiveRowById[resolvedId]
+        end
+
+        if targetRow == nil then
+            local normalizedGrade = self:NormalizeGrade(gradeHint)
+            if normalizedGrade == "" then
+                normalizedGrade = self:ResolvePreferredGradeServer()
+            end
+
+            local pool = self:BuildPassivePoolServer(normalizedGrade)
+            if pool == nil or #pool <= 0 then
+                if normalizedGrade ~= "common" then
+                    pool = self:BuildPassivePoolServer("common")
+                end
+            end
+            if pool == nil or #pool <= 0 then
+                return false
+            end
+
+            targetRow = pool[math.random(1, #pool)]
+            if targetRow ~= nil then
+                resolvedId = self:GetRowString(targetRow, "id", "")
+            end
+        end
+
+        if targetRow == nil then
+            return false
+        end
+        if resolvedId == "" then
+            resolvedId = self:GetRowString(targetRow, "id", "")
+        end
+        if resolvedId == "" then
+            return false
+        end
+
+        local grade = self:NormalizeGrade(self:GetRowString(targetRow, "grade", "common"))
+        if grade == "unique" and self._T.UniqueUsed[resolvedId] == true then
+            return false
+        end
+
+        local isStackable = self:GetRowBoolean(targetRow, "is_stackable", true)
+        if isStackable ~= true and self._T.AcquiredSet[resolvedId] == true then
+            return false
+        end
+
+        if self:ApplyPassiveRowServer(targetRow, resolvedId) ~= true then
+            return false
+        end
+
+        if self._T.AcquiredSet[resolvedId] ~= true then
+            table.insert(self._T.AcquiredList, resolvedId)
+            self._T.AcquiredSet[resolvedId] = true
+            self.AcquiredPassiveCount = math.min(self.MaxPassiveSlots, self.AcquiredPassiveCount + 1)
+        elseif isStackable == true then
+            self.AcquiredPassiveCount = math.min(self.MaxPassiveSlots, self.AcquiredPassiveCount + 1)
+        end
+        if grade == "unique" then
+            self._T.UniqueUsed[resolvedId] = true
+        end
+
+        if self._T.PendingCandidate ~= nil and self._T.PendingCandidate.Id ~= nil and tostring(self._T.PendingCandidate.Id) == resolvedId then
+            self._T.PendingCandidate = nil
+        end
+
+        return true
+    end
+
+    -- FireSystem hook: every successful fire increments counter and heals 1 HP every 20 shots.
+    @ExecSpace("ServerOnly")
+    method void OnProjectileFiredServer()
+        if self._T.HasHealOnHitPassive ~= true then
+            return
+        end
+
+        local counter = self._T.AttackHitCounter
+        if counter == nil then
+            counter = 0
+        end
+        counter += 1
+        if counter < 20 then
+            self._T.AttackHitCounter = counter
+            return
+        end
+
+        self._T.AttackHitCounter = 0
+        local hp = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "CurrentHP")
+        if hp ~= nil and hp.Heal ~= nil then
+            pcall(function()
+                hp:Heal(1)
+            end)
+        end
+    end
+
+    -- Run reset uses CharacterData baseline apply + passive runtime clear to fully restore pre-run stats.
+    @ExecSpace("ServerOnly")
+    method void ResetPassivesServer()
+        self._T.AcquiredList = {}
+        self._T.AcquiredSet = {}
+        self._T.UniqueUsed = {}
+        self._T.AttackHitCounter = 0
+        self._T.HasHealOnHitPassive = false
+        self._T.PendingCandidate = nil
+        self.AcquiredPassiveCount = 0
+
+        local fire = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "PassiveFlatAttack")
+        if fire ~= nil then
+            pcall(function()
+                fire.PassiveFlatAttack = 0
+                fire.PassiveIncreasePercent = 0
+            end)
+        end
+
+        local characterData = self:ResolveComponentSafe(self.Entity, "CharacterDataInitComponent", "CurrentCharacterId")
+        if characterData ~= nil and characterData.ApplyCharacterDataServer ~= nil then
+            local charId = "player_a"
+            local idOk, idValue = pcall(function()
+                return characterData.CurrentCharacterId
+            end)
+            if idOk == true and idValue ~= nil and tostring(idValue) ~= "" then
+                charId = tostring(idValue)
+            end
+            pcall(function()
+                characterData:ApplyCharacterDataServer(charId, false)
+            end)
+        end
+    end
+
+    -- Optional export API for future save/load and debug tooling.
+    @ExecSpace("ServerOnly")
+    method table ExportPassiveState()
+        local state = {}
+        state.AcquiredPassiveCount = self.AcquiredPassiveCount
+        state.AttackHitCounter = self._T.AttackHitCounter or 0
+        state.HasHealOnHitPassive = (self._T.HasHealOnHitPassive == true)
+        state.AcquiredList = self:CloneArray(self._T.AcquiredList)
+        state.UniqueUsed = self:CloneTableShallow(self._T.UniqueUsed)
+        return state
+    end
+
+    -- Optional import API keeps compatibility with potential snapshot restore flows.
+    @ExecSpace("ServerOnly")
+    method void ImportPassiveState(table state)
+        if state == nil then
+            return
+        end
+
+        self._T.AcquiredList = self:CloneArray(state.AcquiredList)
+        self._T.UniqueUsed = self:CloneTableShallow(state.UniqueUsed)
+        self._T.AttackHitCounter = math.max(0, math.floor(tonumber(state.AttackHitCounter) or 0))
+        self._T.HasHealOnHitPassive = (state.HasHealOnHitPassive == true)
+        self._T.AcquiredSet = {}
+        if self._T.AcquiredList ~= nil then
+            for _, passiveId in pairs(self._T.AcquiredList) do
+                if passiveId ~= nil and tostring(passiveId) ~= "" then
+                    self._T.AcquiredSet[tostring(passiveId)] = true
+                end
+            end
+        end
+        self.AcquiredPassiveCount = math.max(0, math.floor(tonumber(state.AcquiredPassiveCount) or #self._T.AcquiredList))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadPassiveDataServer()
+        if self._T.PassiveRows ~= nil and #self._T.PassiveRows > 0 then
+            return
+        end
+        if self.PassiveDataTableName == nil or self.PassiveDataTableName == "" then
+            return
+        end
+
+        local tableData = nil
+        local loadOk, loadValue = pcall(function()
+            return _DataService:GetTable(self.PassiveDataTableName)
+        end)
+        if loadOk == true then
+            tableData = loadValue
+        end
+        if tableData == nil then
+            return
+        end
+
+        local rows = nil
+        local rowsOk, rowsValue = pcall(function()
+            return tableData:GetAllRow()
+        end)
+        if rowsOk == true then
+            rows = rowsValue
+        end
+        if rows == nil then
+            return
+        end
+
+        self._T.PassiveRows = {}
+        self._T.PassiveRowById = {}
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+            local id = self:GetRowString(row, "id", "")
+            if id == "" then
+                continue
+            end
+            self._T.PassiveRowById[id] = row
+            table.insert(self._T.PassiveRows, row)
+        end
+    end
+
+    method table BuildPassivePoolServer(string gradeHint)
+        local normalizedGrade = self:NormalizeGrade(gradeHint)
+        local pool = {}
+        if self._T.PassiveRows == nil then
+            return pool
+        end
+
+        for _, row in pairs(self._T.PassiveRows) do
+            if row == nil then
+                continue
+            end
+
+            local rowId = self:GetRowString(row, "id", "")
+            if rowId == "" then
+                continue
+            end
+
+            local rowGrade = self:NormalizeGrade(self:GetRowString(row, "grade", "common"))
+            if normalizedGrade ~= "" and rowGrade ~= normalizedGrade then
+                continue
+            end
+
+            if rowGrade == "unique" and self._T.UniqueUsed[rowId] == true then
+                continue
+            end
+
+            local isStackable = self:GetRowBoolean(row, "is_stackable", true)
+            if isStackable ~= true and self._T.AcquiredSet[rowId] == true then
+                continue
+            end
+
+            table.insert(pool, row)
+        end
+
+        return pool
+    end
+
+    method string ResolvePreferredGradeServer()
+        local timer = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "CurrentStageId")
+        if timer ~= nil then
+            local stageOk, stageValue = pcall(function()
+                return timer.CurrentStageId
+            end)
+            if stageOk == true and stageValue ~= nil and math.floor(stageValue) >= 2 then
+                return "unique"
+            end
+        end
+
+        local infinite = self:ResolveComponentSafe(self.Entity, "InfiniteModeComponent", "CurrentScore")
+        if infinite ~= nil and infinite._T ~= nil and infinite._T.BossClearedInNormal == true then
+            return "unique"
+        end
+
+        return "common"
+    end
+
+    method table BuildCandidateFromRow(any row)
+        local candidate = {}
+        candidate.Id = self:GetRowString(row, "id", "")
+        candidate.Name = self:GetRowString(row, "name", "패시브 스킬")
+        candidate.Description = self:GetRowString(row, "description", "")
+        candidate.Grade = self:NormalizeGrade(self:GetRowString(row, "grade", "common"))
+        candidate.Price = self:GetRowInteger(row, "price", 1500)
+        if candidate.Price <= 0 then
+            candidate.Price = 1500
+        end
+        return candidate
+    end
+
+    method boolean ApplyPassiveRowServer(any row, string passiveId)
+        if row == nil then
+            return false
+        end
+
+        local statKey = self:ResolveTargetStatForCurrentCharacter(row)
+        local value = self:GetRowNumber(row, "pass_value", 0)
+        local valueText = self:GetRowString(row, "pass_value", "")
+        if valueText == "-" then
+            value = 0
+        end
+
+        local applied = false
+        if statKey == "player_atk" then
+            applied = self:ApplyAttackPassiveServer(value)
+        elseif statKey == "player_hp" then
+            applied = self:ApplyHPPassiveServer(value)
+        elseif statKey == "movespeed" then
+            applied = self:ApplyMoveSpeedPassiveServer(value)
+        elseif statKey == "-" or statKey == "" then
+            -- Unique passive 3 contract: attack count heal trigger.
+            self._T.HasHealOnHitPassive = true
+            self._T.AttackHitCounter = 0
+            applied = true
+        end
+
+        if applied ~= true and self.EnableDebugLogs == true then
+            log_warning("[PassiveSystemComponent] passive apply skipped. id=", passiveId, ", statKey=", statKey)
+        end
+        return applied
+    end
+
+    method boolean ApplyAttackPassiveServer(number passValue)
+        local fire = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "PassiveFlatAttack")
+        if fire == nil then
+            return false
+        end
+
+        if passValue >= 1 then
+            local add = math.max(1, math.floor(passValue))
+            pcall(function()
+                fire.PassiveFlatAttack = math.max(0, math.floor(fire.PassiveFlatAttack + add))
+            end)
+            return true
+        end
+
+        local percent = math.max(0, passValue * 100)
+        pcall(function()
+            fire.PassiveIncreasePercent = math.max(0, fire.PassiveIncreasePercent + percent)
+        end)
+        return true
+    end
+
+    method boolean ApplyHPPassiveServer(number passValue)
+        local hp = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "CurrentHP")
+        if hp == nil then
+            return false
+        end
+
+        local currentHp = 0
+        local maxHp = 1
+        pcall(function()
+            currentHp = math.max(0, math.floor(hp.CurrentHP))
+            maxHp = math.max(1, math.floor(hp.MaxHP))
+        end)
+
+        local addHp = 0
+        if passValue >= 1 then
+            addHp = math.max(1, math.floor(passValue))
+        else
+            addHp = math.max(1, math.floor(maxHp * math.max(0, passValue)))
+        end
+
+        local ratio = 1
+        if maxHp > 0 then
+            ratio = self:Clamp01(currentHp / maxHp)
+        end
+        local nextMax = math.max(1, maxHp + addHp)
+        local nextCurrent = math.max(0, math.floor(nextMax * ratio))
+        if currentHp > 0 and nextCurrent <= 0 then
+            nextCurrent = 1
+        end
+
+        pcall(function()
+            hp.MaxHP = nextMax
+            hp.CurrentHP = math.max(0, math.min(nextCurrent, hp.MaxHP))
+            hp.IsDead = (hp.CurrentHP <= 0)
+        end)
+        if hp.BroadcastHPState ~= nil then
+            pcall(function()
+                hp:BroadcastHPState()
+            end)
+        end
+        return true
+    end
+
+    method boolean ApplyMoveSpeedPassiveServer(number passValue)
+        local movement = self:ResolveComponentSafe(self.Entity, "MovementComponent", "MoveSpeed")
+        if movement == nil then
+            return false
+        end
+
+        local moveSpeed = 0
+        local readOk, readValue = pcall(function()
+            return movement.MoveSpeed
+        end)
+        if readOk == true and readValue ~= nil then
+            moveSpeed = math.max(0, tonumber(readValue) or 0)
+        end
+
+        local add = 0
+        if passValue >= 1 then
+            add = passValue
+        else
+            add = moveSpeed * math.max(0, passValue)
+        end
+        if add <= 0 then
+            return false
+        end
+
+        pcall(function()
+            movement.MoveSpeed = math.max(0, moveSpeed + add)
+        end)
+        return true
+    end
+
+    method string ResolveCurrentCharIdServer()
+        local tag = self:ResolveComponentSafe(self.Entity, "TagManagerComponent", "CurrentCharIndex")
+        if tag ~= nil then
+            local idx = 1
+            local readOk, readValue = pcall(function()
+                return tag.CurrentCharIndex
+            end)
+            if readOk == true and readValue ~= nil then
+                idx = math.max(1, math.floor(readValue))
+            end
+            if idx == 2 then
+                return "B"
+            end
+        end
+        return "A"
+    end
+
+    method string ResolveTargetStatForCurrentCharacter(any row)
+        local charId = self:ResolveCurrentCharIdServer()
+
+        local stat = ""
+        if charId == "B" then
+            stat = self:GetRowString(row, "player_b_stat", "")
+            if stat == "" then
+                stat = self:GetRowString(row, "player_b", "")
+            end
+            if stat == "" then
+                -- PassiveData currently uses this temporary column name for B stat.
+                stat = self:GetRowString(row, "player_a_stat-copy6", "")
+            end
+        else
+            stat = self:GetRowString(row, "player_a_stat", "")
+            if stat == "" then
+                stat = self:GetRowString(row, "player_a", "")
+            end
+        end
+
+        if stat == "" then
+            stat = self:GetRowString(row, "target_stat", "")
+        end
+        if stat == "" then
+            stat = self:GetRowString(row, "player_a_stat", "")
+        end
+        if stat == "" then
+            stat = self:GetRowString(row, "player_a_stat-copy6", "")
+        end
+
+        stat = string.lower(self:TrimText(stat))
+        if stat == "player_a_stat" or stat == "player_b_stat" then
+            stat = ""
+        end
+        if stat == "none" then
+            stat = "-"
+        end
+        return stat
+    end
+
+    method string NormalizeGrade(string gradeText)
+        local text = string.lower(self:TrimText(gradeText))
+        if text == "" then
+            return ""
+        end
+        if text == "common" or text == "상시" then
+            return "common"
+        end
+        if text == "unique" or text == "유일" then
+            return "unique"
+        end
+        return text
+    end
+
+    method table CloneArray(table source)
+        local copy = {}
+        if source == nil then
+            return copy
+        end
+        for _, value in pairs(source) do
+            table.insert(copy, value)
+        end
+        return copy
+    end
+
+    method table CloneTableShallow(table source)
+        local copy = {}
+        if source == nil then
+            return copy
+        end
+        for key, value in pairs(source) do
+            copy[key] = value
+        end
+        return copy
+    end
+
+    method string TrimText(any textValue)
+        local text = ""
+        if textValue ~= nil then
+            text = tostring(textValue)
+        end
+        text = string.gsub(text, "^%s+", "")
+        text = string.gsub(text, "%s+$", "")
+        return text
+    end
+
+    method number Clamp01(number value)
+        local n = value
+        if n == nil then
+            n = 0
+        end
+        if n < 0 then
+            return 0
+        end
+        if n > 1 then
+            return 1
+        end
+        return n
+    end
+
+    method string GetRowString(any row, string columnName, string fallbackValue)
+        local fallback = fallbackValue
+        if fallback == nil then
+            fallback = ""
+        end
+        if row == nil then
+            return fallback
+        end
+        if columnName == nil or columnName == "" then
+            return fallback
+        end
+
+        local readOk, readValue = pcall(function()
+            return row:GetItem(columnName)
+        end)
+        if readOk ~= true or readValue == nil then
+            return fallback
+        end
+
+        local text = self:TrimText(readValue)
+        if text == "" then
+            return fallback
+        end
+        local lowered = string.lower(text)
+        if text == "-" then
+            return text
+        end
+        if lowered == "null" or lowered == "nil" then
+            return fallback
+        end
+        return text
+    end
+
+    method integer GetRowInteger(any row, string columnName, integer fallbackValue)
+        local text = self:GetRowString(row, columnName, "")
+        if text == "" then
+            return math.floor(fallbackValue)
+        end
+        local parsed = tonumber(text)
+        if parsed == nil then
+            return math.floor(fallbackValue)
+        end
+        return math.floor(parsed)
+    end
+
+    method number GetRowNumber(any row, string columnName, number fallbackValue)
+        local text = self:GetRowString(row, columnName, "")
+        if text == "" then
+            return fallbackValue
+        end
+        local parsed = tonumber(text)
+        if parsed == nil then
+            return fallbackValue
+        end
+        return parsed
+    end
+
+    method boolean GetRowBoolean(any row, string columnName, boolean fallbackValue)
+        local text = string.lower(self:GetRowString(row, columnName, ""))
+        if text == "" then
+            return fallbackValue
+        end
+        if text == "true" or text == "1" or text == "y" or text == "yes" then
+            return true
+        end
+        if text == "false" or text == "0" or text == "n" or text == "no" then
+            return false
+        end
+        return fallbackValue
+    end
+
+    -- Utility bootstrap first; fallback local lookup keeps component resilient in partially configured maps.
+    method void EnsureGRUtil()
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, utilApi = pcall(function()
+                return utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and utilApi ~= nil then
+                self._T.GRUtil = utilApi
+            end
+        end
+    end
+
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+        return component
+    end
+end
+

@@ -59,6 +59,16 @@ script ItemDropManagerComponent extends Component
 
         local now = self:GetNowSeconds()
         local ownerPos = self:GetEntityWorldPosition2D(self.Entity)
+        local isLobby = false
+        local lobbyFlow = self:ResolveComponentSafe(self.Entity, "LobbyFlowComponent", "IsLobbyActive")
+        if lobbyFlow ~= nil then
+            local lobbyOk, lobbyValue = pcall(function()
+                return lobbyFlow.IsLobbyActive
+            end)
+            if lobbyOk == true and lobbyValue == true then
+                isLobby = true
+            end
+        end
 
         for itemEntity, runtime in pairs(runtimeByEntity) do
             if itemEntity == nil or isvalid(itemEntity) == false or runtime == nil then
@@ -91,6 +101,11 @@ script ItemDropManagerComponent extends Component
                         self:SetEntityWorldPosition2D(itemEntity, targetPos)
                     end
                 end
+                runtimeByEntity[itemEntity] = runtime
+                continue
+            end
+
+            if isLobby == true then
                 runtimeByEntity[itemEntity] = runtime
                 continue
             end
@@ -435,17 +450,29 @@ script ItemDropManagerComponent extends Component
         end
 
         if effectType == "heal_hp" then
-            local hpSystem = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "CurrentHP")
-            if hpSystem ~= nil and hpSystem.Heal ~= nil then
+            local inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", "PotionCount")
+            if inventory ~= nil and inventory.AddPotionServer ~= nil then
+                local addAmount = math.max(1, payloadAmount)
                 pcall(function()
-                    hpSystem:Heal(math.max(1, effectValue1))
+                    inventory:AddPotionServer(addAmount)
                 end)
             end
             return
         end
 
         if effectType == "a_mag" or effectType == "b_mag" then
-            self:RefillAllAmmoSlotsServer()
+            local inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", "MagazineA")
+            if inventory ~= nil and inventory.AddMagazineServer ~= nil then
+                local charId = "A"
+                if effectType == "b_mag" then
+                    charId = "B"
+                end
+
+                local addAmount = math.max(1, payloadAmount)
+                pcall(function()
+                    inventory:AddMagazineServer(charId, addAmount)
+                end)
+            end
             return
         end
 

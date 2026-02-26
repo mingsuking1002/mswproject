@@ -155,3 +155,15 @@
   - `ResolveIncomingDamage()`의 `MonsterAttackComponent` 분기에 `ShouldIgnoreMonsterAttackDamage()` 추가
   - 몬스터 대상(`targetTeam=monster`)에서 몬스터 소스(`ownerTeam=monster`) 공격은 즉시 무시
 
+---
+
+## 2026-02-26 몬스터 피격 중복 데미지 억제(0.01초 히트 쿨다운)
+
+- 상태 전이: `🟡 분석` -> `🔵 구현` -> `🟢 완료`
+- 보완 대상:
+  - Trigger Enter/Stay가 짧은 간격으로 연속 호출될 때 동일 몬스터에 이중 타격이 들어가는 현상
+- 반영 내용:
+  - `EnableMonsterHitCooldown`(기본 `true`), `MonsterHitCooldownDuration`(기본 `0.01`) 추가
+  - `ApplyDamage()` 초입에 `IsMonsterHitCooldownActiveServer()` 게이트 추가
+  - 몬스터 생존 피격 후 `ApplyMonsterHitCooldownServer()`로 차단 윈도우 갱신
+

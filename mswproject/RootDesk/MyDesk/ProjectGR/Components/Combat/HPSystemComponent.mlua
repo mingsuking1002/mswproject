@@ -17,6 +17,8 @@ script HPSystemComponent extends Component
     property number HitInvincibleDuration = 1.0
     property boolean EnableInvincibleBlink = true
     property number InvincibleBlinkInterval = 0.08
+    property boolean EnableMonsterHitCooldown = true
+    property number MonsterHitCooldownDuration = 0.01
 
     -- Server initializes HP state once to prevent first-frame sync mismatch.
     @ExecSpace("ServerOnly")
@@ -27,6 +29,7 @@ script HPSystemComponent extends Component
         self._T.IsDeadUIOpened = false
         self._T.InvincibleClearTimerId = 0
         self._T.InvincibleUntilSeconds = 0
+        self._T.MonsterHitBlockedUntilSeconds = 0
         self:EnsureGRUtil()
     end
 
@@ -211,10 +214,13 @@ script HPSystemComponent extends Component
         return "unknown"
     end
 
-    -- Damage gate keeps player i-frame behavior while monsters always accept overlapping projectile hits.
+    -- Damage gate keeps player i-frame behavior and adds a short monster-only hit cooldown to suppress duplicate hits.
     @ExecSpace("ServerOnly")
     method void ApplyDamage(integer rawDamage)
         if self.IsDead == true then
+            return
+        end
+        if self:IsMonsterHitCooldownActiveServer() == true then
             return
         end
         if self.IsMonster ~= true and self.IsInvincible == true then
@@ -228,10 +234,52 @@ script HPSystemComponent extends Component
         self.CurrentHP = math.max(self.CurrentHP - actualDamage, 0)
 
         self:EvaluateDeath()
-        if self.IsDead ~= true and self.IsMonster ~= true then
-            self:SetInvincibleWindowServer(self.HitInvincibleDuration)
+        if self.IsDead ~= true then
+            if self.IsMonster == true then
+                self:ApplyMonsterHitCooldownServer()
+            else
+                self:SetInvincibleWindowServer(self.HitInvincibleDuration)
+            end
         end
         self:BroadcastHPState()
+    end
+
+    -- Monster-only hit cooldown suppresses duplicated trigger enter/stay damage bursts in same instant.
+    @ExecSpace("ServerOnly")
+    method boolean IsMonsterHitCooldownActiveServer()
+        if self.IsMonster ~= true then
+            return false
+        end
+        if self.EnableMonsterHitCooldown ~= true then
+            return false
+        end
+
+        local nowSeconds = self:GetServerTimeSeconds()
+        local blockedUntil = self._T.MonsterHitBlockedUntilSeconds
+        if blockedUntil == nil then
+            blockedUntil = 0
+        end
+        return nowSeconds < blockedUntil
+    end
+
+    -- Sets short post-hit block window so one monster cannot take duplicated damage within same trigger tick.
+    @ExecSpace("ServerOnly")
+    method void ApplyMonsterHitCooldownServer()
+        if self.IsMonster ~= true then
+            return
+        end
+        if self.EnableMonsterHitCooldown ~= true then
+            return
+        end
+
+        local duration = math.max(self.MonsterHitCooldownDuration, 0)
+        if duration <= 0 then
+            return
+        end
+
+        local nowSeconds = self:GetServerTimeSeconds()
+        local blockedUntil = nowSeconds + duration
+        self._T.MonsterHitBlockedUntilSeconds = blockedUntil
     end
 
     -- Penalty damage uses the same direct raw-damage path.
@@ -360,6 +408,21 @@ script HPSystemComponent extends Component
         self:ClearInvincibleWindowServer()
 
         self:SetCanMoveSafely(false)
+        if self.IsMonster ~= true then
+            local fire = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "CanAttack")
+            if fire ~= nil then
+                pcall(function()
+                    fire.CanAttack = false
+                end)
+            end
+
+            local timer = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "IsRunning")
+            if timer ~= nil and timer.PauseGame ~= nil then
+                pcall(function()
+                    timer:PauseGame()
+                end)
+            end
+        end
         if self.IsMonster == true then
             self:NotifyMonsterDeathSequenceServer()
             return

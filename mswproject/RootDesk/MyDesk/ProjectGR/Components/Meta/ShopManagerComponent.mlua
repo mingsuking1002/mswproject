@@ -599,6 +599,39 @@ script ShopManagerComponent extends Component
         end
 
         if slotType == "passive" then
+            local passiveSystem = self:ResolveComponentSafe(self.Entity, "PassiveSystemComponent", "AcquiredPassiveCount")
+            if passiveSystem ~= nil and passiveSystem.GetNextPassiveCandidateServer ~= nil then
+                local candidate = nil
+                local candidateOk, candidateValue = pcall(function()
+                    return passiveSystem:GetNextPassiveCandidateServer()
+                end)
+                if candidateOk == true then
+                    candidate = candidateValue
+                end
+
+                if candidate == nil then
+                    return {
+                        Type = "soldout",
+                        Name = "품절",
+                        Description = "",
+                        Price = 0,
+                        EffectValue = 0,
+                        IsSoldOut = true
+                    }
+                end
+
+                return {
+                    Type = "passive",
+                    Name = tostring(candidate.Name or "패시브 스킬"),
+                    Description = tostring(candidate.Description or ""),
+                    Price = math.max(0, math.floor(tonumber(candidate.Price) or self.PassivePrice)),
+                    EffectValue = 0,
+                    PassiveId = tostring(candidate.Id or ""),
+                    PassiveGrade = tostring(candidate.Grade or "상시"),
+                    IsSoldOut = false
+                }
+            end
+
             local price = self:GetRowInteger(row, "Price", self.PassivePrice)
             local itemName = self:GetRowString(row, "ItemName", "패시브 스킬")
             local description = self:GetRowString(row, "Description", "추후 구현 예정")
@@ -814,7 +847,23 @@ script ShopManagerComponent extends Component
         end
 
         if slotType == "passive" then
-            log("[ShopManagerComponent] Passive purchase is placeholder in phase 1.")
+            local passiveSystem = self:ResolveComponentSafe(self.Entity, "PassiveSystemComponent", "AcquiredPassiveCount")
+            if passiveSystem ~= nil and passiveSystem.ApplyRandomPassiveServer ~= nil then
+                local grade = "상시"
+                local passiveId = ""
+                if slotData ~= nil then
+                    if slotData.PassiveGrade ~= nil and tostring(slotData.PassiveGrade) ~= "" then
+                        grade = tostring(slotData.PassiveGrade)
+                    end
+                    if slotData.PassiveId ~= nil then
+                        passiveId = tostring(slotData.PassiveId)
+                    end
+                end
+
+                pcall(function()
+                    passiveSystem:ApplyRandomPassiveServer(grade, passiveId)
+                end)
+            end
         end
     end
 
@@ -848,48 +897,49 @@ script ShopManagerComponent extends Component
         end)
     end
 
-    -- Ammo refill updates all weapon slots so swap flow remains consistent after leaving shop.
+    -- Ammo purchase now grants magazine inventory for current character instead of filling reload slots directly.
     @ExecSpace("ServerOnly")
     method void ApplyAmmoPurchaseServer(number effectValue)
-        local reloadComponent = self:ResolveComponentSafe(self.Entity, "ReloadComponent", "CurrentAmmo")
-        if reloadComponent == nil then
+        local inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", "MagazineA")
+        if inventory == nil or inventory.AddMagazineServer == nil then
             return
         end
 
-        if reloadComponent.CancelCurrentReload ~= nil then
-            pcall(function()
-                reloadComponent:CancelCurrentReload()
+        local amount = 1
+        if effectValue ~= nil then
+            amount = math.max(1, math.floor(effectValue))
+        end
+        if amount <= 0 then
+            return
+        end
+
+        local charId = self:ResolveCurrentCharIdServer()
+        pcall(function()
+            inventory:AddMagazineServer(charId, amount)
+        end)
+    end
+
+    -- Boss reward reuses existing shop open flow so lock/slot sync policy stays identical.
+    @ExecSpace("ServerOnly")
+    method void OpenBossRewardShopServer()
+        if self.IsShopOpen == true then
+            return
+        end
+        self:OpenShopServer()
+    end
+
+    @ExecSpace("ServerOnly")
+    method string ResolveCurrentCharIdServer()
+        local tag = self:ResolveComponentSafe(self.Entity, "TagManagerComponent", "CurrentCharIndex")
+        if tag ~= nil then
+            local readOk, readValue = pcall(function()
+                return tag.CurrentCharIndex
             end)
-        end
-
-        local slotCount = 1
-        pcall(function()
-            slotCount = math.max(1, math.floor(reloadComponent.WeaponSlotCount))
-        end)
-
-        local maxAmmo = 0
-        pcall(function()
-            maxAmmo = math.max(0, math.floor(reloadComponent.MaxAmmo))
-        end)
-
-        if effectValue ~= nil and effectValue <= 0 then
-            return
-        end
-
-        for slot = 1, slotCount do
-            if reloadComponent.SetSlotAmmo ~= nil then
-                pcall(function()
-                    reloadComponent:SetSlotAmmo(slot, maxAmmo)
-                end)
+            if readOk == true and readValue ~= nil and math.floor(readValue) == 2 then
+                return "B"
             end
         end
-
-        pcall(function()
-            reloadComponent.CurrentAmmo = maxAmmo
-        end)
-        pcall(function()
-            reloadComponent.IsReloading = false
-        end)
+        return "A"
     end
 
     -- Shop lock policy is fixed to timer pause/resume only (no shop-near invincibility semantics).

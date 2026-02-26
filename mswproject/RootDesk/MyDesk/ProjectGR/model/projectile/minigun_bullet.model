@@ -126,7 +126,7 @@
           },
           "Value": true
         },
-                        {
+        {
           "TargetType": "script.ProjectileComponent",
           "Name": "ProjectileDataId",
           "ValueType": {
@@ -162,8 +162,8 @@
           },
           "Value": {
             "$type": "MOD.Core.MODVector2, MOD.Core",
-            "x": 4.36,
-            "y": 3.04
+            "x": 0.250224769,
+            "y": 0.16
           }
         },
         {
@@ -175,8 +175,22 @@
           },
           "Value": {
             "$type": "MOD.Core.MODVector2, MOD.Core",
-            "x": 0.5000001,
-            "y": 0.06999993
+            "x": -0.03466797,
+            "y": 0.0
+          }
+        },
+        {
+          "TargetType": "MOD.Core.TransformComponent",
+          "Name": "Scale",
+          "ValueType": {
+            "$type": "MODNativeType",
+            "type": "MOD.Core.MODVector3, MOD.Core, Version=26.1.0.0, Culture=neutral, PublicKeyToken=null"
+          },
+          "Value": {
+            "$type": "MOD.Core.MODVector3, MOD.Core",
+            "x": 2.0,
+            "y": 2.0,
+            "z": 1.0
           }
         }
       ],

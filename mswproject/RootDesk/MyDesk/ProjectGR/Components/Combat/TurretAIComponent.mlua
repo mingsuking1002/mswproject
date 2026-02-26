@@ -71,6 +71,15 @@ script TurretAIComponent extends Component
         if self._T.Runtime == nil then
             return
         end
+        local lobbyFlow = self:ResolveComponentSafe(self._T.Runtime.OwnerEntity, "LobbyFlowComponent", "IsLobbyActive")
+        if lobbyFlow ~= nil then
+            local lobbyOk, isLobby = pcall(function()
+                return lobbyFlow.IsLobbyActive
+            end)
+            if lobbyOk == true and isLobby == true then
+                return
+            end
+        end
 
         local nowSeconds = self:GetServerNowSeconds()
         if nowSeconds < self._T.NextFireAtSec then

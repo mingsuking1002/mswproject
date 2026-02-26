@@ -11,6 +11,11 @@ script ProjectileComponent extends Component
     property boolean ExplosionTriggered = false
     property boolean EnableTriggerStayFallback = true
     property boolean EnablePhysicsContactFallback = true
+    property boolean AreaExplodeOnLifetimeEnd = true
+    property boolean AreaExplodeOnRangeEnd = true
+    property boolean AreaExplodeOnEmptyPhysicsContact = true
+    property boolean DestroyOnImpact = true
+    property boolean HitOncePerTarget = true
 
     property Vector2 MoveDirection = Vector2.right
     property Vector2 StartPosition = Vector2.zero
@@ -29,6 +34,7 @@ script ProjectileComponent extends Component
         self._T.ProjectileRowById = {}
         self._T.PlacedProjectileBindTimerId = 0
         self._T.MissingPlacedProjectileRowWarned = {}
+        self._T.ProcessedTargets = {}
         self.ExplosionTriggered = false
         self:EnsureGRUtil()
     end
@@ -76,6 +82,7 @@ script ProjectileComponent extends Component
         self.OwnerEntity = ownerEntity
         self._T.ElapsedLifeTime = 0
         self._T.IsInitialized = true
+        self._T.ProcessedTargets = {}
         self.ExplosionTriggered = false
 
         local transform = self.Entity.TransformComponent
@@ -170,7 +177,11 @@ script ProjectileComponent extends Component
         self._T.ElapsedLifeTime = self._T.ElapsedLifeTime + delta
         if self._T.ElapsedLifeTime >= self.Lifetime then
             if self:IsAreaProjectile() == true then
-                self:ExplodeServer()
+                if self.AreaExplodeOnLifetimeEnd == true then
+                    self:ExplodeServer()
+                else
+                    self:DestroySelf()
+                end
             else
                 self:DestroySelf()
             end
@@ -218,7 +229,11 @@ script ProjectileComponent extends Component
             local currentPosition2D = Vector2(currentPosition.x, currentPosition.y)
             if Vector2.Distance(self.StartPosition, currentPosition2D) >= self.MaxRange then
                 if self:IsAreaProjectile() == true then
-                    self:ExplodeServer()
+                    if self.AreaExplodeOnRangeEnd == true then
+                        self:ExplodeServer()
+                    else
+                        self:DestroySelf()
+                    end
                 else
                     self:DestroySelf()
                 end
@@ -257,7 +272,11 @@ script ProjectileComponent extends Component
         local hitEntity = event.ContactedBodyEntity
         if hitEntity == nil or isvalid(hitEntity) == false then
             if self:IsAreaProjectile() == true then
-                self:ExplodeServer()
+                if self.AreaExplodeOnEmptyPhysicsContact == true then
+                    self:ExplodeServer()
+                else
+                    self:DestroySelf()
+                end
             else
                 self:DestroySelf()
             end
@@ -295,12 +314,47 @@ script ProjectileComponent extends Component
                 return
             end
 
-            hpSystem:ApplyDamage(self.Damage)
-            self:DestroySelf()
+            if self.HitOncePerTarget == true and self:HasProcessedTarget(damageTarget) == true then
+                if self.DestroyOnImpact == true then
+                    self:DestroySelf()
+                end
+                return
+            end
+
+            local impactDamage = self:ResolveDamageAgainstTargetServer(damageTarget, self.Damage)
+            if impactDamage > 0 then
+                hpSystem:ApplyDamage(impactDamage)
+            end
+            self:MarkProcessedTarget(damageTarget)
+            if self.DestroyOnImpact == true then
+                self:DestroySelf()
+            end
             return
         end
 
-        self:DestroySelf()
+        if self.DestroyOnImpact == true then
+            self:DestroySelf()
+        end
+    end
+
+    method boolean HasProcessedTarget(Entity targetEntity)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return false
+        end
+        if self._T.ProcessedTargets == nil then
+            self._T.ProcessedTargets = {}
+        end
+        return self._T.ProcessedTargets[targetEntity] == true
+    end
+
+    method void MarkProcessedTarget(Entity targetEntity)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+        if self._T.ProcessedTargets == nil then
+            self._T.ProcessedTargets = {}
+        end
+        self._T.ProcessedTargets[targetEntity] = true
     end
 
     @ExecSpace("ServerOnly")
@@ -361,13 +415,50 @@ script ProjectileComponent extends Component
 
             local hpSystem = self:ResolveComponentSafe(target, "HPSystemComponent", "CurrentHP")
             if hpSystem ~= nil then
+                local splashDamage = self:ResolveDamageAgainstTargetServer(target, self.Damage)
+                if splashDamage <= 0 then
+                    continue
+                end
                 pcall(function()
-                    hpSystem:ApplyDamage(self.Damage)
+                    hpSystem:ApplyDamage(splashDamage)
                 end)
             end
         end
 
         self:DestroySelf()
+    end
+
+    -- Owner fire component applies weapon-specific boss modifiers so projectile paths stay consistent with direct damage.
+    @ExecSpace("ServerOnly")
+    method integer ResolveDamageAgainstTargetServer(Entity targetEntity, integer baseDamage)
+        local damage = math.max(0, math.floor(baseDamage))
+        if damage <= 0 then
+            return 0
+        end
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return damage
+        end
+
+        if self.OwnerEntity == nil or isvalid(self.OwnerEntity) == false then
+            return damage
+        end
+
+        local fire = self:ResolveComponentSafe(self.OwnerEntity, "FireSystemComponent", "CurrentWeaponId")
+        if fire == nil or fire.ApplyBossDamageModifierServer == nil then
+            return damage
+        end
+
+        local final = damage
+        local modifyOk, modifyValue = pcall(function()
+            return fire:ApplyBossDamageModifierServer(damage, targetEntity)
+        end)
+        if modifyOk == true and modifyValue ~= nil then
+            local parsed = tonumber(modifyValue)
+            if parsed ~= nil then
+                final = math.max(0, math.floor(parsed))
+            end
+        end
+        return final
     end
 
     @ExecSpace("ServerOnly")

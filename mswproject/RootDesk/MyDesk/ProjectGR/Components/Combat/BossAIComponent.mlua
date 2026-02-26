@@ -1,0 +1,275 @@
+@Component
+script BossAIComponent extends Component
+
+    property number AttackInterval = 2.0
+    property string SummonMonsterId = ""
+    property number SpeedBoostMultiplier = 2.0
+    property number SlowdownRadius = 3.0
+    property number GungnirDamageRatio = 0.5
+    property string BossDataTableName = "BossData"
+    property integer BossStageId = 1
+    property boolean EnableDebugLogs = true
+
+    -- Runtime cache keeps summon list and timer id for deterministic cleanup on boss death.
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self:EnsureGRUtil()
+        self._T.AttackTimerId = 0
+        self._T.SummonedMonsters = {}
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self:StartAttackLoopServer()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self._T.AttackTimerId ~= nil and self._T.AttackTimerId > 0 then
+            _TimerService:ClearTimer(self._T.AttackTimerId)
+            self._T.AttackTimerId = 0
+        end
+        self._T.SummonedMonsters = {}
+    end
+
+    -- Attack loop uses timer callbacks to avoid expensive per-frame boss logic.
+    @ExecSpace("ServerOnly")
+    method void StartAttackLoopServer()
+        if self._T.AttackTimerId ~= nil and self._T.AttackTimerId > 0 then
+            return
+        end
+
+        local interval = math.max(0.1, self.AttackInterval)
+        local callback = function()
+            self:AttackTickServer()
+        end
+        self._T.AttackTimerId = _TimerService:SetTimerRepeat(callback, interval, 0)
+    end
+
+    -- Tick resolves owner player and spawn component, then performs summon + slowdown update.
+    @ExecSpace("ServerOnly")
+    method void AttackTickServer()
+        local ownerPlayer = self:GetOwnerPlayerEntityServer()
+        if ownerPlayer == nil then
+            return
+        end
+
+        local lobbyFlow = self:ResolveComponentSafe(ownerPlayer, "LobbyFlowComponent", "IsLobbyActive")
+        if lobbyFlow ~= nil then
+            local lobbyOk, isLobby = pcall(function()
+                return lobbyFlow.IsLobbyActive
+            end)
+            if lobbyOk == true and isLobby == true then
+                return
+            end
+        end
+
+        local spawnComponent = self:ResolveComponentSafe(ownerPlayer, "MonsterSpawnComponent", "IsSpawnActive")
+        if spawnComponent == nil then
+            return
+        end
+
+        local playerPos3 = ownerPlayer.TransformComponent.WorldPosition
+        if playerPos3 == nil then
+            return
+        end
+        local spawnPos = self:CalcViewportSpawnPosition(playerPos3)
+
+        local row = nil
+        if spawnComponent.GetMonsterRowByIdServer ~= nil then
+            local rowOk, rowValue = pcall(function()
+                return spawnComponent:GetMonsterRowByIdServer(self.SummonMonsterId)
+            end)
+            if rowOk == true then
+                row = rowValue
+            end
+        end
+        if row == nil then
+            return
+        end
+
+        local spawned = nil
+        if spawnComponent.SpawnMonsterByRow ~= nil then
+            local spawnOk, spawnValue = pcall(function()
+                return spawnComponent:SpawnMonsterByRow(row, spawnPos, false)
+            end)
+            if spawnOk == true then
+                spawned = spawnValue
+            end
+        end
+
+        if spawned ~= nil and isvalid(spawned) == true then
+            local movement = self:ResolveComponentSafe(spawned, "MovementComponent", "MoveSpeed")
+            if movement ~= nil then
+                pcall(function()
+                    movement.SpeedMultiplier = self.SpeedBoostMultiplier
+                end)
+            end
+            table.insert(self._T.SummonedMonsters, { Entity = spawned, Boosted = true })
+        end
+
+        self:CheckSlowdownServer(ownerPlayer)
+    end
+
+    -- Summoned monsters return to base speed when close to player so boss pressure naturally oscillates.
+    @ExecSpace("ServerOnly")
+    method void CheckSlowdownServer(Entity playerEntity)
+        if playerEntity == nil or isvalid(playerEntity) == false then
+            return
+        end
+        if self._T.SummonedMonsters == nil then
+            self._T.SummonedMonsters = {}
+            return
+        end
+
+        local playerPos = playerEntity.TransformComponent.WorldPosition
+        if playerPos == nil then
+            return
+        end
+
+        local nextList = {}
+        local radius = math.max(0, self.SlowdownRadius)
+        local radiusSqr = radius * radius
+
+        for _, info in pairs(self._T.SummonedMonsters) do
+            if info == nil or info.Entity == nil or isvalid(info.Entity) ~= true then
+                continue
+            end
+
+            local entityPos = info.Entity.TransformComponent.WorldPosition
+            if entityPos == nil then
+                table.insert(nextList, info)
+                continue
+            end
+
+            if info.Boosted == true then
+                local delta = Vector2(entityPos.x - playerPos.x, entityPos.y - playerPos.y)
+                if delta:SqrMagnitude() <= radiusSqr then
+                    local movement = self:ResolveComponentSafe(info.Entity, "MovementComponent", "MoveSpeed")
+                    if movement ~= nil then
+                        pcall(function()
+                            movement.SpeedMultiplier = 1.0
+                        end)
+                    end
+                    info.Boosted = false
+                end
+            end
+
+            table.insert(nextList, info)
+        end
+
+        self._T.SummonedMonsters = nextList
+    end
+
+    method Vector3 CalcViewportSpawnPosition(Vector3 playerPos)
+        local angle = math.random() * 2 * math.pi
+        local radius = 8
+        return Vector3(
+            playerPos.x + (math.cos(angle) * radius),
+            playerPos.y + (math.sin(angle) * radius),
+            playerPos.z
+        )
+    end
+
+    -- Player resolver uses same-map owner entity so boss AI targets current run player only.
+    @ExecSpace("ServerOnly")
+    method Entity GetOwnerPlayerEntityServer()
+        local mapEntity = self.Entity.CurrentMap
+        local users = _UserService.UserEntities
+        if users == nil then
+            return nil
+        end
+
+        for _, userEntity in pairs(users) do
+            if userEntity == nil or isvalid(userEntity) ~= true then
+                continue
+            end
+            if mapEntity ~= nil then
+                local userMap = userEntity.CurrentMap
+                if userMap == nil or isvalid(userMap) ~= true or userMap ~= mapEntity then
+                    continue
+                end
+            end
+            return userEntity
+        end
+
+        return nil
+    end
+
+    -- Utility bootstrap first; fallback local lookup remains for partially configured entities.
+    method void EnsureGRUtil()
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, utilApi = pcall(function()
+                return utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and utilApi ~= nil then
+                self._T.GRUtil = utilApi
+            end
+        end
+    end
+
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+end

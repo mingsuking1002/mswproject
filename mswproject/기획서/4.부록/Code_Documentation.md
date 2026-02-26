@@ -2825,3 +2825,287 @@
 | Smite cast without trigger contact | No damage is applied. |
 | Trigger enter/stay with monster | Damage is applied by `ProjectileComponent` server-side impact path. |
 | Smite with splash (`SplashSize > 0`) | Spawned hit-tile uses `area_projectile`, and splash damage executes after trigger-based impact. |
+
+## 2026-02-26 Smite Projectile-ID Behavior Hotfix (`gungnir_pt`, `deathperado_pt`)
+
+### FireSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Projectile-ID branch | `SpawnSmiteHitProjectileServer()` now branches by `CurrentProjectileId` and explicitly handles `deathperado_pt`. |
+| Gungnir visual duplicate fix | Added `PrepareSmiteHitProjectileEntityServer()` to disable renderers on smite hit projectile so gameplay hit-tile is invisible and cast visual is not duplicated. |
+| Deathperado damage mode | `deathperado_pt` now uses trigger-zone single-projectile multi-hit mode (not global area explode). |
+
+### ProjectileComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ProjectileComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ProjectileComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Impact/lifecycle control flags | Added `AreaExplodeOnLifetimeEnd`, `AreaExplodeOnRangeEnd`, `AreaExplodeOnEmptyPhysicsContact`, `DestroyOnImpact`, `HitOncePerTarget`. |
+| Target dedupe | Added processed-target tracking (`HasProcessedTarget`, `MarkProcessedTarget`) so zone-hit projectiles can damage each monster once. |
+| Non-destroy mode | `DestroyOnImpact=false` allows short-lived trigger zones to keep checking overlaps without disappearing on first contact. |
+
+## 2026-02-26 Monster Hit Cooldown Guard (0.01s) for Double-Damage Suppression
+
+### HPSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Monster-only cooldown props | Added `EnableMonsterHitCooldown` (default `true`) and `MonsterHitCooldownDuration` (default `0.01`). |
+| Damage gate | `ApplyDamage()` now checks `IsMonsterHitCooldownActiveServer()` before processing monster damage. |
+| Cooldown apply | On successful non-lethal monster hit, `ApplyMonsterHitCooldownServer()` writes server-time block window. |
+| Scope policy | Player invincibility (`IsInvincible`, `HitInvincibleDuration`) path is unchanged; cooldown applies only to monsters. |
+
+## 2026-02-26 Project GR 7-SPEC Batch (Timer/Elite/Round/Boss/DeathReset/MagPotion/Passive)
+
+## [RoundTransitionComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/RoundTransitionComponent.mlua`
+- **수정일:** `2026-02-26`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `Stage2BackgroundRuid` | string | 2스테이지 전환 시 적용할 배경 RUID |
+| `PortalInteractRadius` | number | F키 포탈 상호작용 거리 |
+| `LoadingPanelPath` | string | 전환 중 표시되는 로딩 패널 경로 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `SpawnPortalAtPositionServer` | `deathPos: Vector3` | void | 보스 사망 위치에 포탈 생성(또는 위치-only 상호작용 저장) |
+| `RequestStageTransitionServer` | void | void | F키 입력 기반 서버 권위 전환 요청 처리 |
+| `ExecuteStageTransitionServer` | void | void | Stage2 전환, 배경 변경, 스폰 재개, 로딩 UI 토글 |
+
+## [BossAIComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/BossAIComponent.mlua`
+- **수정일:** `2026-02-26`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `AttackInterval` | number | 보스 소환 패턴 주기 |
+| `SummonMonsterId` | string | 보스가 소환할 몬스터 ID |
+| `SpeedBoostMultiplier` | number | 소환 직후 몬스터 가속 배율 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `StartAttackLoopServer` | void | void | 반복 패턴 타이머 시작 |
+| `AttackTickServer` | void | void | 몬스터 소환 + 감속 반경 체크 수행 |
+| `CheckSlowdownServer` | `playerEntity: Entity` | void | 플레이어 근접 시 가속 해제 |
+
+## [InventoryComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/InventoryComponent.mlua`
+- **수정일:** `2026-02-26`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `MagazineA` | integer(Sync) | 캐릭터 A 탄창 보유량 |
+| `MagazineB` | integer(Sync) | 캐릭터 B 탄창 보유량 |
+| `PotionCount` | integer(Sync) | 포션 보유량 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `ConsumeMagazineServer` | `charId: string` | `boolean` | 재장전 시작 시 탄창 1개 소모/실패 반환 |
+| `AddMagazineServer` | `charId: string`, `amount: integer` | void | 탄창 아이템 누적 반영 |
+| `RequestUsePotionServer` | void | void | E키 요청 기반 포션 사용 및 HP 회복 |
+
+## [PassiveSystemComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/PassiveSystemComponent.mlua`
+- **수정일:** `2026-02-26`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `PassiveDataTableName` | string | 패시브 데이터 테이블명 |
+| `AcquiredPassiveCount` | integer(Sync) | 획득 패시브 수량 |
+| `MaxPassiveSlots` | integer | 최대 패시브 슬롯 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `GetNextPassiveCandidateServer` | void | `table` | 상점 슬롯에 표시할 다음 후보 패시브 반환 |
+| `ApplyRandomPassiveServer` | `gradeHint: string`, `passiveIdHint: string` | `boolean` | 구매된 패시브 실제 적용 |
+| `ResetPassivesServer` | void | void | 런 종료 시 패시브/누적 스탯 초기화 |
+
+## [MonsterSpawnComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.mlua`
+- **수정일:** `2026-02-26`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `_T.EliteSpawnedSet` | table | 엘리트 1회 스폰 보장 집합 |
+| `_T.StageStartElapsedTime` | number | 스테이지 기준 스폰 시간 오프셋 |
+| `IsBossPhase` | boolean(Sync) | 보스 페이즈 여부 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `IsEliteRow` | `row: UserDataRow` | `boolean` | 엘리트 행 판별 |
+| `CheckEliteSpawnsServer` | void | void | monitor tick에서 엘리트 시간/1회 스폰 처리 |
+| `OnBossDefeatedServer` | `deathPos: Vector3` | void | Stage별 보스 처치 분기(상점/포탈/Infinite popup) |
+
+## [LobbyFlowComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.mlua`
+- **수정일:** `2026-02-26`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `IsLobbyActive` | boolean(Sync) | 로비/게임플레이 상태 플래그 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `TryResetInventoryServer` | void | void | 런 종료 시 인벤토리 초기화 |
+| `TryResetPassivesServer` | void | void | 런 종료 시 패시브 초기화 |
+| `TryResumeMonsterSpawnServer` | void | void | 런 시작 후 스폰 재개 |
+
+## [HPSystemComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/HPSystemComponent.mlua`
+- **수정일:** `2026-02-26`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `IsDead` | boolean(Sync) | 사망 상태 동기화 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `EvaluateDeath` | void | void | 사망 시 이동/공격 잠금 및 타이머 Pause 처리 |
+
+## [ReloadComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ReloadComponent.mlua`
+- **수정일:** `2026-02-26`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `CurrentAmmo` | integer(Sync) | 현재 장전 탄약 |
+| `IsReloading` | boolean(Sync) | 재장전 진행 상태 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `StartReloadForSlot` | `slot: integer` | void | 재장전 시작 시 `InventoryComponent` 탄창 소모 게이트 적용 |
+
+## [ItemDropManagerComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ItemDropManagerComponent.mlua`
+- **수정일:** `2026-02-26`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `MagnetRadius` | number | 아이템 자석 반경 |
+| `PickupRadius` | number | 자동 픽업 반경 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `OnUpdate` | `dt: number` | void | 로비 중 자석/픽업 요청 중지, 에어본 보간은 유지 |
+| `ApplyItemPickupEffectServer` | `runtime: table` | void | `a_mag/b_mag/heal_hp`를 인벤토리 누적으로 반영 |
+
+## [ShopManagerComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/ShopManagerComponent.mlua`
+- **수정일:** `2026-02-26`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `PassivePrice` | integer | 패시브 기본 가격 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `OpenBossRewardShopServer` | void | void | 보스 보상 상점 오픈 래퍼 |
+| `ResolveCurrentCharIdServer` | void | `string` | 탄창 구매 대상 캐릭터 결정 |
+| `BuildSlotDataServer` | `slotType: string` | `table` | 패시브 후보 선반영 슬롯 생성 |
+
+## [FireSystemComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.mlua`
+- **수정일:** `2026-02-26`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `PassiveFlatAttack` | integer(Sync) | 패시브 고정 공격력 보정 |
+| `PassiveIncreasePercent` | number(Sync) | 패시브 공격력 퍼센트 보정 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `ApplyBossDamageModifierServer` | `baseDamage: integer`, `targetEntity: Entity` | `integer` | 궁니르 보스 반감(0.5) 적용 |
+| `NotifyPassiveProjectileFiredServer` | void | void | 발사 성공 시 PassiveSystem 카운트 훅 호출 |
+
+## [ProjectileComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ProjectileComponent.mlua`
+- **수정일:** `2026-02-26`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `Damage` | integer | 투사체 기본 피해 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `ResolveDamageAgainstTargetServer` | `targetEntity: Entity`, `baseDamage: integer` | `integer` | 타격 직전 FireSystem 보스 반감 보정 적용 |
+
+## [TagManagerComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/TagManagerComponent.mlua`
+- **수정일:** `2026-02-26`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `_T.CharacterStateByIndex` | table | 캐릭터별 상태 스냅샷 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `CaptureCurrentCharacterState` | void | `table` | `state.MagazineCount` 포함 런타임 상태 캡처 |
+| `ApplyCharacterState` | `state: table` | void | 태그 스왑 시 캐릭터별 탄창 복원 |
+
+## [InGameHUDComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/UI/InGameHUDComponent.mlua`
+- **수정일:** `2026-02-26`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `PotionTextPath` | string | 포션 텍스트 UI 경로 |
+| `MagazineTextPath` | string | 탄창 텍스트 UI 경로 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `RefreshInventoryTextsClient` | void | void | `포션 xN`, `탄창 xN` 표시 갱신 |
+
+## [Map01BootstrapComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
+- **수정일:** `2026-02-26`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `AutoAttachMissingComponents` | boolean | 플레이어 필수 컴포넌트 자동 부착 활성화 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `AttachRequiredComponentsServer` | `playerEntity: Entity` | void | `InventoryComponent`, `PassiveSystemComponent`, `RoundTransitionComponent` 부착 포함 |

@@ -64,6 +64,15 @@ script PenaltySystemComponent extends Component
         end
 
         local callback = function()
+            local lobbyFlow = self:ResolveComponentSafe(self.Entity, "LobbyFlowComponent", "IsLobbyActive")
+            if lobbyFlow ~= nil then
+                local lobbyOk, isLobby = pcall(function()
+                    return lobbyFlow.IsLobbyActive
+                end)
+                if lobbyOk == true and isLobby == true then
+                    return
+                end
+            end
             self:CheckMonsterCountServer()
         end
         self._T.MonitorTimerId = _TimerService:SetTimerRepeat(callback, interval, 0)

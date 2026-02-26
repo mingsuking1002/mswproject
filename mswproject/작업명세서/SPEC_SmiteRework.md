@@ -11,6 +11,10 @@
 - `2026-02-26` `🟢 완료` `deathperado -> self`, 그 외 `cursor` 임시 하드코딩 반영
 - `2026-02-26` `🔵 진행중` Smite 데미지 적용을 trigger 접촉 기반으로 전환 시작
 - `2026-02-26` `🟢 완료` Smite 직접 좌표 데미지 제거, trigger hit projectile 접촉 시에만 데미지 적용
+- `2026-02-26` `🔵 진행중` `gungnir_pt` 중복 시각 실행 및 `deathperado_pt` 전체 범위 타격 이상 동작 보정 시작
+- `2026-02-26` `🟢 완료` `gungnir_pt` 히트타일 비가시화, `deathperado_pt`를 trigger 접촉 기반 multi-hit(전체 즉발 폭발 제거)로 전환
+- `2026-02-26` `🔵 진행중` 몬스터 피격 이중 데미지 억제를 위한 0.01초 히트 쿨다운 연동 시작
+- `2026-02-26` `🟢 완료` `HPSystemComponent` 몬스터 전용 0.01초 피격 쿨다운 적용으로 smite 중복 타격 억제
 
 ---
 
@@ -123,6 +127,9 @@ end
 - `SmiteAttackServer`는 더 이상 좌표 즉발 데미지를 직접 처리하지 않는다.
 - `SmiteDamageDelay`는 지연 데미지가 아니라, 지연된 smite hit projectile 스폰 타이밍으로 동작한다.
 - `CanFireServer`에서 smite도 다른 projectile 계열과 동일하게 `ProjectileModelId` 또는 `GRProjectileTemplate` 구성이 필요하다.
+- `CurrentProjectileId` 기준 보정:
+  - `gungnir_pt`: 히트 프로젝트타일 렌더러를 비활성화하여 비주얼 2중 실행처럼 보이는 현상 제거
+  - `deathperado_pt`: area explode 방식 대신 trigger 접촉형 single multi-hit(엔티티당 1회)로 처리
 
 ---
 
@@ -160,6 +167,7 @@ MCP 이용해서 직접 workspace에서 작업해줘야하는 방식
 * **WeaponData 참조 필수**: `smite_target_mode` 컬럼으로 판별. ID 하드코딩 금지
 * **deathperado**: `smite_target_mode = "self"` → 플레이어 좌표
 * **궁니르 단일 타격 유지**: `SplashSize == 0`이면 single projectile trigger 접촉 1타격
-* **데스페라도 범위 타격 유지**: `SplashSize > 0`이면 area projectile trigger 접촉 후 반경 타격
+* **데스페라도 보정**: `deathperado_pt`는 trigger 접촉한 대상만 엔티티당 1회 타격(전체 즉발 폭발 비활성)
+* **중복 피해 억제**: 몬스터는 `HPSystemComponent`에서 피격 후 `0.01초` 동안 추가 피격을 무시
 
 ---

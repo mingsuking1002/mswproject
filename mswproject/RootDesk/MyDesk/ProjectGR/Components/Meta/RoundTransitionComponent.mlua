@@ -1,0 +1,323 @@
+@Component
+script RoundTransitionComponent extends Component
+
+    property string Stage2BackgroundRuid = ""
+    property number PortalInteractRadius = 2.0
+    property number FakeLoadingDuration = 1.5
+    property string PortalModelId = ""
+    property string LoadingPanelPath = "/ui/DefaultGroup/GRLoadingPanel"
+    property boolean EnableDebugLogs = true
+
+    -- Runtime cache keeps portal and transition guard state centralized across input/server callbacks.
+    method void OnInitialize()
+        self:EnsureGRUtil()
+        self._T.PortalEntity = nil
+        self._T.PortalPosition = nil
+        self._T.IsTransitioning = false
+    end
+
+    -- F key only requests transition; authoritative validation stays on server method.
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        if event == nil then
+            return
+        end
+        if event.key ~= KeyboardKey.F then
+            return
+        end
+
+        self:RequestStageTransitionServer()
+    end
+
+    -- Request entry checks ownership and distance so transition cannot be spoofed from arbitrary clients.
+    @ExecSpace("Server")
+    method void RequestStageTransitionServer()
+        if self:IsOwnerRequest(senderUserId) ~= true then
+            return
+        end
+        if self._T.IsTransitioning == true then
+            return
+        end
+        if self._T.PortalEntity == nil or isvalid(self._T.PortalEntity) ~= true then
+            return
+        end
+        if self._T.PortalPosition == nil then
+            return
+        end
+
+        local playerPos = self.Entity.TransformComponent.WorldPosition
+        if playerPos == nil then
+            return
+        end
+
+        local portalPos = self._T.PortalPosition
+        local delta = Vector2(playerPos.x - portalPos.x, playerPos.y - portalPos.y)
+        local radius = math.max(0, self.PortalInteractRadius)
+        if delta:SqrMagnitude() > (radius * radius) then
+            return
+        end
+
+        self:ExecuteStageTransitionServer()
+    end
+
+    -- Boss death caller spawns a visual-only portal entity and stores interaction position.
+    @ExecSpace("ServerOnly")
+    method void SpawnPortalAtPositionServer(Vector3 deathPos)
+        if deathPos == nil then
+            return
+        end
+
+        self:ClearPortalServer()
+        self._T.PortalPosition = Vector2(deathPos.x, deathPos.y)
+
+        if self.PortalModelId == nil or self.PortalModelId == "" then
+            if self.EnableDebugLogs == true then
+                log_warning("[RoundTransitionComponent] PortalModelId is empty. using position-only interaction.")
+            end
+            return
+        end
+
+        local parentEntity = self.Entity.CurrentMap
+        if parentEntity == nil or isvalid(parentEntity) == false then
+            parentEntity = self.Entity
+        end
+
+        local portalEntity = nil
+        local spawnOk, spawnResult = pcall(function()
+            return _SpawnService:SpawnByModelId(self.PortalModelId, "StagePortal", deathPos, parentEntity)
+        end)
+        if spawnOk == true then
+            portalEntity = spawnResult
+        end
+        if portalEntity == nil or isvalid(portalEntity) ~= true then
+            if self.EnableDebugLogs == true then
+                log_warning("[RoundTransitionComponent] Portal spawn failed.")
+            end
+            return
+        end
+
+        self._T.PortalEntity = portalEntity
+
+        if self.EnableDebugLogs == true then
+            log("[RoundTransitionComponent][DEBUG] Portal spawned at x=", deathPos.x, ", y=", deathPos.y)
+        end
+    end
+
+    -- Transition pipeline keeps timer display elapsed value and resets only stage-local spawn baseline.
+    @ExecSpace("ServerOnly")
+    method void ExecuteStageTransitionServer()
+        if self._T.IsTransitioning == true then
+            return
+        end
+        self._T.IsTransitioning = true
+
+        local spawn = self:ResolveComponentSafe(self.Entity, "MonsterSpawnComponent", "IsSpawnActive")
+        local timer = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "ElapsedTime")
+
+        if spawn ~= nil then
+            if spawn.KillAllMonstersServer ~= nil then
+                pcall(function()
+                    spawn:KillAllMonstersServer()
+                end)
+            end
+            if spawn.StopSpawning ~= nil then
+                pcall(function()
+                    spawn:StopSpawning()
+                end)
+            end
+        end
+
+        self:ShowBlackLoadingUIClient()
+
+        local delay = math.max(0, self.FakeLoadingDuration)
+        local callback = function()
+            local elapsed = 0
+            if timer ~= nil then
+                local readOk, readValue = pcall(function()
+                    return timer.ElapsedTime
+                end)
+                if readOk == true and readValue ~= nil then
+                    elapsed = math.max(0, readValue)
+                end
+            end
+
+            local mapEntity = self.Entity.CurrentMap
+            if mapEntity ~= nil and isvalid(mapEntity) == true and self.Stage2BackgroundRuid ~= nil and self.Stage2BackgroundRuid ~= "" then
+                local bg = mapEntity.BackgroundComponent
+                if bg ~= nil and bg.ChangeBackgroundByTemplateRUID ~= nil then
+                    pcall(function()
+                        bg:ChangeBackgroundByTemplateRUID(self.Stage2BackgroundRuid)
+                    end)
+                end
+            end
+
+            if timer ~= nil then
+                pcall(function()
+                    timer.CurrentStageId = 2
+                end)
+            end
+
+            if spawn ~= nil then
+                pcall(function()
+                    spawn.IsBossPhase = false
+                end)
+                if spawn._T ~= nil then
+                    spawn._T.StageStartElapsedTime = elapsed
+                    spawn._T.EliteSpawnedSet = {}
+                end
+                if spawn.RefreshSpawnStateServer ~= nil then
+                    pcall(function()
+                        spawn:RefreshSpawnStateServer()
+                    end)
+                end
+                if spawn.StartSpawning ~= nil then
+                    pcall(function()
+                        spawn:StartSpawning()
+                    end)
+                end
+            end
+
+            self:ClearPortalServer()
+            self:HideBlackLoadingUIClient()
+            self._T.IsTransitioning = false
+        end
+
+        _TimerService:SetTimerOnce(callback, delay)
+    end
+
+    @ExecSpace("Client")
+    method void ShowBlackLoadingUIClient()
+        local panel = self:ResolveLoadingPanelClient()
+        if panel == nil then
+            return
+        end
+        pcall(function()
+            panel.Enable = true
+            panel.Visible = true
+        end)
+    end
+
+    @ExecSpace("Client")
+    method void HideBlackLoadingUIClient()
+        local panel = self:ResolveLoadingPanelClient()
+        if panel == nil then
+            return
+        end
+        pcall(function()
+            panel.Enable = false
+            panel.Visible = false
+        end)
+    end
+
+    @ExecSpace("ClientOnly")
+    method Entity ResolveLoadingPanelClient()
+        if self.LoadingPanelPath == nil or self.LoadingPanelPath == "" then
+            return nil
+        end
+        local panel = _EntityService:GetEntityByPath(self.LoadingPanelPath)
+        if panel == nil or isvalid(panel) ~= true then
+            return nil
+        end
+        return panel
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ClearPortalServer()
+        local portal = self._T.PortalEntity
+        if portal ~= nil and isvalid(portal) == true then
+            pcall(function()
+                _EntityService:Destroy(portal)
+            end)
+        end
+        self._T.PortalEntity = nil
+        self._T.PortalPosition = nil
+    end
+
+    method boolean IsOwnerRequest(string requestUserId)
+        local playerComponent = self.Entity.PlayerComponent
+        if playerComponent == nil then
+            return true
+        end
+        if requestUserId == nil or requestUserId == "" then
+            return true
+        end
+        return requestUserId == playerComponent.UserId
+    end
+
+    -- Utility bootstrap first; fallback local lookup keeps component resilient in partially configured maps.
+    method void EnsureGRUtil()
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, utilApi = pcall(function()
+                return utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and utilApi ~= nil then
+                self._T.GRUtil = utilApi
+            end
+        end
+    end
+
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+end

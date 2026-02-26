@@ -1,0 +1,350 @@
+@Component
+script InventoryComponent extends Component
+
+    @Sync
+    property integer MagazineA = 0
+    @Sync
+    property integer MagazineB = 0
+    @Sync
+    property integer PotionCount = 0
+    property integer MaxMagazine = 99
+    property integer MaxPotion = 10
+    property integer PotionHealAmount = 0
+    property string ItemDataTableName = "ItemData"
+    property string MagazineAItemId = "a_mag"
+    property string MagazineBItemId = "b_mag"
+    property string PotionItemId = "heal_hp"
+    property number NoAmmoMessageDuration = 1.0
+    property string NoAmmoTextPath = "/ui/DefaultGroup/GRNoAmmoText"
+    property boolean EnableDebugLogs = true
+
+    @ExecSpace("ServerOnly")
+    method void OnInitialize()
+        self:EnsureGRUtil()
+        self.MagazineA = 0
+        self.MagazineB = 0
+        self.PotionCount = 0
+        self._T.NoAmmoHideTimerId = 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self:LoadItemDataServer()
+    end
+
+    -- E key requests server-authoritative potion consume.
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        if event == nil then
+            return
+        end
+        if event.key ~= KeyboardKey.E then
+            return
+        end
+        self:RequestUsePotionServer()
+    end
+
+    @ExecSpace("Server")
+    method void RequestUsePotionServer()
+        if self:IsOwnerRequest(senderUserId) ~= true then
+            return
+        end
+        if self.PotionCount <= 0 then
+            return
+        end
+
+        self.PotionCount = math.max(0, self.PotionCount - 1)
+        local hp = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "CurrentHP")
+        if hp ~= nil and hp.Heal ~= nil then
+            local healAmount = math.max(1, math.floor(self.PotionHealAmount))
+            pcall(function()
+                hp:Heal(healAmount)
+            end)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean ConsumeMagazineServer(string charId)
+        local finalChar = charId
+        if finalChar == nil or finalChar == "" then
+            finalChar = self:ResolveCurrentCharIdServer()
+        end
+
+        if finalChar == "B" then
+            if self.MagazineB <= 0 then
+                self:ShowNoAmmoMessageClient()
+                return false
+            end
+            self.MagazineB = math.max(0, self.MagazineB - 1)
+            return true
+        end
+
+        if self.MagazineA <= 0 then
+            self:ShowNoAmmoMessageClient()
+            return false
+        end
+        self.MagazineA = math.max(0, self.MagazineA - 1)
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void AddMagazineServer(string charId, integer amount)
+        local addAmount = math.max(0, math.floor(amount))
+        if addAmount <= 0 then
+            return
+        end
+
+        local finalChar = charId
+        if finalChar == nil or finalChar == "" then
+            finalChar = self:ResolveCurrentCharIdServer()
+        end
+
+        if finalChar == "B" then
+            self.MagazineB = math.min(self.MaxMagazine, self.MagazineB + addAmount)
+            return
+        end
+        self.MagazineA = math.min(self.MaxMagazine, self.MagazineA + addAmount)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void AddPotionServer(integer amount)
+        local addAmount = math.max(0, math.floor(amount))
+        if addAmount <= 0 then
+            return
+        end
+        self.PotionCount = math.min(self.MaxPotion, self.PotionCount + addAmount)
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer GetCurrentCharMagazine()
+        local charId = self:ResolveCurrentCharIdServer()
+        if charId == "B" then
+            return self.MagazineB
+        end
+        return self.MagazineA
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SetCurrentCharMagazine(integer amount)
+        local value = math.max(0, math.floor(amount))
+        local charId = self:ResolveCurrentCharIdServer()
+        if charId == "B" then
+            self.MagazineB = math.min(self.MaxMagazine, value)
+            return
+        end
+        self.MagazineA = math.min(self.MaxMagazine, value)
+    end
+
+    @ExecSpace("ServerOnly")
+    method string ResolveCurrentCharIdServer()
+        local tag = self:ResolveComponentSafe(self.Entity, "TagManagerComponent", "CurrentCharIndex")
+        if tag ~= nil then
+            local idx = 1
+            local readOk, readValue = pcall(function()
+                return tag.CurrentCharIndex
+            end)
+            if readOk == true and readValue ~= nil then
+                idx = math.max(1, math.floor(readValue))
+            end
+            if idx == 2 then
+                return "B"
+            end
+        end
+        return "A"
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ResetInventoryServer()
+        self.MagazineA = 0
+        self.MagazineB = 0
+        self.PotionCount = 0
+    end
+
+    @ExecSpace("Client")
+    method void ShowNoAmmoMessageClient()
+        local textEntity = _EntityService:GetEntityByPath(self.NoAmmoTextPath)
+        if textEntity ~= nil and isvalid(textEntity) == true and textEntity.TextComponent ~= nil then
+            pcall(function()
+                textEntity.TextComponent.Text = "탄약이 없습니다"
+                textEntity.Enable = true
+                textEntity.Visible = true
+            end)
+        end
+
+        if self._T.NoAmmoHideTimerId ~= nil and self._T.NoAmmoHideTimerId > 0 then
+            _TimerService:ClearTimer(self._T.NoAmmoHideTimerId)
+            self._T.NoAmmoHideTimerId = 0
+        end
+
+        local delay = math.max(0.1, self.NoAmmoMessageDuration)
+        local hide = function()
+            self._T.NoAmmoHideTimerId = 0
+            if textEntity ~= nil and isvalid(textEntity) == true then
+                pcall(function()
+                    textEntity.Enable = false
+                    textEntity.Visible = false
+                end)
+            end
+        end
+        self._T.NoAmmoHideTimerId = _TimerService:SetTimerOnce(hide, delay)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadItemDataServer()
+        if self.ItemDataTableName == nil or self.ItemDataTableName == "" then
+            return
+        end
+        local tableData = nil
+        local loadOk, loadValue = pcall(function()
+            return _DataService:GetTable(self.ItemDataTableName)
+        end)
+        if loadOk == true then
+            tableData = loadValue
+        end
+        if tableData == nil then
+            return
+        end
+
+        local rows = nil
+        local rowsOk, rowsValue = pcall(function()
+            return tableData:GetAllRow()
+        end)
+        if rowsOk == true then
+            rows = rowsValue
+        end
+        if rows == nil then
+            return
+        end
+
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+            local effectType = string.lower(self:GetRowString(row, "effect_type", ""))
+            if effectType == string.lower(self.PotionItemId) then
+                local amount = self:GetRowInteger(row, "effect_value_1", self.PotionHealAmount)
+                self.PotionHealAmount = math.max(0, amount)
+                return
+            end
+        end
+    end
+
+    method string GetRowString(any row, string columnName, string fallbackValue)
+        local fallback = fallbackValue
+        if fallback == nil then
+            fallback = ""
+        end
+        if row == nil then
+            return fallback
+        end
+        local readOk, readValue = pcall(function()
+            return row:GetItem(columnName)
+        end)
+        if readOk ~= true or readValue == nil then
+            return fallback
+        end
+        local text = tostring(readValue)
+        text = string.gsub(text, "^%s+", "")
+        text = string.gsub(text, "%s+$", "")
+        if text == "" then
+            return fallback
+        end
+        return text
+    end
+
+    method integer GetRowInteger(any row, string columnName, integer fallbackValue)
+        local text = self:GetRowString(row, columnName, "")
+        if text == "" then
+            return math.floor(fallbackValue)
+        end
+        local parsed = tonumber(text)
+        if parsed == nil then
+            return math.floor(fallbackValue)
+        end
+        return math.floor(parsed)
+    end
+
+    method boolean IsOwnerRequest(string requestUserId)
+        local playerComponent = self.Entity.PlayerComponent
+        if playerComponent == nil then
+            return true
+        end
+        if requestUserId == nil or requestUserId == "" then
+            return true
+        end
+        return requestUserId == playerComponent.UserId
+    end
+
+    method void EnsureGRUtil()
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, utilApi = pcall(function()
+                return utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and utilApi ~= nil then
+                self._T.GRUtil = utilApi
+            end
+        end
+    end
+
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+        return component
+    end
+end

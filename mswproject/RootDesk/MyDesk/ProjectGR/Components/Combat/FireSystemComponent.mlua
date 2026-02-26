@@ -140,6 +140,7 @@ script FireSystemComponent extends Component
             return
         end
 
+        self:NotifyPassiveProjectileFiredServer()
         self:NotifyWeaponExpGainServer(self.CurrentWeaponId, 1)
         self:StartFireCooldown()
     end
@@ -667,9 +668,17 @@ script FireSystemComponent extends Component
             return false
         end
 
+        self:PrepareSmiteHitProjectileEntityServer(projectileEntity)
+
         local hitRadius = math.max(radius, 0)
+        local projectileIdToken = ""
+        if self.CurrentProjectileId ~= nil then
+            projectileIdToken = string.lower(tostring(self.CurrentProjectileId))
+        end
+        local isDeathperadoSmite = (projectileIdToken == "deathperado_pt")
+
         local hitDiameter = 0.45
-        if hitRadius > 0 then
+        if isDeathperadoSmite == true and hitRadius > 0 then
             hitDiameter = math.max(hitDiameter, hitRadius * 2)
         end
 
@@ -761,17 +770,56 @@ script FireSystemComponent extends Component
         projectileComponent.Lifetime = math.max(self.SmiteVisualLifetime, 0.2)
         projectileComponent.Damage = damageSnapshot
         projectileComponent.Spread = 0
-        if hitRadius > 0 then
+        projectileComponent.AreaExplodeOnLifetimeEnd = false
+        projectileComponent.AreaExplodeOnRangeEnd = false
+        projectileComponent.AreaExplodeOnEmptyPhysicsContact = false
+        projectileComponent.HitOncePerTarget = true
+        if isDeathperadoSmite == true then
+            projectileComponent.ProjectileType = "single_projectile"
+            projectileComponent.SplashSize = 0
+            projectileComponent.DestroyOnImpact = false
+        elseif hitRadius > 0 then
             projectileComponent.ProjectileType = "area_projectile"
             projectileComponent.SplashSize = hitRadius
+            projectileComponent.DestroyOnImpact = true
         else
             projectileComponent.ProjectileType = "single_projectile"
             projectileComponent.SplashSize = 0
+            projectileComponent.DestroyOnImpact = true
         end
         projectileComponent.EnableTriggerStayFallback = true
         projectileComponent.EnablePhysicsContactFallback = false
         projectileComponent:InitializeProjectile(Vector2.right, targetWorldPosition, self.Entity)
         return true
+    end
+
+    -- Smite hit projectile is gameplay-only; renderers are disabled to prevent duplicate cast visuals.
+    @ExecSpace("ServerOnly")
+    method void PrepareSmiteHitProjectileEntityServer(Entity hitProjectileEntity)
+        if hitProjectileEntity == nil or isvalid(hitProjectileEntity) == false then
+            return
+        end
+
+        local spriteRenderer = self:ResolveComponentSafe(hitProjectileEntity, "SpriteRendererComponent", nil)
+        if spriteRenderer ~= nil then
+            pcall(function()
+                spriteRenderer.Enable = false
+            end)
+        end
+
+        local spineRenderer = self:ResolveComponentSafe(hitProjectileEntity, "SpineRendererComponent", nil)
+        if spineRenderer ~= nil then
+            pcall(function()
+                spineRenderer.Enable = false
+            end)
+        end
+
+        local particleRenderer = self:ResolveComponentSafe(hitProjectileEntity, "ParticleSystemComponent", nil)
+        if particleRenderer ~= nil then
+            pcall(function()
+                particleRenderer.Enable = false
+            end)
+        end
     end
 
     -- Legacy entry point kept for compatibility; actual damage now occurs only via trigger contact on spawned smite hit-tile.
@@ -965,8 +1013,12 @@ script FireSystemComponent extends Component
 
             local hpSystem = self:ResolveComponentSafe(target, "HPSystemComponent", "CurrentHP")
             if hpSystem ~= nil then
+                local finalDamage = self:ApplyBossDamageModifierServer(damage, target)
+                if finalDamage <= 0 then
+                    continue
+                end
                 pcall(function()
-                    hpSystem:ApplyDamage(damage)
+                    hpSystem:ApplyDamage(finalDamage)
                 end)
             end
         end
@@ -1138,6 +1190,68 @@ script FireSystemComponent extends Component
         local passiveMultiplier = 1 + (self.PassiveIncreasePercent * 0.01)
         local finalDamage = baseDamage * buffMultiplier * passiveMultiplier
         return math.max(math.floor(finalDamage), 0)
+    end
+
+    -- Passive heal-on-hit hook is emitted only for successful fire events to match gameplay design intent.
+    @ExecSpace("ServerOnly")
+    method void NotifyPassiveProjectileFiredServer()
+        local passiveSystem = self:ResolveComponentSafe(self.Entity, "PassiveSystemComponent", "AcquiredPassiveCount")
+        if passiveSystem == nil or passiveSystem.OnProjectileFiredServer == nil then
+            return
+        end
+
+        pcall(function()
+            passiveSystem:OnProjectileFiredServer()
+        end)
+    end
+
+    -- Boss damage modifier keeps Gungnir-only boss penalty centralized for both projectile and smite paths.
+    @ExecSpace("ServerOnly")
+    method integer ApplyBossDamageModifierServer(integer baseDamage, Entity targetEntity)
+        local damage = math.max(0, math.floor(baseDamage))
+        if damage <= 0 then
+            return 0
+        end
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return damage
+        end
+        if self:IsGungnirWeaponServer() ~= true then
+            return damage
+        end
+
+        local spawn = self:ResolveComponentSafe(self.Entity, "MonsterSpawnComponent", "IsSpawnActive")
+        if spawn == nil or spawn.GetSpawnMetaByEntity == nil then
+            return damage
+        end
+
+        local spawnMeta = nil
+        local metaOk, metaValue = pcall(function()
+            return spawn:GetSpawnMetaByEntity(targetEntity)
+        end)
+        if metaOk == true then
+            spawnMeta = metaValue
+        end
+        if spawnMeta == nil then
+            return damage
+        end
+
+        local isBoss = false
+        if spawnMeta.IsBoss == true then
+            isBoss = true
+        elseif spawnMeta.MonType ~= nil then
+            isBoss = (string.lower(tostring(spawnMeta.MonType)) == "boss")
+        end
+        if isBoss ~= true then
+            return damage
+        end
+
+        return math.max(0, math.floor(damage * 0.5))
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean IsGungnirWeaponServer()
+        local weaponId = string.lower(tostring(self.CurrentWeaponId or ""))
+        return weaponId == "gungnir"
     end
 
     -- Final-damage path also refreshes level-based weapon attack so no stale snapshot can survive.

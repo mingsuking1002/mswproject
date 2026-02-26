@@ -103,6 +103,21 @@ script ReloadComponent extends Component
             return
         end
 
+        -- Magazine-gated reload: one inventory magazine is consumed only when reload actually starts.
+        local inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", "MagazineA")
+        if inventory ~= nil and inventory.ConsumeMagazineServer ~= nil then
+            local canReload = false
+            local consumeOk, consumeValue = pcall(function()
+                return inventory:ConsumeMagazineServer("")
+            end)
+            if consumeOk == true and consumeValue == true then
+                canReload = true
+            end
+            if canReload ~= true then
+                return
+            end
+        end
+
         if slot == self.CurrentWeaponSlot then
             self.IsReloading = true
         end
@@ -432,6 +447,43 @@ script ReloadComponent extends Component
         end
 
         self._T.UseGRUtilFallback = true
+    end
+
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
     end
 
     method boolean IsOwnerRequest(string requestUserId)
