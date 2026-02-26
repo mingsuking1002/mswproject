@@ -12,6 +12,7 @@ script ReloadComponent extends Component
     @Sync
     property number CurrentReloadEndAt = 0
 
+    @Sync
     property integer MaxAmmo = 30
     property number ReloadTime = 1.5
     property number FireRate = 0.5

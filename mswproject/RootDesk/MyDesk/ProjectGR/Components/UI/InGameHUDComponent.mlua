@@ -7,6 +7,10 @@ script InGameHUDComponent extends Component
     property Entity LegacyAmmoTextEntity = nil
     property Entity LegacyCooldownTextEntity = nil
     property Entity LegacyWeaponTextEntity = nil
+    property Entity LegacyHPBarBackEntity = nil
+    property Entity LegacyHPBarForeEntity = nil
+    property Entity LegacyEXPBarBackEntity = nil
+    property Entity LegacyEXPBarForeEntity = nil
     property Entity TimerTextEntity = nil
     property Entity GoldTextEntity = nil
     property Entity HPForegroundEntity = nil
@@ -26,6 +30,10 @@ script InGameHUDComponent extends Component
     property string LegacyAmmoTextPath = "/ui/DefaultGroup/GRAmmoText"
     property string LegacyCooldownTextPath = "/ui/DefaultGroup/GRCooldownText"
     property string LegacyWeaponTextPath = "/ui/DefaultGroup/GRWeaponText"
+    property string LegacyHPBarBackPath = "/ui/DefaultGroup/GRHUD_HPBack"
+    property string LegacyHPBarForePath = "/ui/DefaultGroup/GRHUD_HPBack/Fore"
+    property string LegacyEXPBarBackPath = "/ui/DefaultGroup/GRHUD_EXPBack"
+    property string LegacyEXPBarForePath = "/ui/DefaultGroup/GRHUD_EXPBack/Fore"
     property string TimerTextPath = "/ui/DefaultGroup/GRInGameHUD/TimerText"
     property string GoldTextPath = "/ui/DefaultGroup/GRInGameHUD/GoldText"
     property string HP_ForegroundPath = "/ui/DefaultGroup/GRInGameHUD/HPGauge/Fore"
@@ -218,7 +226,11 @@ script InGameHUDComponent extends Component
             self.LegacyHPTextEntity,
             self.LegacyAmmoTextEntity,
             self.LegacyCooldownTextEntity,
-            self.LegacyWeaponTextEntity
+            self.LegacyWeaponTextEntity,
+            self.LegacyHPBarBackEntity,
+            self.LegacyHPBarForeEntity,
+            self.LegacyEXPBarBackEntity,
+            self.LegacyEXPBarForeEntity
         }
 
         for _, entity in pairs(entities) do
@@ -229,9 +241,125 @@ script InGameHUDComponent extends Component
     @ExecSpace("ClientOnly")
     method void RefreshLegacyHUDClient()
         self:RefreshLegacyTimerTextClient()
+        self:RefreshLegacyBarGaugeClient()
         self:RefreshLegacyHPTextClient()
         self:RefreshLegacyAmmoAndCooldownTextClient()
         self:RefreshLegacyWeaponTextClient()
+    end
+
+    -- Legacy bar fallback drives 2-panel HP/Ammo gauges when new GRInGameHUD prefab is not present.
+    @ExecSpace("ClientOnly")
+    method void RefreshLegacyBarGaugeClient()
+        self:EnsureLegacyRightShrinkGaugeSetupClient(self.LegacyHPBarForeEntity, self.LegacyHPBarForePath)
+        self:EnsureLegacyRightShrinkGaugeSetupClient(self.LegacyEXPBarForeEntity, self.LegacyEXPBarForePath)
+
+        local hpRatio = 0
+        local hp = self:ResolveComponentSafe(self.Entity, "HPSystemComponent", "CurrentHP")
+        if hp ~= nil then
+            local currentHp = 0
+            local maxHp = 1
+            local readOk, _ = pcall(function()
+                currentHp = hp.CurrentHP
+                maxHp = hp.MaxHP
+            end)
+            if readOk == true then
+                if maxHp <= 0 then
+                    maxHp = 1
+                end
+                hpRatio = self:Clamp01(currentHp / maxHp)
+            end
+        end
+
+        local ammoRatio = 0
+        local reload = self:ResolveComponentSafe(self.Entity, "ReloadComponent", "CurrentAmmo")
+        if reload ~= nil then
+            local currentAmmo = 0
+            local maxAmmo = 0
+            local readOk, _ = pcall(function()
+                currentAmmo = reload.CurrentAmmo
+                maxAmmo = reload.MaxAmmo
+            end)
+            if readOk == true then
+                if maxAmmo > 0 then
+                    ammoRatio = self:Clamp01(currentAmmo / maxAmmo)
+                else
+                    ammoRatio = 0
+                end
+            end
+        end
+
+        self:ApplyHorizontalGaugeScaleClient(self.LegacyHPBarForeEntity, self.LegacyHPBarForePath, hpRatio)
+        self:ApplyHorizontalGaugeScaleClient(self.LegacyEXPBarForeEntity, self.LegacyEXPBarForePath, ammoRatio)
+    end
+
+    -- Keeps left edge fixed so gauge shrinks from right to left when ratio decreases.
+    @ExecSpace("ClientOnly")
+    method void EnsureLegacyRightShrinkGaugeSetupClient(Entity gaugeForeEntity, string gaugePath)
+        if gaugeForeEntity == nil or isvalid(gaugeForeEntity) == false then
+            return
+        end
+        if gaugeForeEntity.UITransformComponent == nil then
+            return
+        end
+
+        if self._T.LegacyGaugeRightShrinkPrepared == nil then
+            self._T.LegacyGaugeRightShrinkPrepared = {}
+        end
+
+        local key = gaugePath
+        if key == nil or key == "" then
+            key = tostring(gaugeForeEntity.Id)
+        end
+        if self._T.LegacyGaugeRightShrinkPrepared[key] == true then
+            return
+        end
+
+        local uiTransform = gaugeForeEntity.UITransformComponent
+        local width = 0
+        local height = 0
+        local posY = 0
+
+        local sizeOk, sizeValue = pcall(function()
+            return uiTransform.RectSize
+        end)
+        if sizeOk == true and sizeValue ~= nil then
+            width = math.max(0, sizeValue.x)
+            height = math.max(0, sizeValue.y)
+        end
+        if width <= 0 then
+            local fallbackOk, fallbackValue = pcall(function()
+                return uiTransform.Size
+            end)
+            if fallbackOk == true and fallbackValue ~= nil then
+                width = math.max(0, fallbackValue.x)
+                height = math.max(0, fallbackValue.y)
+            end
+        end
+
+        local posOk, posValue = pcall(function()
+            return uiTransform.anchoredPosition
+        end)
+        if posOk == true and posValue ~= nil then
+            posY = posValue.y
+        end
+
+        local leftX = -(width * 0.5)
+        local halfH = height * 0.5
+
+        pcall(function()
+            uiTransform.Pivot = Vector2(0, 0.5)
+        end)
+        pcall(function()
+            uiTransform.anchoredPosition = Vector2(leftX, posY)
+        end)
+        pcall(function()
+            uiTransform.OffsetMin = Vector2(leftX, -halfH)
+        end)
+        pcall(function()
+            uiTransform.OffsetMax = Vector2(leftX + width, halfH)
+        end)
+
+        self._T.LegacyGaugeRightShrinkPrepared[key] = true
     end
 
     @ExecSpace("ClientOnly")
@@ -697,6 +825,10 @@ script InGameHUDComponent extends Component
         self.LegacyAmmoTextEntity = self:ResolveEntityWithCacheClient(self.LegacyAmmoTextEntity, self.LegacyAmmoTextPath)
         self.LegacyCooldownTextEntity = self:ResolveEntityWithCacheClient(self.LegacyCooldownTextEntity, self.LegacyCooldownTextPath)
         self.LegacyWeaponTextEntity = self:ResolveEntityWithCacheClient(self.LegacyWeaponTextEntity, self.LegacyWeaponTextPath)
+        self.LegacyHPBarBackEntity = self:ResolveEntityWithCacheClient(self.LegacyHPBarBackEntity, self.LegacyHPBarBackPath)
+        self.LegacyHPBarForeEntity = self:ResolveEntityWithCacheClient(self.LegacyHPBarForeEntity, self.LegacyHPBarForePath)
+        self.LegacyEXPBarBackEntity = self:ResolveEntityWithCacheClient(self.LegacyEXPBarBackEntity, self.LegacyEXPBarBackPath)
+        self.LegacyEXPBarForeEntity = self:ResolveEntityWithCacheClient(self.LegacyEXPBarForeEntity, self.LegacyEXPBarForePath)
         self.TimerTextEntity = self:ResolveEntityWithCacheClient(self.TimerTextEntity, self.TimerTextPath)
         self.GoldTextEntity = self:ResolveEntityWithCacheClient(self.GoldTextEntity, self.GoldTextPath)
         self.HPForegroundEntity = self:ResolveEntityWithCacheClient(self.HPForegroundEntity, self.HP_ForegroundPath)

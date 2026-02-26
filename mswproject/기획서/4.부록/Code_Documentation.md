@@ -2134,6 +2134,17 @@
 | Fallback-safe rendering | Path resolve + `nil/isvalid/pcall` guards for every UI field update. |
 | Icon data cache | Added optional client-side `PlayerbleData` + `SkillData` cache to map standby character tag-skill icon. |
 | Legacy UI fallback | When `/ui/DefaultGroup/GRInGameHUD` is missing, auto-falls back to legacy text HUD paths (`GRTimerText`, `GRHPText`, `GRAmmoText`, `GRCooldownText`, `GRWeaponText`). |
+| Legacy 2-panel bars | Added legacy panel gauge fallback paths (`/ui/DefaultGroup/GRHUD_HPBack/Fore`, `/ui/DefaultGroup/GRHUD_EXPBack/Fore`) and runtime scale binding for HP/Ammo. (`GRHUD_EXPBack` is reused as ammo bar) |
+
+### DefaultGroup.ui (Updated)
+- **File:** `ui/DefaultGroup.ui`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Legacy HP bar panels | Added `/ui/DefaultGroup/GRHUD_HPBack` and child `/Fore` as 2-panel HP gauge fallback. |
+| Legacy EXP bar panels | Added `/ui/DefaultGroup/GRHUD_EXPBack` and child `/Fore` as 2-panel EXP gauge fallback. |
 
 ### ReloadComponent (Updated)
 - **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ReloadComponent.mlua`
@@ -2144,6 +2155,7 @@
 | Item | Detail |
 |---|---|
 | Reload sync window | Added `CurrentReloadStartAt`, `CurrentReloadEndAt` sync properties for HUD progress gauge. |
+| Current max ammo sync | Changed `MaxAmmo` to `@Sync` so HUD/legacy bars display weapon-specific max ammo from `WeaponData.max_basic_resource` in real time. |
 | Consistent lifecycle writes | Start/complete/cancel/slot-switch/endplay paths now keep reload window sync values coherent. |
 | Time helper | Added `GetServerNowSeconds()` to keep sync timestamps resilient when elapsed-seconds read fails. |
 
