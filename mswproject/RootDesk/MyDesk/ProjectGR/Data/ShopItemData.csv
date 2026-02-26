@@ -1,4 +1,4 @@
-﻿id,slot_type,name,description,price,maximum,icon_ruid
-product_1,potion,체력 포션,체력포션 1개 획득,300,5,
-product_2,ammo,마나 충전기,"a_mag, b_mag 하나씩 획득",150,5,
-product_3,passive,패시브 스킬,상시 패시브 스킬 중 랜덤 1개,1500,1,
+﻿id,slot_type,name,description,price,maximum,itemid1,itemid1_amount,itemid2,itemid2_amount,icon_ruid
+product_1,potion,체력 포션,체력포션 1개 획득,300,5,potion_hp,1,,,
+product_2,ammo,마나 충전기,"a_mag, b_mag 하나씩 획득",150,5,mag_a,1,mag_b,,1
+product_3,passive,패시브 스킬,상시 패시브 스킬 중 랜덤 1개,1500,1,,,,,

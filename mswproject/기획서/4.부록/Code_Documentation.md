@@ -3177,3 +3177,43 @@
 | Runtime-required columns | `item_id`, `effect_type`, `effect_value_1` |
 | Current potion bind | `effect_type=heal_hp` 행의 `effect_value_1` 값을 `InventoryComponent.PotionHealAmount`로 로드 후 E키 사용 시 회복량으로 적용. |
 | Schema change | 이번 핫픽스에서 `ItemData.csv` 컬럼 추가/삭제 없음. |
+
+## 2026-02-26 GameStart/Inventory Acquire Hotfix
+
+### LobbyFlowComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+| Item | Detail |
+|---|---|
+| GRBG hide timing | `OnStartButtonClickedClient`에서 서버 Sync 대기 전에 `ApplyLobbyUIClient(false)`를 즉시 호출해 `GRBG` 잔상 노출을 제거. |
+
+### ShopManagerComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/ShopManagerComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/ShopManagerComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+| Item | Detail |
+|---|---|
+| Ammo purchase payload | 탄창 구매 시 현재 캐릭터 1종이 아니라 `A/B` 양쪽 탄창을 모두 `amount`만큼 지급하도록 변경. |
+| Inventory fail-safe | `ResolveOrAttachInventoryComponentServer`를 추가해 인벤토리 누락 시 구매 보상이 유실되지 않도록 보강. |
+
+### ItemDropManagerComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ItemDropManagerComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ItemDropManagerComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+| Item | Detail |
+|---|---|
+| Item alias pickup | 드랍 적용 시 `effect_type`뿐 아니라 `item_id` 별칭(`potion_hp`, `mag_a`, `mag_b`)도 인식하도록 보강. |
+| Inventory fail-safe | 드랍 획득 시 인벤토리가 없으면 즉시 부착 후 포션/탄창 누적을 수행. |
+
+### ReloadComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ReloadComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ReloadComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+| Item | Detail |
+|---|---|
+| Reload inventory resolve | 재장전 시작 시 `ResolveOrAttachInventoryComponentServer`로 인벤토리 누락 상태를 복구 후 탄창 소모 게이트를 수행. |
