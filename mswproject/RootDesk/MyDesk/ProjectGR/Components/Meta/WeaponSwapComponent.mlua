@@ -12,6 +12,54 @@ script WeaponSwapComponent extends Component
     property string CurrentWeaponName = ""
     @Sync
     property string CurrentWeaponId = ""
+    @Sync
+    property string Slot1WeaponId = ""
+    @Sync
+    property string Slot1WeaponName = "EMPTY"
+    @Sync
+    property string Slot1WeaponSpriteRuid = ""
+    @Sync
+    property integer Slot1WeaponLevel = 1
+    @Sync
+    property integer Slot1WeaponExp = 0
+    @Sync
+    property integer Slot1WeaponRequiredExp = 1
+    @Sync
+    property string Slot2WeaponId = ""
+    @Sync
+    property string Slot2WeaponName = "EMPTY"
+    @Sync
+    property string Slot2WeaponSpriteRuid = ""
+    @Sync
+    property integer Slot2WeaponLevel = 1
+    @Sync
+    property integer Slot2WeaponExp = 0
+    @Sync
+    property integer Slot2WeaponRequiredExp = 1
+    @Sync
+    property string Slot3WeaponId = ""
+    @Sync
+    property string Slot3WeaponName = "EMPTY"
+    @Sync
+    property string Slot3WeaponSpriteRuid = ""
+    @Sync
+    property integer Slot3WeaponLevel = 1
+    @Sync
+    property integer Slot3WeaponExp = 0
+    @Sync
+    property integer Slot3WeaponRequiredExp = 1
+    @Sync
+    property string Slot4WeaponId = ""
+    @Sync
+    property string Slot4WeaponName = "EMPTY"
+    @Sync
+    property string Slot4WeaponSpriteRuid = ""
+    @Sync
+    property integer Slot4WeaponLevel = 1
+    @Sync
+    property integer Slot4WeaponExp = 0
+    @Sync
+    property integer Slot4WeaponRequiredExp = 1
 
     property table Weapon1_Data = {}
     property table Weapon2_Data = {}
@@ -45,6 +93,7 @@ script WeaponSwapComponent extends Component
         self._T.ProjectileModelMissingWarned = {}
         self.CurrentWeaponSlot = self:ClampSlot(self.CurrentWeaponSlot)
         self:InitializeSlotData()
+        self:RefreshWheelSlotUISyncServer()
         self:ApplySlotDataToCombat(self.CurrentWeaponSlot)
     end
 
@@ -55,7 +104,7 @@ script WeaponSwapComponent extends Component
         self._T.PendingSlotClient = self.CurrentWeaponSlot
     end
 
-    -- F toggles the menu, ESC cancels, and direction/mouse confirm follows the radial-selection intent.
+    -- F toggles the menu, ESC cancels, and direction/space confirm follows the radial-selection intent.
     @EventSender("Service", "InputService")
     handler HandleKeyDownEvent(KeyDownEvent event)
         local key = event.key
@@ -84,7 +133,7 @@ script WeaponSwapComponent extends Component
             return
         end
 
-        if key == KeyboardKey.Mouse0 or key == KeyboardKey.Space then
+        if key == KeyboardKey.Space then
             local selectedSlot = self._T.PendingSlotClient
             if selectedSlot == nil then
                 selectedSlot = self.CurrentWeaponSlot
@@ -145,6 +194,7 @@ script WeaponSwapComponent extends Component
 
         self.IsSwapMenuOpen = true
         self:SetGameplayLockServer(true)
+        self:RefreshWheelSlotUISyncServer()
         self:NotifySwapMenuClient(true, self.CurrentWeaponSlot, self.CurrentWeaponSlot)
     end
 
@@ -271,6 +321,7 @@ script WeaponSwapComponent extends Component
 
         local resolvedSlot = self:ResolveCurrentSlotFromRow(row)
         self.CurrentWeaponSlot = resolvedSlot
+        self:RefreshWheelSlotUISyncServer()
         self:ApplySlotDataToCombat(self.CurrentWeaponSlot)
     end
 
@@ -924,6 +975,7 @@ script WeaponSwapComponent extends Component
             end)
         end
 
+        self:RefreshWheelSlotUISyncServer()
         self:NotifySwapMenuClient(self.IsSwapMenuOpen, finalSlot, self.CurrentWeaponSlot)
     end
 
@@ -950,6 +1002,134 @@ script WeaponSwapComponent extends Component
         self.CurrentWeaponName = weaponName
         self.CurrentWeaponSpriteRuid = spriteRuid
         self.CurrentWeaponId = tostring(finalWeaponId)
+    end
+
+    -- Wheel UI snapshot is server-authored so client rendering remains deterministic and low-cost.
+    @ExecSpace("ServerOnly")
+    method void RefreshWheelSlotUISyncServer()
+        local progressByWeaponId = {}
+        local weaponLevel = self:ResolveComponentSafe(self.Entity, "WeaponLevelUpComponent", "CurrentWeaponLevel")
+        if weaponLevel ~= nil and weaponLevel.ExportWeaponProgressState ~= nil then
+            local exportOk, exportValue = pcall(function()
+                return weaponLevel:ExportWeaponProgressState()
+            end)
+            if exportOk == true and type(exportValue) == "table" then
+                progressByWeaponId = exportValue
+            end
+        end
+
+        for slot = 1, 4 do
+            local data = self:NormalizeSlotData(self:GetSlotDataBySlot(slot), slot)
+            self:SetSlotDataBySlot(slot, data)
+
+            local weaponId = ""
+            local weaponName = "EMPTY"
+            local spriteRuid = ""
+            local level = 1
+            local exp = 0
+            local requiredExp = 1
+
+            if data ~= nil and data.WeaponId ~= nil then
+                weaponId = tostring(data.WeaponId)
+            end
+
+            if weaponId ~= "" then
+                local row = self:GetWeaponRowByIdServer(weaponId)
+                if row ~= nil then
+                    weaponName = self:GetRowString(row, "name", weaponId)
+                    spriteRuid = self:GetRowString(row, "sprite_ruid", "")
+                else
+                    weaponName = weaponId
+                end
+
+                local progress = nil
+                if progressByWeaponId ~= nil then
+                    progress = progressByWeaponId[weaponId]
+                end
+                if type(progress) == "table" then
+                    local parsedLevel = tonumber(progress.Level)
+                    if parsedLevel ~= nil then
+                        level = math.max(1, math.floor(parsedLevel))
+                    end
+
+                    local parsedExp = tonumber(progress.Exp)
+                    if parsedExp ~= nil then
+                        exp = math.max(0, math.floor(parsedExp))
+                    end
+
+                    local parsedRequiredExp = tonumber(progress.RequiredExp)
+                    if parsedRequiredExp ~= nil then
+                        requiredExp = math.max(1, math.floor(parsedRequiredExp))
+                    end
+                end
+            end
+
+            self:ApplyWheelSlotSyncBySlotServer(slot, weaponId, weaponName, spriteRuid, level, exp, requiredExp)
+        end
+    end
+
+    method void ApplyWheelSlotSyncBySlotServer(integer slot, string weaponId, string weaponName, string spriteRuid, integer level, integer exp, integer requiredExp)
+        local safeSlot = math.floor(slot)
+        if safeSlot < 1 then
+            safeSlot = 1
+        end
+        if safeSlot > 4 then
+            safeSlot = 4
+        end
+
+        local finalWeaponId = ""
+        if weaponId ~= nil then
+            finalWeaponId = tostring(weaponId)
+        end
+
+        local finalWeaponName = "EMPTY"
+        if weaponName ~= nil and tostring(weaponName) ~= "" then
+            finalWeaponName = tostring(weaponName)
+        end
+
+        local finalSpriteRuid = ""
+        if spriteRuid ~= nil then
+            finalSpriteRuid = tostring(spriteRuid)
+        end
+
+        local finalLevel = math.max(1, math.floor(level))
+        local finalExp = math.max(0, math.floor(exp))
+        local finalRequiredExp = math.max(1, math.floor(requiredExp))
+
+        if safeSlot == 1 then
+            self.Slot1WeaponId = finalWeaponId
+            self.Slot1WeaponName = finalWeaponName
+            self.Slot1WeaponSpriteRuid = finalSpriteRuid
+            self.Slot1WeaponLevel = finalLevel
+            self.Slot1WeaponExp = finalExp
+            self.Slot1WeaponRequiredExp = finalRequiredExp
+            return
+        end
+        if safeSlot == 2 then
+            self.Slot2WeaponId = finalWeaponId
+            self.Slot2WeaponName = finalWeaponName
+            self.Slot2WeaponSpriteRuid = finalSpriteRuid
+            self.Slot2WeaponLevel = finalLevel
+            self.Slot2WeaponExp = finalExp
+            self.Slot2WeaponRequiredExp = finalRequiredExp
+            return
+        end
+        if safeSlot == 3 then
+            self.Slot3WeaponId = finalWeaponId
+            self.Slot3WeaponName = finalWeaponName
+            self.Slot3WeaponSpriteRuid = finalSpriteRuid
+            self.Slot3WeaponLevel = finalLevel
+            self.Slot3WeaponExp = finalExp
+            self.Slot3WeaponRequiredExp = finalRequiredExp
+            return
+        end
+
+        self.Slot4WeaponId = finalWeaponId
+        self.Slot4WeaponName = finalWeaponName
+        self.Slot4WeaponSpriteRuid = finalSpriteRuid
+        self.Slot4WeaponLevel = finalLevel
+        self.Slot4WeaponExp = finalExp
+        self.Slot4WeaponRequiredExp = finalRequiredExp
     end
 
     -- Export API is consumed by TagManager so each character can preserve independent 4-slot state.
@@ -991,6 +1171,7 @@ script WeaponSwapComponent extends Component
         end
 
         self:ApplySlotDataToCombat(self.CurrentWeaponSlot)
+        self:RefreshWheelSlotUISyncServer()
     end
 
     -- Gameplay lock toggles movement, attack, and timer pause in one place for open/close consistency.

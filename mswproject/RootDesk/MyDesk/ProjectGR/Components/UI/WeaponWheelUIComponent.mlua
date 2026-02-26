@@ -2,16 +2,23 @@
 script WeaponWheelUIComponent extends Component
 
     property Entity WheelRoot = nil
-    property string WheelRootPath = "/ui/DefaultGroup/GRWeaponWheelRoot"
+    property Entity WheelDim = nil
+    property string WheelRootPath = "/ui/PopuiGroup/GRWeaponWheelRoot"
+    property string WheelDimPath = "/ui/PopuiGroup/GRWeaponWheelDim"
     property boolean UseRootVisibleToggle = true
     property number HighlightScale = 1.15
     property number NormalScale = 1.0
+    property string EmptyWeaponName = "EMPTY"
+    property boolean EnableSlotClickSwap = true
+    property number SlotClickDebounce = 0.1
 
     -- Client initializes UI references once so swap menu updates remain lightweight.
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         self:EnsureGRUtil()
         self:ResolveWheelRootClient()
+        self:ResolveWheelDimClient()
+        self:EnsureSlotButtonsBoundClient()
         self:ApplyWeaponWheelStateClient(false, 1, 1)
     end
 
@@ -19,10 +26,12 @@ script WeaponWheelUIComponent extends Component
     @ExecSpace("ClientOnly")
     method void OnMapEnter(Entity enteredMap)
         self:ResolveWheelRootClient()
+        self:ResolveWheelDimClient()
+        self:EnsureSlotButtonsBoundClient()
         self:ApplyWeaponWheelStateClient(false, 1, 1)
     end
 
-    -- Called by WeaponSwapComponent to render current visibility/highlight/current-slot state.
+    -- Called by WeaponSwapComponent to render visibility/highlight and slot snapshot data.
     @ExecSpace("Client")
     method void ApplyWeaponWheelStateClient(boolean visible, integer highlightedSlot, integer currentSlot)
         local wheelRoot = self:ResolveWheelRootClient()
@@ -32,6 +41,8 @@ script WeaponWheelUIComponent extends Component
 
         local finalHighlighted = self:ClampSlot(highlightedSlot)
         local finalCurrent = self:ClampSlot(currentSlot)
+        local wheelDim = self:ResolveWheelDimClient()
+        self:EnsureSlotButtonsBoundClient()
 
         if self.UseRootVisibleToggle == true then
             pcall(function()
@@ -40,7 +51,18 @@ script WeaponWheelUIComponent extends Component
             pcall(function()
                 wheelRoot.Enable = visible
             end)
+
+            if wheelDim ~= nil and isvalid(wheelDim) == true then
+                pcall(function()
+                    wheelDim.Visible = visible
+                end)
+                pcall(function()
+                    wheelDim.Enable = visible
+                end)
+            end
         end
+
+        self:RenderWheelSlotDataClient(finalCurrent)
 
         for slot = 1, 4 do
             local slotEntity = self:GetSlotEntityClient(slot)
@@ -50,6 +72,11 @@ script WeaponWheelUIComponent extends Component
                 self:ApplySlotVisualClient(slotEntity, isHighlighted, isCurrent, visible)
             end
         end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        self:ClearSlotButtonsClient()
     end
 
     -- Tag change closes wheel immediately so previous character selection highlight does not linger.
@@ -77,6 +104,487 @@ script WeaponWheelUIComponent extends Component
         return root
     end
 
+    @ExecSpace("ClientOnly")
+    method Entity ResolveWheelDimClient()
+        if self.WheelDim ~= nil and isvalid(self.WheelDim) == true then
+            return self.WheelDim
+        end
+        if self.WheelDimPath == nil or self.WheelDimPath == "" then
+            return nil
+        end
+
+        local dim = _EntityService:GetEntityByPath(self.WheelDimPath)
+        if dim == nil or isvalid(dim) == false then
+            return nil
+        end
+
+        self.WheelDim = dim
+        return dim
+    end
+
+    -- Slot icons are clickable so mouse input can update highlighted slot without immediate confirm.
+    @ExecSpace("ClientOnly")
+    method void EnsureSlotButtonsBoundClient()
+        if self.EnableSlotClickSwap ~= true then
+            self:ClearSlotButtonsClient()
+            return
+        end
+
+        if self._T.SlotClickHandlerBySlot == nil then
+            self._T.SlotClickHandlerBySlot = {}
+        end
+        if self._T.SlotClickEntityBySlot == nil then
+            self._T.SlotClickEntityBySlot = {}
+        end
+        if self._T.NextSlotClickAllowedAt == nil then
+            self._T.NextSlotClickAllowedAt = 0
+        end
+
+        for slot = 1, 4 do
+            self:BindSlotButtonClient(slot)
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void BindSlotButtonClient(integer slot)
+        local safeSlot = self:ClampSlot(slot)
+        local clickTarget = self:GetSlotClickTargetEntityClient(safeSlot)
+        if clickTarget == nil or isvalid(clickTarget) == false then
+            self:UnbindSlotButtonClient(safeSlot)
+            return
+        end
+
+        local handlerMap = self._T.SlotClickHandlerBySlot
+        local entityMap = self._T.SlotClickEntityBySlot
+        local cachedEntity = entityMap[safeSlot]
+        local cachedHandler = handlerMap[safeSlot]
+        if cachedEntity ~= nil and cachedHandler ~= nil and isvalid(cachedEntity) == true and cachedEntity == clickTarget then
+            return
+        end
+
+        self:UnbindSlotButtonClient(safeSlot)
+
+        if clickTarget.ButtonComponent == nil then
+            pcall(function()
+                clickTarget:AddComponent("MOD.Core.ButtonComponent")
+            end)
+        end
+        if clickTarget.ButtonComponent == nil then
+            return
+        end
+
+        local callback = function(event)
+            self:OnSlotClickedClient(safeSlot, event)
+        end
+
+        local bindOk, bindHandler = pcall(function()
+            return clickTarget:ConnectEvent(ButtonClickEvent, callback)
+        end)
+        if bindOk == true and bindHandler ~= nil then
+            handlerMap[safeSlot] = bindHandler
+            entityMap[safeSlot] = clickTarget
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnSlotClickedClient(integer slot, ButtonClickEvent event)
+        if self.EnableSlotClickSwap ~= true then
+            return
+        end
+
+        local swapComponent = self:ResolveComponentSafe(self.Entity, "WeaponSwapComponent", "CurrentWeaponSlot")
+        if swapComponent == nil then
+            return
+        end
+
+        local isMenuOpen = false
+        pcall(function()
+            isMenuOpen = (swapComponent.IsSwapMenuOpen == true)
+        end)
+        if isMenuOpen ~= true then
+            return
+        end
+
+        local nowSec = self:GetServerNowSecondsClient()
+        local nextAllowed = self._T.NextSlotClickAllowedAt
+        if nextAllowed == nil then
+            nextAllowed = 0
+        end
+        if nowSec < nextAllowed then
+            return
+        end
+        self._T.NextSlotClickAllowedAt = nowSec + math.max(0.05, self.SlotClickDebounce)
+
+        local targetSlot = self:ClampSlot(slot)
+
+        local currentSlot = targetSlot
+        pcall(function()
+            currentSlot = self:ClampSlot(swapComponent.CurrentWeaponSlot)
+        end)
+
+        if swapComponent.NotifySwapMenuClient ~= nil then
+            pcall(function()
+                swapComponent:NotifySwapMenuClient(true, targetSlot, currentSlot)
+            end)
+        end
+
+    end
+
+    @ExecSpace("ClientOnly")
+    method void UnbindSlotButtonClient(integer slot)
+        if self._T.SlotClickHandlerBySlot == nil or self._T.SlotClickEntityBySlot == nil then
+            return
+        end
+
+        local safeSlot = self:ClampSlot(slot)
+        local entityRef = self._T.SlotClickEntityBySlot[safeSlot]
+        local handlerRef = self._T.SlotClickHandlerBySlot[safeSlot]
+        if entityRef ~= nil and handlerRef ~= nil and isvalid(entityRef) == true then
+            pcall(function()
+                entityRef:DisconnectEvent(ButtonClickEvent, handlerRef)
+            end)
+        end
+
+        self._T.SlotClickEntityBySlot[safeSlot] = nil
+        self._T.SlotClickHandlerBySlot[safeSlot] = nil
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ClearSlotButtonsClient()
+        if self._T.SlotClickHandlerBySlot == nil or self._T.SlotClickEntityBySlot == nil then
+            return
+        end
+
+        for slot = 1, 4 do
+            self:UnbindSlotButtonClient(slot)
+        end
+    end
+
+    method number GetServerNowSecondsClient()
+        local nowSec = 0
+        local readOk, readValue = pcall(function()
+            return _UtilLogic.ServerElapsedSeconds
+        end)
+        if readOk == true and readValue ~= nil then
+            nowSec = readValue
+        end
+        return nowSec
+    end
+
+    -- Renders slot label/icon/level/exp from WeaponSwap sync snapshot.
+    @ExecSpace("ClientOnly")
+    method void RenderWheelSlotDataClient(integer currentSlot)
+        local swapComponent = self:ResolveComponentSafe(self.Entity, "WeaponSwapComponent", "CurrentWeaponSlot")
+
+        for slot = 1, 4 do
+            local slotEntity = self:GetSlotEntityClient(slot)
+            if slotEntity == nil or isvalid(slotEntity) == false then
+                continue
+            end
+
+            local snapshot = self:GetSlotSnapshotClient(swapComponent, slot)
+            self:ApplySlotSnapshotClient(slotEntity, snapshot)
+        end
+
+        local centerSnapshot = self:GetSlotSnapshotClient(swapComponent, currentSlot)
+        self:ApplyCenterSnapshotClient(centerSnapshot, swapComponent)
+    end
+
+    @ExecSpace("ClientOnly")
+    method table GetSlotSnapshotClient(any swapComponent, integer slot)
+        local safeSlot = self:ClampSlot(slot)
+
+        local snapshot = {}
+        snapshot.WeaponId = ""
+        snapshot.WeaponName = self.EmptyWeaponName
+        snapshot.SpriteRuid = ""
+        snapshot.Level = 1
+        snapshot.Exp = 0
+        snapshot.RequiredExp = 1
+
+        if swapComponent == nil then
+            return snapshot
+        end
+
+        if safeSlot == 1 then
+            snapshot.WeaponId = self:ReadSwapStringFieldClient(swapComponent, "Slot1WeaponId", "")
+            snapshot.WeaponName = self:ReadSwapStringFieldClient(swapComponent, "Slot1WeaponName", self.EmptyWeaponName)
+            snapshot.SpriteRuid = self:ReadSwapStringFieldClient(swapComponent, "Slot1WeaponSpriteRuid", "")
+            snapshot.Level = self:ReadSwapIntegerFieldClient(swapComponent, "Slot1WeaponLevel", 1, 1)
+            snapshot.Exp = self:ReadSwapIntegerFieldClient(swapComponent, "Slot1WeaponExp", 0, 0)
+            snapshot.RequiredExp = self:ReadSwapIntegerFieldClient(swapComponent, "Slot1WeaponRequiredExp", 1, 1)
+            return snapshot
+        end
+        if safeSlot == 2 then
+            snapshot.WeaponId = self:ReadSwapStringFieldClient(swapComponent, "Slot2WeaponId", "")
+            snapshot.WeaponName = self:ReadSwapStringFieldClient(swapComponent, "Slot2WeaponName", self.EmptyWeaponName)
+            snapshot.SpriteRuid = self:ReadSwapStringFieldClient(swapComponent, "Slot2WeaponSpriteRuid", "")
+            snapshot.Level = self:ReadSwapIntegerFieldClient(swapComponent, "Slot2WeaponLevel", 1, 1)
+            snapshot.Exp = self:ReadSwapIntegerFieldClient(swapComponent, "Slot2WeaponExp", 0, 0)
+            snapshot.RequiredExp = self:ReadSwapIntegerFieldClient(swapComponent, "Slot2WeaponRequiredExp", 1, 1)
+            return snapshot
+        end
+        if safeSlot == 3 then
+            snapshot.WeaponId = self:ReadSwapStringFieldClient(swapComponent, "Slot3WeaponId", "")
+            snapshot.WeaponName = self:ReadSwapStringFieldClient(swapComponent, "Slot3WeaponName", self.EmptyWeaponName)
+            snapshot.SpriteRuid = self:ReadSwapStringFieldClient(swapComponent, "Slot3WeaponSpriteRuid", "")
+            snapshot.Level = self:ReadSwapIntegerFieldClient(swapComponent, "Slot3WeaponLevel", 1, 1)
+            snapshot.Exp = self:ReadSwapIntegerFieldClient(swapComponent, "Slot3WeaponExp", 0, 0)
+            snapshot.RequiredExp = self:ReadSwapIntegerFieldClient(swapComponent, "Slot3WeaponRequiredExp", 1, 1)
+            return snapshot
+        end
+
+        snapshot.WeaponId = self:ReadSwapStringFieldClient(swapComponent, "Slot4WeaponId", "")
+        snapshot.WeaponName = self:ReadSwapStringFieldClient(swapComponent, "Slot4WeaponName", self.EmptyWeaponName)
+        snapshot.SpriteRuid = self:ReadSwapStringFieldClient(swapComponent, "Slot4WeaponSpriteRuid", "")
+        snapshot.Level = self:ReadSwapIntegerFieldClient(swapComponent, "Slot4WeaponLevel", 1, 1)
+        snapshot.Exp = self:ReadSwapIntegerFieldClient(swapComponent, "Slot4WeaponExp", 0, 0)
+        snapshot.RequiredExp = self:ReadSwapIntegerFieldClient(swapComponent, "Slot4WeaponRequiredExp", 1, 1)
+        return snapshot
+    end
+
+    @ExecSpace("ClientOnly")
+    method string ReadSwapStringFieldClient(any swapComponent, string fieldName, string fallbackValue)
+        local fallback = fallbackValue
+        if fallback == nil then
+            fallback = ""
+        end
+
+        if swapComponent == nil or fieldName == nil or fieldName == "" then
+            return fallback
+        end
+
+        local value = nil
+        local readOk, readValue = pcall(function()
+            return swapComponent[fieldName]
+        end)
+        if readOk == true then
+            value = readValue
+        end
+        if value == nil then
+            return fallback
+        end
+
+        local text = tostring(value)
+        if text == "" then
+            return fallback
+        end
+
+        return text
+    end
+
+    @ExecSpace("ClientOnly")
+    method integer ReadSwapIntegerFieldClient(any swapComponent, string fieldName, integer fallbackValue, integer minValue)
+        local fallback = math.floor(fallbackValue)
+        local min = math.floor(minValue)
+        if fallback < min then
+            fallback = min
+        end
+
+        if swapComponent == nil or fieldName == nil or fieldName == "" then
+            return fallback
+        end
+
+        local numeric = nil
+        local readOk, readValue = pcall(function()
+            return swapComponent[fieldName]
+        end)
+        if readOk == true and readValue ~= nil then
+            numeric = tonumber(readValue)
+        end
+        if numeric == nil then
+            return fallback
+        end
+
+        local value = math.floor(numeric)
+        if value < min then
+            value = min
+        end
+        return value
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ApplySlotSnapshotClient(Entity slotEntity, table snapshot)
+        if slotEntity == nil or isvalid(slotEntity) == false or snapshot == nil then
+            return
+        end
+
+        local weaponName = self.EmptyWeaponName
+        if snapshot.WeaponName ~= nil and tostring(snapshot.WeaponName) ~= "" then
+            weaponName = tostring(snapshot.WeaponName)
+        end
+
+        local level = math.max(1, math.floor(snapshot.Level))
+        local exp = math.max(0, math.floor(snapshot.Exp))
+        local requiredExp = math.max(1, math.floor(snapshot.RequiredExp))
+        local expRatio = self:Clamp01(exp / requiredExp)
+
+        local nameText = slotEntity:GetChildByName("WeaponNameText", true)
+        self:SetTextEntityClient(nameText, weaponName)
+
+        local levelText = slotEntity:GetChildByName("LevelText", true)
+        self:SetTextEntityClient(levelText, "LV" .. tostring(level))
+
+        local iconEntity = slotEntity:GetChildByName("WeaponIcon", true)
+        self:SetSpriteEntityClient(iconEntity, tostring(snapshot.SpriteRuid))
+
+        local expBack = slotEntity:GetChildByName("ExpBack", true)
+        local expFore = nil
+        if expBack ~= nil and isvalid(expBack) == true then
+            expFore = expBack:GetChildByName("Fore", true)
+        end
+        self:SetGaugeRatioClient(expFore, expRatio)
+    end
+
+    -- Center section follows current slot data and portrait fallback chain.
+    @ExecSpace("ClientOnly")
+    method void ApplyCenterSnapshotClient(table snapshot, any swapComponent)
+        local wheelRoot = self:ResolveWheelRootClient()
+        if wheelRoot == nil then
+            return
+        end
+        if snapshot == nil then
+            return
+        end
+
+        local weaponName = self.EmptyWeaponName
+        if snapshot.WeaponName ~= nil and tostring(snapshot.WeaponName) ~= "" then
+            weaponName = tostring(snapshot.WeaponName)
+        end
+
+        local level = math.max(1, math.floor(snapshot.Level))
+        local exp = math.max(0, math.floor(snapshot.Exp))
+        local requiredExp = math.max(1, math.floor(snapshot.RequiredExp))
+        local expRatio = self:Clamp01(exp / requiredExp)
+
+        local centerName = wheelRoot:GetChildByName("CenterWeaponNameText", true)
+        self:SetTextEntityClient(centerName, weaponName)
+
+        local centerLevel = wheelRoot:GetChildByName("CenterLevelText", true)
+        self:SetTextEntityClient(centerLevel, "LV" .. tostring(level))
+
+        local centerExpBack = wheelRoot:GetChildByName("CenterExpBack", true)
+        local centerExpFore = nil
+        if centerExpBack ~= nil and isvalid(centerExpBack) == true then
+            centerExpFore = centerExpBack:GetChildByName("Fore", true)
+        end
+        self:SetGaugeRatioClient(centerExpFore, expRatio)
+
+        local portraitRuid = self:ResolveCenterPortraitRuidClient(swapComponent)
+        local centerPortrait = wheelRoot:GetChildByName("CenterPortrait", true)
+        self:SetSpriteEntityClient(centerPortrait, portraitRuid)
+    end
+
+    -- Portrait source priority: CharacterData idle -> current weapon sprite.
+    @ExecSpace("ClientOnly")
+    method string ResolveCenterPortraitRuidClient(any swapComponent)
+        local portraitRuid = ""
+
+        local characterData = self:ResolveComponentSafe(self.Entity, "CharacterDataInitComponent", "CurrentCharacterId")
+        if characterData ~= nil then
+            local readOk, readValue = pcall(function()
+                return characterData.CurrentIdleRuid
+            end)
+            if readOk == true and readValue ~= nil then
+                portraitRuid = tostring(readValue)
+            end
+        end
+
+        if portraitRuid ~= nil and portraitRuid ~= "" then
+            return portraitRuid
+        end
+
+        if swapComponent ~= nil then
+            local readOk, readValue = pcall(function()
+                return swapComponent.CurrentWeaponSpriteRuid
+            end)
+            if readOk == true and readValue ~= nil then
+                portraitRuid = tostring(readValue)
+            end
+        end
+
+        if portraitRuid == nil then
+            portraitRuid = ""
+        end
+        return portraitRuid
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetTextEntityClient(Entity target, string textValue)
+        if target == nil or isvalid(target) == false then
+            return
+        end
+        if target.TextComponent == nil then
+            return
+        end
+
+        local finalText = ""
+        if textValue ~= nil then
+            finalText = tostring(textValue)
+        end
+
+        pcall(function()
+            target.Enable = true
+            target.Visible = true
+        end)
+        pcall(function()
+            target.TextComponent.Enable = true
+            target.TextComponent.Text = finalText
+        end)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetSpriteEntityClient(Entity target, string spriteRuid)
+        if target == nil or isvalid(target) == false then
+            return
+        end
+
+        local finalRuid = ""
+        if spriteRuid ~= nil then
+            finalRuid = tostring(spriteRuid)
+        end
+
+        pcall(function()
+            target.Enable = true
+            target.Visible = true
+        end)
+
+        if target.SpriteGUIRendererComponent ~= nil then
+            pcall(function()
+                target.SpriteGUIRendererComponent.ImageRUID = finalRuid
+            end)
+            pcall(function()
+                target.SpriteGUIRendererComponent.SpriteRUID = finalRuid
+            end)
+            return
+        end
+
+        if target.SpriteRendererComponent ~= nil then
+            pcall(function()
+                target.SpriteRendererComponent.SpriteRUID = finalRuid
+            end)
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetGaugeRatioClient(Entity gaugeForeEntity, number ratio)
+        if gaugeForeEntity == nil or isvalid(gaugeForeEntity) == false then
+            return
+        end
+        if gaugeForeEntity.UITransformComponent == nil then
+            return
+        end
+
+        local value = self:Clamp01(ratio)
+        pcall(function()
+            gaugeForeEntity.Enable = true
+            gaugeForeEntity.Visible = true
+        end)
+        pcall(function()
+            gaugeForeEntity.UITransformComponent.UIScale = Vector3(value, 1, 1)
+        end)
+    end
+
     -- Slot entity search supports common naming variants to reduce hard dependency on one UI prefab.
     @ExecSpace("ClientOnly")
     method Entity GetSlotEntityClient(integer slot)
@@ -92,6 +600,22 @@ script WeaponWheelUIComponent extends Component
             slotEntity = wheelRoot:GetChildByName(slotNameB, true)
         end
         return slotEntity
+    end
+
+    -- Click target is the icon node only so accidental area clicks do not trigger selection.
+    @ExecSpace("ClientOnly")
+    method Entity GetSlotClickTargetEntityClient(integer slot)
+        local slotEntity = self:GetSlotEntityClient(slot)
+        if slotEntity == nil or isvalid(slotEntity) == false then
+            return nil
+        end
+
+        local iconEntity = slotEntity:GetChildByName("WeaponIcon", true)
+        if iconEntity == nil or isvalid(iconEntity) == false then
+            return nil
+        end
+
+        return iconEntity
     end
 
     -- Visual policy scales highlighted/current slots and toggles child highlight marker when available.
@@ -120,6 +644,20 @@ script WeaponWheelUIComponent extends Component
                 marker.Visible = markerVisible
             end)
         end
+    end
+
+    method number Clamp01(number value)
+        local numeric = value
+        if numeric == nil then
+            numeric = 0
+        end
+        if numeric < 0 then
+            return 0
+        end
+        if numeric > 1 then
+            return 1
+        end
+        return numeric
     end
 
     method integer ClampSlot(integer slot)
@@ -176,5 +714,42 @@ script WeaponWheelUIComponent extends Component
         end
 
         self._T.UseGRUtilFallback = true
+    end
+
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
     end
 end

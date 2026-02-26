@@ -2409,3 +2409,108 @@
 |---|---|
 | Main UI recovery | Restored `ResolveEffectiveLobbyStateClient()` to sync-authoritative `IsLobbyActive` so lobby `MainGroup` widgets are not hidden by client-side false positives. |
 | Heuristic rollback | Removed `IsGameplayRunningClient()` fallback path from `LobbyFlowComponent` because it could classify lobby as in-game in edge states. |
+
+## 2026-02-26 HP/Ammo Value Text Render Visibility Fix
+
+### InGameHUDComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/UI/InGameHUDComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/UI/InGameHUDComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Value text hard-force write | Added `SetValueTextByPathClient()` to force `Entity.Enable/Visible=true` and `TextComponent.Enable=true` while applying HP/Ammo text values. |
+| Legacy label path update point | `RefreshLegacyHPTextClient()` and `RefreshLegacyAmmoAndCooldownTextClient()` now use value-text dedicated writer for `HPValueText` / `AmmoValueText`. |
+
+### DefaultGroup.ui (Updated)
+- **File:** `ui/DefaultGroup.ui`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| HP text draw priority | `/ui/DefaultGroup/GRHUD_HPBack/HPValueText` display order raised to `14`, `TextComponent.OverrideSorting=true`. |
+| Ammo text draw priority | `/ui/DefaultGroup/GRHUD_EXPBack/AmmoValueText` display order raised to `15`, `TextComponent.OverrideSorting=true`. |
+
+## 2026-02-26 PopuiGroup Weapon Wheel Split (DefaultGroup 분리)
+
+### UI Resources (Updated)
+- **Files:** `ui/DefaultGroup.ui`, `ui/PopuiGroup.ui`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Wheel root migration | Removed `/ui/DefaultGroup/GRWeaponWheelRoot*` from `DefaultGroup`. |
+| New UI group | Added `ui/PopuiGroup.ui` with `/ui/PopuiGroup` (`GroupOrder=4`). |
+| Pop wheel structure | Added `/ui/PopuiGroup/GRWeaponWheelRoot`, `GRWeaponWheelDim`, 슬롯 `Slot1~4`, 중앙 `Center*` 노드. |
+| Wheel background sprite | Applied fixed wheel background `DataId=499c70eab41cfeb418a3ad9f87fd0285`. |
+
+### WeaponSwapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Slot UI Sync fields | Added synced per-slot UI snapshot fields (`Slot{1..4}WeaponId/Name/SpriteRuid/Level/Exp/RequiredExp`). |
+| Sync snapshot methods | Added `RefreshWheelSlotUISyncServer()`, `ApplyWheelSlotSyncBySlotServer()`. |
+| Refresh trigger points | Snapshot refresh is called from `OnInitialize`, `InitSlotsFromPlayerbleData`, `OpenSwapMenuServer`, `ApplySlotDataToCombat`, `ImportWeaponSwapState`. |
+| Level/Exp source | Integrates `WeaponLevelUpComponent:ExportWeaponProgressState()` to fill slot level/exp/required-exp. |
+
+### WeaponWheelUIComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/UI/WeaponWheelUIComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/UI/WeaponWheelUIComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Root path cutover | `WheelRootPath` default changed to `/ui/PopuiGroup/GRWeaponWheelRoot`, `WheelDimPath` added. |
+| Slot render pipeline | Added slot snapshot read/apply methods for name/icon/`LV` text/exp gauge (`Slot1~4`). |
+| Center render pipeline | Added center render for weapon명/LV/exp and portrait fallback chain. |
+| Portrait fallback | `CharacterDataInitComponent.CurrentIdleRuid` 우선, 미존재 시 `WeaponSwapComponent.CurrentWeaponSpriteRuid` 사용. |
+| Legacy hardcode cleanup | Removed direct dependency on `"/ui/DefaultGroup/GRWeaponWheelRoot"`. |
+
+## 2026-02-26 Weapon Wheel UI Click-to-Swap Support
+
+### WeaponWheelUIComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/UI/WeaponWheelUIComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/UI/WeaponWheelUIComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Click swap option | Added `EnableSlotClickSwap` and `SlotClickDebounce` properties for UI click confirm control. |
+| Slot button binding | Added runtime button wiring for `Slot1~4` (`EnsureSlotButtonsBoundClient`, `BindSlotButtonClient`, `UnbindSlotButtonClient`, `ClearSlotButtonsClient`). |
+| Click confirm flow | Added `OnSlotClickedClient()` so wheel-open slot click sends authoritative `RequestConfirmSwapServer(targetSlot)`. |
+| Lifecycle safety | Binding is ensured on `OnBeginPlay`/`OnMapEnter`/state apply, and cleaned up in `OnEndPlay` to prevent stale handlers. |
+| Codeblock sync | `.codeblock(Target mLua)` updated to exact source parity with `.mlua`. |
+
+## 2026-02-26 Weapon Wheel Input Policy Update (Icon Click Select + Space Confirm)
+
+### WeaponWheelUIComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/UI/WeaponWheelUIComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/UI/WeaponWheelUIComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Click target scope | Slot root click binding replaced with `WeaponIcon` click target binding (`GetSlotClickTargetEntityClient`). |
+| Click behavior | `OnSlotClickedClient()` now updates highlighted/pending slot only via `NotifySwapMenuClient(true, targetSlot, currentSlot)` and does not request confirm. |
+| Confirm path separation | Mouse click is selection-only; final swap confirm path remains keyboard-driven (`Space`). |
+
+### WeaponSwapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.codeblock`
+- **Updated:** `2026-02-26`
+
+#### Added/Changed
+| Item | Detail |
+|---|---|
+| Confirm input policy | `HandleKeyDownEvent()` confirm condition changed from `Mouse0 or Space` to `Space` only. |
+| UX alignment | Wheel icon click selects slot, and `Space` confirms selected slot for consistent two-step selection/confirm flow. |

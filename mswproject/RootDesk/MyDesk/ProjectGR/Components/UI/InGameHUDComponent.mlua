@@ -478,8 +478,7 @@ script InGameHUDComponent extends Component
         end
 
         local label = "체력 : " .. tostring(currentHp) .. "/" .. tostring(maxHp)
-        self:SetTextByPathClient(self.LegacyHPBarValueTextEntity, self.LegacyHPBarValueTextPath, label)
-        self:SetEntityVisibleClient(self.LegacyHPBarValueTextEntity, true)
+        self:SetValueTextByPathClient(self.LegacyHPBarValueTextEntity, self.LegacyHPBarValueTextPath, label)
     end
 
     @ExecSpace("ClientOnly")
@@ -508,8 +507,7 @@ script InGameHUDComponent extends Component
         end
 
         local ammoLabel = "탄창 " .. tostring(math.max(0, math.floor(ammo))) .. "/" .. tostring(math.max(0, math.floor(maxAmmo)))
-        self:SetTextByPathClient(self.LegacyAmmoBarValueTextEntity, self.LegacyAmmoBarValueTextPath, ammoLabel)
-        self:SetEntityVisibleClient(self.LegacyAmmoBarValueTextEntity, true)
+        self:SetValueTextByPathClient(self.LegacyAmmoBarValueTextEntity, self.LegacyAmmoBarValueTextPath, ammoLabel)
 
         local showGauge = false
         local reloadRatio = 0
@@ -1385,6 +1383,30 @@ script InGameHUDComponent extends Component
             return
         end
         pcall(function()
+            textComponent.Text = textValue
+        end)
+    end
+
+    -- Value labels are force-enabled every refresh to survive external UI visibility toggles.
+    @ExecSpace("ClientOnly")
+    method void SetValueTextByPathClient(Entity entityRef, string path, string textValue)
+        local target = self:ResolveEntityWithCacheClient(entityRef, path)
+        if target == nil or isvalid(target) == false then
+            return
+        end
+
+        pcall(function()
+            target.Enable = true
+            target.Visible = true
+        end)
+
+        local textComponent = target.TextComponent
+        if textComponent == nil then
+            return
+        end
+
+        pcall(function()
+            textComponent.Enable = true
             textComponent.Text = textValue
         end)
     end
