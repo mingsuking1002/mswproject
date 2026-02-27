@@ -285,6 +285,8 @@ script TurretAIComponent extends Component
         projectile.Damage = math.max(0, math.floor(self._T.Runtime.DamageSnapshot))
         projectile.ProjectileType = self._T.Runtime.ProjectileType
         projectile.SplashSize = self._T.Runtime.SplashSize
+        projectile.ProjectileDataTableName = self._T.Runtime.ProjectileDataTableName
+        projectile.ProjectileDataId = self:NormalizeProjectileDataIdToken(self._T.Runtime.ProjectileId)
         projectile:InitializeProjectile(direction, spawnPosition2D, self._T.Runtime.OwnerEntity)
         return true
     end
@@ -516,6 +518,24 @@ script TurretAIComponent extends Component
     method integer GetRuntimeInteger(table runtime, string key, integer fallbackValue)
         local numberValue = self:GetRuntimeNumber(runtime, key, fallbackValue)
         return math.floor(numberValue)
+    end
+
+    method string NormalizeProjectileDataIdToken(string rawId)
+        if rawId == nil then
+            return ""
+        end
+
+        local token = tostring(rawId)
+        token = string.gsub(token, "^%s+", "")
+        token = string.gsub(token, "%s+$", "")
+        token = string.lower(token)
+        if token == "" then
+            return ""
+        end
+        if token == "-" or token == "null" or token == "nil" then
+            return ""
+        end
+        return token
     end
 
     method Component FindOrAddComponentSafe(Entity targetEntity, string typeName)

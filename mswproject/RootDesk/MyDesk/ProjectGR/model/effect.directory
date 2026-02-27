@@ -1,0 +1,23 @@
+{
+  "Id": "",
+  "GameId": "",
+  "EntryKey": "directory://2d0a06b79c234cc08444f56f20a2f0bd",
+  "ContentType": "x-mod/directory",
+  "Content": "",
+  "Usage": 0,
+  "UsePublish": 1,
+  "UseService": 0,
+  "CoreVersion": "26.1.0.0",
+  "StudioVersion": "0.1.0.0",
+  "DynamicLoading": 0,
+  "ContentProto": {
+    "Use": "Json",
+    "Json": {
+      "entry_id": "directory://2d0a06b79c234cc08444f56f20a2f0bd",
+      "name": "effect",
+      "lock": false,
+      "folding": false,
+      "nameEditable": true
+    }
+  }
+}

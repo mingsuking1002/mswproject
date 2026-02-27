@@ -32,7 +32,7 @@
             "$type": "MODNativeType",
             "type": "System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
           },
-          "Value": "41a6e11c3a364a6082f766687fa7cb03"
+          "Value": "38e9351c34b843ddbcc191c762e7464c"
         },
         {
           "TargetType": "MOD.Core.SpriteRendererComponent",
@@ -41,7 +41,7 @@
             "$type": "MODNativeType",
             "type": "System.Boolean, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
           },
-          "Value": true
+          "Value": false
         },
         {
           "TargetType": "MOD.Core.SpriteRendererComponent",
@@ -162,8 +162,8 @@
           },
           "Value": {
             "$type": "MOD.Core.MODVector2, MOD.Core",
-            "x": 1.65561569,
-            "y": 2.13817716
+            "x": 1.69928145,
+            "y": 1.61676347
           }
         },
         {
@@ -175,8 +175,8 @@
           },
           "Value": {
             "$type": "MOD.Core.MODVector2, MOD.Core",
-            "x": 0.208007813,
-            "y": -0.068359375
+            "x": -0.05703125,
+            "y": -0.132031247
           }
         },
         {
@@ -187,6 +187,43 @@
             "type": "MOD.Core.ColliderType, MOD.Core, Version=26.1.0.0, Culture=neutral, PublicKeyToken=null"
           },
           "Value": 1
+        },
+        {
+          "TargetType": "MOD.Core.SpriteRendererComponent",
+          "Name": "FlipY",
+          "ValueType": {
+            "$type": "MODNativeType",
+            "type": "System.Boolean, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+          },
+          "Value": false
+        },
+        {
+          "TargetType": "MOD.Core.TransformComponent",
+          "Name": "Scale",
+          "ValueType": {
+            "$type": "MODNativeType",
+            "type": "MOD.Core.MODVector3, MOD.Core, Version=26.1.0.0, Culture=neutral, PublicKeyToken=null"
+          },
+          "Value": {
+            "$type": "MOD.Core.MODVector3, MOD.Core",
+            "x": 2.5,
+            "y": 2.5,
+            "z": 1.0
+          }
+        },
+        {
+          "TargetType": "MOD.Core.TransformComponent",
+          "Name": "Position",
+          "ValueType": {
+            "$type": "MODNativeType",
+            "type": "MOD.Core.MODVector3, MOD.Core, Version=26.1.0.0, Culture=neutral, PublicKeyToken=null"
+          },
+          "Value": {
+            "$type": "MOD.Core.MODVector3, MOD.Core",
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
         }
       ],
       "EventLinks": [],

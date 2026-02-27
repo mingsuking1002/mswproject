@@ -23,6 +23,12 @@ script ProjectileComponent extends Component
     property boolean EnablePlacedProjectileDataBinding = true
     property string ProjectileDataTableName = "ProjectileData"
     property string ProjectileDataId = ""
+    property boolean EnableMonsterHitEffect = true
+    property string HitEffectModelId = ""
+    property number HitEffectLifetime = 0.2
+    property boolean EnableMonsterHitSound = true
+    property string HitSoundRuid = ""
+    property number HitSoundVolume = 1.0
 
     -- Server initializes lifecycle guards to make destroy path idempotent.
     @ExecSpace("ServerOnly")
@@ -84,6 +90,7 @@ script ProjectileComponent extends Component
         self._T.IsInitialized = true
         self._T.ProcessedTargets = {}
         self.ExplosionTriggered = false
+        self:TryBindRuntimeProjectileDataServer()
 
         local transform = self.Entity.TransformComponent
         if transform ~= nil and isvalid(transform) == true then
@@ -324,6 +331,9 @@ script ProjectileComponent extends Component
             local impactDamage = self:ResolveDamageAgainstTargetServer(damageTarget, self.Damage)
             if impactDamage > 0 then
                 hpSystem:ApplyDamage(impactDamage)
+                self:TrySpawnMonsterHitEffectServer(hitEntity, damageTarget)
+                local hitSoundPosition = self:ResolveImpactPositionServer(hitEntity, damageTarget)
+                self:TryPlayMonsterHitSoundAtServer(hitSoundPosition)
             end
             self:MarkProcessedTarget(damageTarget)
             if self.DestroyOnImpact == true then
@@ -398,6 +408,7 @@ script ProjectileComponent extends Component
 
         local center = Vector2(worldPos.x, worldPos.y)
         local radiusSqr = radius * radius
+        local didApplySplashDamage = false
         for _, target in pairs(candidates) do
             if target == nil or isvalid(target) == false then
                 continue
@@ -422,7 +433,15 @@ script ProjectileComponent extends Component
                 pcall(function()
                     hpSystem:ApplyDamage(splashDamage)
                 end)
+                didApplySplashDamage = true
+                self:TrySpawnMonsterHitEffectServer(target, target)
             end
+        end
+
+        -- Splash hit sound is emitted once per explosion even if multiple monsters are damaged.
+        if didApplySplashDamage == true then
+            local splashSoundPosition = Vector3(worldPos.x, worldPos.y, worldPos.z)
+            self:TryPlayMonsterHitSoundAtServer(splashSoundPosition)
         end
 
         self:DestroySelf()
@@ -681,11 +700,309 @@ script ProjectileComponent extends Component
         if splashSize >= 0 then
             self.SplashSize = splashSize
         end
+        self:ApplyHitEffectRowBindingServer(row)
 
         local trigger = self:ResolveComponentSafe(self.Entity, "TriggerComponent", "IsPassive")
         if trigger ~= nil then
             pcall(function()
                 trigger.IsPassive = false
+            end)
+        end
+    end
+
+    -- Runtime-fired projectile also binds ProjectileData row by snapshot id for hit-effect settings.
+    @ExecSpace("ServerOnly")
+    method void TryBindRuntimeProjectileDataServer()
+        local projectileId = self:NormalizePlacedProjectileToken(self.ProjectileDataId)
+        if projectileId == "" then
+            projectileId = self:ResolveOwnerProjectileDataIdServer()
+        end
+        if projectileId == "" then
+            return
+        end
+
+        local row = self:GetProjectileRowByIdServer(projectileId)
+        if row == nil then
+            return
+        end
+
+        self.ProjectileDataId = projectileId
+        self:ApplyHitEffectRowBindingServer(row)
+    end
+
+    -- Owner FireSystem snapshot is used as fallback when explicit ProjectileDataId is not set on spawn.
+    @ExecSpace("ServerOnly")
+    method string ResolveOwnerProjectileDataIdServer()
+        if self.OwnerEntity == nil or isvalid(self.OwnerEntity) == false then
+            return ""
+        end
+
+        local fireComponent = self:ResolveComponentSafe(self.OwnerEntity, "FireSystemComponent", "CurrentProjectileId")
+        if fireComponent == nil then
+            return ""
+        end
+
+        local projectileId = ""
+        local projectileOk, projectileValue = pcall(function()
+            return fireComponent.CurrentProjectileId
+        end)
+        if projectileOk == true and projectileValue ~= nil then
+            projectileId = self:NormalizePlacedProjectileToken(tostring(projectileValue))
+        end
+        if projectileId ~= "" then
+            return projectileId
+        end
+
+        local summonProjectileId = ""
+        local summonOk, summonValue = pcall(function()
+            return fireComponent.CurrentSummonProjectileId
+        end)
+        if summonOk == true and summonValue ~= nil then
+            summonProjectileId = self:NormalizePlacedProjectileToken(tostring(summonValue))
+        end
+        return summonProjectileId
+    end
+
+    -- ProjectileData columns: hit_effect_model, hit_effect_lifetime, hit_sound_ruid, hit_sound_volume.
+    @ExecSpace("ServerOnly")
+    method void ApplyHitEffectRowBindingServer(table row)
+        if row == nil then
+            return
+        end
+
+        local effectModelId = self:GetRowString(row, "hit_effect_model", self.HitEffectModelId)
+        if effectModelId ~= "" then
+            self.HitEffectModelId = effectModelId
+        end
+
+        local effectLifetime = self:GetRowNumber(row, "hit_effect_lifetime", self.HitEffectLifetime)
+        if effectLifetime >= 0 then
+            self.HitEffectLifetime = effectLifetime
+        end
+
+        local hitSoundRuid = self:GetRowString(row, "hit_sound_ruid", "")
+        if hitSoundRuid == "" then
+            hitSoundRuid = self:GetRowString(row, "sound_ruid", self.HitSoundRuid)
+        end
+        if hitSoundRuid ~= "" then
+            self.HitSoundRuid = hitSoundRuid
+        end
+
+        local hitSoundVolume = self:GetRowNumber(row, "hit_sound_volume", self.HitSoundVolume)
+        if hitSoundVolume >= 0 then
+            self.HitSoundVolume = hitSoundVolume
+        end
+    end
+
+    -- Monster hit feedback uses short-lived visual entity and never participates in collision/damage.
+    @ExecSpace("ServerOnly")
+    method void TrySpawnMonsterHitEffectServer(Entity impactEntity, Entity damageTarget)
+        if self.EnableMonsterHitEffect ~= true then
+            return
+        end
+
+        local effectModelId = self.HitEffectModelId
+        if effectModelId == nil or effectModelId == "" then
+            return
+        end
+
+        local parentEntity = self.Entity.CurrentMap
+        if parentEntity == nil or isvalid(parentEntity) == false then
+            parentEntity = self.Entity
+        end
+
+        local spawnPosition = self:ResolveImpactPositionServer(impactEntity, damageTarget)
+        local effectEntity = nil
+        local spawnOk, spawnValue = pcall(function()
+            return _SpawnService:SpawnByModelId(effectModelId, "ProjectileHitEffect", spawnPosition, parentEntity)
+        end)
+        if spawnOk == true then
+            effectEntity = spawnValue
+        end
+        if effectEntity == nil or isvalid(effectEntity) == false then
+            return
+        end
+
+        self:PrepareVisualOnlyHitEffectEntityServer(effectEntity)
+
+        local lifeTime = math.max(self.HitEffectLifetime, 0.05)
+        local clearFn = function()
+            if effectEntity ~= nil and isvalid(effectEntity) == true then
+                _EntityService:Destroy(effectEntity)
+            end
+        end
+        _TimerService:SetTimerOnce(clearFn, lifeTime)
+    end
+
+    -- Sound feedback is played client-side for all active users and uses impact position for spatial cue.
+    @ExecSpace("ServerOnly")
+    method void TryPlayMonsterHitSoundAtServer(Vector3 soundPosition)
+        if self.EnableMonsterHitSound ~= true then
+            return
+        end
+
+        local soundRuid = self:NormalizeSoundRuid(self.HitSoundRuid)
+        if soundRuid == "" then
+            return
+        end
+
+        local volume = self.HitSoundVolume
+        if volume == nil then
+            volume = 1.0
+        end
+        volume = math.max(0, volume)
+        if volume <= 0 then
+            return
+        end
+
+        if soundPosition == nil then
+            soundPosition = self:ResolveImpactPositionServer(nil, nil)
+        end
+
+        local users = _UserService.UserEntities
+        if users == nil then
+            local listener = self.Entity
+            pcall(function()
+                _SoundService:PlaySoundAtPos(soundRuid, soundPosition, listener, volume)
+            end)
+            return
+        end
+
+        for userId, userEntity in pairs(users) do
+            if userId == nil or tostring(userId) == "" then
+                continue
+            end
+
+            local listener = userEntity
+            if listener == nil or isvalid(listener) == false then
+                listener = self.Entity
+            end
+
+            local played = false
+            local playAtPosOk, _ = pcall(function()
+                _SoundService:PlaySoundAtPos(soundRuid, soundPosition, listener, volume, tostring(userId))
+            end)
+            if playAtPosOk == true then
+                played = true
+            end
+            if played ~= true then
+                pcall(function()
+                    _SoundService:PlaySound(soundRuid, volume, tostring(userId))
+                end)
+            end
+        end
+    end
+
+    method string NormalizeSoundRuid(string rawValue)
+        if rawValue == nil then
+            return ""
+        end
+
+        local text = tostring(rawValue)
+        text = string.gsub(text, "^%s+", "")
+        text = string.gsub(text, "%s+$", "")
+        text = string.lower(text)
+        if text == "" then
+            return ""
+        end
+        if text == "-" or text == "null" or text == "nil" then
+            return ""
+        end
+
+        local soundPrefix = "sound://"
+        if string.sub(text, 1, #soundPrefix) == soundPrefix then
+            text = string.sub(text, #soundPrefix + 1)
+        end
+
+        return text
+    end
+
+    @ExecSpace("ServerOnly")
+    method Vector3 ResolveImpactPositionServer(Entity impactEntity, Entity damageTarget)
+        if impactEntity ~= nil and isvalid(impactEntity) == true then
+            local impactTransform = impactEntity.TransformComponent
+            if impactTransform ~= nil and isvalid(impactTransform) == true then
+                local impactPosOk, impactPosValue = pcall(function()
+                    return impactTransform.WorldPosition
+                end)
+                if impactPosOk == true and impactPosValue ~= nil then
+                    return Vector3(impactPosValue.x, impactPosValue.y, impactPosValue.z)
+                end
+            end
+        end
+
+        if damageTarget ~= nil and isvalid(damageTarget) == true then
+            local targetTransform = damageTarget.TransformComponent
+            if targetTransform ~= nil and isvalid(targetTransform) == true then
+                local targetPosOk, targetPosValue = pcall(function()
+                    return targetTransform.WorldPosition
+                end)
+                if targetPosOk == true and targetPosValue ~= nil then
+                    return Vector3(targetPosValue.x, targetPosValue.y, targetPosValue.z)
+                end
+            end
+        end
+
+        local selfTransform = self.Entity.TransformComponent
+        if selfTransform ~= nil and isvalid(selfTransform) == true then
+            local selfPosOk, selfPosValue = pcall(function()
+                return selfTransform.WorldPosition
+            end)
+            if selfPosOk == true and selfPosValue ~= nil then
+                return Vector3(selfPosValue.x, selfPosValue.y, selfPosValue.z)
+            end
+        end
+
+        return Vector3.zero
+    end
+
+    @ExecSpace("ServerOnly")
+    method void PrepareVisualOnlyHitEffectEntityServer(Entity effectEntity)
+        if effectEntity == nil or isvalid(effectEntity) == false then
+            return
+        end
+
+        local projectile = self:ResolveComponentSafe(effectEntity, "ProjectileComponent", nil)
+        if projectile ~= nil then
+            pcall(function()
+                projectile.Enable = false
+            end)
+        end
+
+        local trigger = self:ResolveComponentSafe(effectEntity, "TriggerComponent", nil)
+        if trigger ~= nil then
+            pcall(function()
+                trigger.IsPassive = true
+            end)
+            pcall(function()
+                trigger.Enable = false
+            end)
+        end
+
+        local physicsCollider = self:ResolveComponentSafe(effectEntity, "PhysicsColliderComponent", nil)
+        if physicsCollider ~= nil then
+            pcall(function()
+                physicsCollider.Enable = false
+            end)
+            pcall(function()
+                physicsCollider.EnableContactEvent = false
+            end)
+        end
+
+        local physicsBody = self:ResolveComponentSafe(effectEntity, "PhysicsRigidbodyComponent", nil)
+        if physicsBody ~= nil then
+            pcall(function()
+                physicsBody.Enable = false
+            end)
+            pcall(function()
+                physicsBody:SetLinearVelocity(Vector2.zero)
+            end)
+        end
+
+        local rigidbody = self:ResolveComponentSafe(effectEntity, "RigidbodyComponent", nil)
+        if rigidbody ~= nil then
+            pcall(function()
+                rigidbody.MoveVelocity = Vector2.zero
             end)
         end
     end

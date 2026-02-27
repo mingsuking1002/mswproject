@@ -1789,7 +1789,7 @@
                 "bottom": 4
               },
               "SizeFit": false,
-              "Text": "?怨몄젎",
+              "Text": "상점",
               "UseOutLine": false,
               "Enable": true
             }
@@ -2208,7 +2208,7 @@
                 "bottom": 0
               },
               "SizeFit": false,
-              "Text": "??る┛",
+              "Text": "나가기",
               "UseOutLine": false,
               "Enable": true
             }
@@ -3066,9 +3066,9 @@
               "DropShadowDistance": 32.0,
               "Font": 0,
               "FontColor": {
-                "r": 1.0,
-                "g": 1.0,
-                "b": 1.0,
+                "r": 0.0,
+                "g": 0.0,
+                "b": 0.0,
                 "a": 1.0
               },
               "FontSize": 27,
@@ -3093,7 +3093,7 @@
                 "bottom": 0
               },
               "SizeFit": false,
-              "Text": "??됱쟿",
+              "Text": "구매",
               "UseOutLine": false,
               "Enable": true
             }

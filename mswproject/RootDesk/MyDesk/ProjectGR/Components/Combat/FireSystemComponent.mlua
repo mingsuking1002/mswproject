@@ -44,6 +44,8 @@ script FireSystemComponent extends Component
     method void OnInitialize()
         self.IsFireReady = true
         self._T.FireCooldownTimerId = 0
+        self._T.CooldownStateByKey = {}
+        self._T.CurrentCooldownKey = ""
         self._T.MissingProjectileWarnAt = -9999.0
         self._T.MissingSummonWarnAt = -9999.0
         self._T.InvalidFireConfigWarnAt = -9999.0
@@ -192,9 +194,6 @@ script FireSystemComponent extends Component
         if self.CanAttack == false then
             return false
         end
-        if self.IsFireReady == false then
-            return false
-        end
 
         local fireType = self:NormalizeFireTypeToken(string.lower(tostring(self.CurrentFireType)))
         if fireType ~= tostring(self.CurrentFireType) then
@@ -208,6 +207,12 @@ script FireSystemComponent extends Component
             pcall(function()
                 self.CurrentProjectileType = projectileType
             end)
+        end
+
+        -- Active-fire key is synced before gate check so swap/tag cannot bypass per-weapon cooldown state.
+        self:SyncCooldownStateForCurrentWeaponServer()
+        if self.IsFireReady == false then
+            return false
         end
 
         if projectileType == "area_projectile" and self.SplashSize <= 0 then
@@ -343,6 +348,24 @@ script FireSystemComponent extends Component
             .. ", summonId=" .. summonId
             .. ", summonProjectileId=" .. summonProjectileId
             .. ", turretModelId=" .. turretModelId
+    end
+
+    method string NormalizeProjectileDataIdToken(string rawId)
+        if rawId == nil then
+            return ""
+        end
+
+        local token = tostring(rawId)
+        token = string.gsub(token, "^%s+", "")
+        token = string.gsub(token, "%s+$", "")
+        token = string.lower(token)
+        if token == "" then
+            return ""
+        end
+        if token == "-" or token == "null" or token == "nil" then
+            return ""
+        end
+        return token
     end
 
     method string NormalizeFireTypeToken(string rawType)
@@ -502,6 +525,8 @@ script FireSystemComponent extends Component
         projectileComponent.Spread = self.ProjectileSpread
         projectileComponent.ProjectileType = self.CurrentProjectileType
         projectileComponent.SplashSize = self.SplashSize
+        projectileComponent.ProjectileDataTableName = self.ProjectileDataTableName
+        projectileComponent.ProjectileDataId = self:NormalizeProjectileDataIdToken(self.CurrentProjectileId)
         projectileComponent:InitializeProjectile(direction, muzzlePosition, self.Entity)
         return true
     end
@@ -789,6 +814,12 @@ script FireSystemComponent extends Component
         end
         projectileComponent.EnableTriggerStayFallback = true
         projectileComponent.EnablePhysicsContactFallback = false
+        projectileComponent.ProjectileDataTableName = self.ProjectileDataTableName
+        local smiteProjectileId = self:NormalizeProjectileDataIdToken(self.CurrentProjectileId)
+        if smiteProjectileId == "" then
+            smiteProjectileId = self:NormalizeProjectileDataIdToken(self.CurrentSummonProjectileId)
+        end
+        projectileComponent.ProjectileDataId = smiteProjectileId
         projectileComponent:InitializeProjectile(Vector2.right, targetWorldPosition, self.Entity)
         return true
     end
@@ -1082,7 +1113,7 @@ script FireSystemComponent extends Component
 
         local runtime = {}
         runtime.OwnerEntity = self.Entity
-        runtime.ProjectileId = self.CurrentSummonProjectileId
+        runtime.ProjectileId = self:NormalizeProjectileDataIdToken(self.CurrentSummonProjectileId)
         runtime.FireRate = math.max(self.CurrentSummonFireRate, 0)
         runtime.Duration = math.max(self.CurrentSummonDuration, 0)
         runtime.ProjectileModelId = self.ProjectileModelId
@@ -1098,10 +1129,6 @@ script FireSystemComponent extends Component
             pcall(function()
                 turretAI:InitializeTurretServer(runtime)
             end)
-        end
-
-        if self.CurrentSummonCooldown ~= nil and self.CurrentSummonCooldown > 0 then
-            self.FireCooldown = self.CurrentSummonCooldown
         end
 
         return true
@@ -1305,23 +1332,156 @@ script FireSystemComponent extends Component
         end)
     end
 
+    -- Cooldown key isolates timer state by weapon/fire-type so summon cooldown cannot block unrelated weapons.
+    @ExecSpace("ServerOnly")
+    method string BuildCurrentCooldownKeyServer()
+        local weaponId = tostring(self.CurrentWeaponId or "")
+        local fireType = self:NormalizeFireTypeToken(string.lower(tostring(self.CurrentFireType)))
+        local summonId = ""
+        if fireType == "summon" then
+            summonId = tostring(self.CurrentSummonId or "")
+        end
+
+        return weaponId .. "|" .. fireType .. "|" .. summonId
+    end
+
+    @ExecSpace("ServerOnly")
+    method table EnsureCooldownStateServer(string key)
+        if self._T.CooldownStateByKey == nil then
+            self._T.CooldownStateByKey = {}
+        end
+
+        local state = self._T.CooldownStateByKey[key]
+        if state == nil then
+            state = {}
+            state.IsReady = true
+            state.TimerId = 0
+            state.Cooldown = math.max(tonumber(self.FireCooldown) or 0, 0)
+            state.EndAt = 0
+            self._T.CooldownStateByKey[key] = state
+        end
+
+        return state
+    end
+
+    @ExecSpace("ServerOnly")
+    method number ResolveCurrentCooldownDurationServer()
+        local fireType = self:NormalizeFireTypeToken(string.lower(tostring(self.CurrentFireType)))
+        if fireType == "summon" then
+            return math.max(tonumber(self.CurrentSummonCooldown) or 0, 0)
+        end
+        return math.max(tonumber(self.FireCooldown) or 0, 0)
+    end
+
+    -- WeaponSwap calls this to restore active slot cooldown state without forcing global ready.
+    @ExecSpace("ServerOnly")
+    method void SyncCooldownStateForCurrentWeaponServer()
+        local key = self:BuildCurrentCooldownKeyServer()
+        local state = self:EnsureCooldownStateServer(key)
+        local configuredCooldown = self:ResolveCurrentCooldownDurationServer()
+
+        -- Idle keys track latest configured cooldown so HUD displays the right baseline after swaps.
+        if state.TimerId == nil or state.TimerId <= 0 then
+            state.Cooldown = configuredCooldown
+        end
+
+        self._T.CurrentCooldownKey = key
+        self.IsFireReady = (state.IsReady ~= false)
+        self.FireCooldown = math.max(tonumber(state.Cooldown) or configuredCooldown or 0, 0)
+
+        if state.TimerId ~= nil and state.TimerId > 0 then
+            self._T.FireCooldownTimerId = state.TimerId
+        else
+            self._T.FireCooldownTimerId = 0
+        end
+    end
+
     -- Cooldown is timer-driven so fire-ready state is independent from frame rate.
     @ExecSpace("ServerOnly")
     method void StartFireCooldown()
-        if self._T.FireCooldownTimerId ~= nil and self._T.FireCooldownTimerId > 0 then
-            _TimerService:ClearTimer(self._T.FireCooldownTimerId)
-            self._T.FireCooldownTimerId = 0
+        local key = self:BuildCurrentCooldownKeyServer()
+        local state = self:EnsureCooldownStateServer(key)
+        local cooldown = self:ResolveCurrentCooldownDurationServer()
+
+        if state.TimerId ~= nil and state.TimerId > 0 then
+            _TimerService:ClearTimer(state.TimerId)
+            state.TimerId = 0
         end
 
-        self.IsFireReady = false
+        if cooldown <= 0 then
+            state.IsReady = true
+            state.Cooldown = 0
+            state.EndAt = 0
+            self._T.CurrentCooldownKey = key
+            self.IsFireReady = true
+            self.FireCooldown = 0
+            self._T.FireCooldownTimerId = 0
+            return
+        end
 
-        local cooldown = math.max(self.FireCooldown, 0)
+        local nowSeconds = 0.0
+        local nowOk, nowValue = pcall(function()
+            return _UtilLogic.ServerElapsedSeconds
+        end)
+        if nowOk == true and nowValue ~= nil then
+            nowSeconds = nowValue
+        end
+
+        state.IsReady = false
+        state.Cooldown = cooldown
+        state.EndAt = nowSeconds + cooldown
+
         local restoreFireReady = function()
+            if self._T.CooldownStateByKey == nil then
+                return
+            end
+            local runtimeState = self._T.CooldownStateByKey[key]
+            if runtimeState == nil then
+                return
+            end
+
+            runtimeState.IsReady = true
+            runtimeState.TimerId = 0
+            runtimeState.EndAt = 0
+
+            if self._T.CurrentCooldownKey == key then
+                self.IsFireReady = true
+                self.FireCooldown = math.max(tonumber(runtimeState.Cooldown) or 0, 0)
+                self._T.FireCooldownTimerId = 0
+            end
+        end
+
+        state.TimerId = _TimerService:SetTimerOnce(restoreFireReady, cooldown)
+        self._T.CurrentCooldownKey = key
+        self.IsFireReady = false
+        self.FireCooldown = cooldown
+        self._T.FireCooldownTimerId = state.TimerId
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ClearAllFireCooldownTimerServer()
+        if self._T.CooldownStateByKey == nil then
+            self._T.CooldownStateByKey = {}
             self.IsFireReady = true
             self._T.FireCooldownTimerId = 0
+            return
         end
 
-        self._T.FireCooldownTimerId = _TimerService:SetTimerOnce(restoreFireReady, cooldown)
+        for _, state in pairs(self._T.CooldownStateByKey) do
+            if state ~= nil and state.TimerId ~= nil and state.TimerId > 0 then
+                pcall(function()
+                    _TimerService:ClearTimer(state.TimerId)
+                end)
+            end
+            if state ~= nil then
+                state.TimerId = 0
+                state.IsReady = true
+                state.EndAt = 0
+            end
+        end
+
+        self.IsFireReady = true
+        self._T.FireCooldownTimerId = 0
     end
 
     -- If click overlaps shooter position, previous facing direction is used as fallback fire direction.
@@ -1354,10 +1514,8 @@ script FireSystemComponent extends Component
     -- End play clears timer handles to avoid restoring fire-ready on invalid entities.
     @ExecSpace("ServerOnly")
     method void OnEndPlay()
-        if self._T.FireCooldownTimerId ~= nil and self._T.FireCooldownTimerId > 0 then
-            _TimerService:ClearTimer(self._T.FireCooldownTimerId)
-            self._T.FireCooldownTimerId = 0
-        end
+        self:ClearAllFireCooldownTimerServer()
+        self._T.CurrentCooldownKey = ""
         self:ClearAllSmiteVisualRuntimeServer(true)
         self:ClearAllSmiteDamageTimerServer()
     end
@@ -1365,6 +1523,8 @@ script FireSystemComponent extends Component
     -- Destroy repeats timer/entity cleanup as final safety net.
     @ExecSpace("ServerOnly")
     method void OnDestroy()
+        self:ClearAllFireCooldownTimerServer()
+        self._T.CurrentCooldownKey = ""
         self:ClearAllSmiteVisualRuntimeServer(true)
         self:ClearAllSmiteDamageTimerServer()
     end

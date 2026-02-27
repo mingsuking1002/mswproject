@@ -3280,3 +3280,75 @@
 |---|---|
 | Run-start API | Added `ResetForNewRunServer()` to clear tag timers/cooldown, normalize active character to A, and rebuild A/B character snapshots. |
 | Client sync | `ResetForNewRunServer()` now calls `NotifyTagChangedClient(1)` so run start UI follows reset index immediately. |
+
+## 2026-02-27 Projectile Monster Hit Effect/Sound (ProjectileData.userdataset)
+
+### ProjectileComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ProjectileComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ProjectileComponent.codeblock`
+- **Updated:** `2026-02-27`
+
+| Item | Detail |
+|---|---|
+| New properties | Added hit feedback properties: `EnableMonsterHitEffect`, `HitEffectModelId`, `HitEffectLifetime`, `EnableMonsterHitSound`, `HitSoundRuid`, `HitSoundVolume`. |
+| Runtime row bind | Added `TryBindRuntimeProjectileDataServer()` so spawned projectiles also bind row data by `ProjectileDataId`. |
+| Data-driven columns | Added row binding for `hit_effect_model`, `hit_effect_lifetime`, `hit_sound_ruid`, `hit_sound_volume` via `ApplyHitEffectRowBindingServer()`. |
+| Hit effect spawn | On valid monster damage in single/area flow, `TrySpawnMonsterHitEffectServer()` spawns short-lived visual effect entity and auto-destroys it after lifetime. |
+| Hit sound playback | Added `TryPlayMonsterHitSoundAtServer()` to play impact sound to clients using `_SoundService` at hit position. |
+| Splash sound policy | In `ExplodeServer()`, splash hit sound now plays only once per explosion even when multiple monsters are damaged. |
+| Safety guards | Spawn path uses nil/isvalid checks and disables collision/damage-related components on effect entity (`PrepareVisualOnlyHitEffectEntityServer`). |
+
+### FireSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.codeblock`
+- **Updated:** `2026-02-27`
+
+| Item | Detail |
+|---|---|
+| ProjectileData id normalization | Added `NormalizeProjectileDataIdToken()` for safe/consistent id tokens. |
+| Projectile spawn binding | `SpawnProjectileServer()` now snapshots `ProjectileDataTableName` + `ProjectileDataId` into spawned `ProjectileComponent`. |
+| Smite hit projectile binding | `SpawnSmiteHitProjectileServer()` also passes `ProjectileDataTableName` + `ProjectileDataId` to hit projectile entity. |
+| Summon runtime id cleanup | `SummonTurretServer()` now normalizes `runtime.ProjectileId` before passing to turret AI. |
+
+### TurretAIComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/TurretAIComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/TurretAIComponent.codeblock`
+- **Updated:** `2026-02-27`
+
+| Item | Detail |
+|---|---|
+| Turret projectile binding | `SpawnTurretProjectileServer()` now writes `ProjectileDataTableName` + `ProjectileDataId` to spawned projectile. |
+| Id normalization helper | Added `NormalizeProjectileDataIdToken()` for turret runtime config ids. |
+
+### ProjectileData.csv (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Data/ProjectileData.csv`
+- **Updated:** `2026-02-27`
+
+| Item | Detail |
+|---|---|
+| New columns | Added `hit_effect_model`, `hit_effect_lifetime`, `hit_sound_ruid`, `hit_sound_volume` header columns for `ProjectileData.userdataset` schema alignment. |
+| Existing rows | Existing projectile rows were migrated with empty defaults so behavior stays unchanged until effect values are filled in sheet. |
+
+## 2026-02-27 Weapon/Summon Cooldown Split
+
+### FireSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.codeblock`
+- **Updated:** `2026-02-27`
+
+| Item | Detail |
+|---|---|
+| Cooldown state map | Added `_T.CooldownStateByKey` / `_T.CurrentCooldownKey` runtime state to track cooldown independently per `weaponId + fireType + summonId` key. |
+| Fire gate sync | `CanFireServer()` now calls `SyncCooldownStateForCurrentWeaponServer()` before readiness check, preventing summon cooldown from blocking unrelated weapon keys after swap/tag. |
+| Per-key timer start | `StartFireCooldown()` now writes cooldown to keyed state and starts keyed timer; callback restores only that key state. |
+| Summon cooldown path | Removed direct mutation `self.FireCooldown = self.CurrentSummonCooldown` from `SummonTurretServer()` and resolved summon cooldown in `ResolveCurrentCooldownDurationServer()`. |
+| Cleanup API | Added `ClearAllFireCooldownTimerServer()` and wired `OnEndPlay`/`OnDestroy` to clear all keyed timers safely. |
+
+### WeaponSwapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.codeblock`
+- **Updated:** `2026-02-27`
+
+| Item | Detail |
+|---|---|
+| Swap-time cooldown restore | `ApplySlotDataToCombat()` now calls `FireSystemComponent:SyncCooldownStateForCurrentWeaponServer()` after slot fire fields are applied so active slot immediately reflects its own cooldown key state. |

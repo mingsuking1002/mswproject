@@ -988,6 +988,11 @@ script WeaponSwapComponent extends Component
             pcall(function()
                 fireComponent.CurrentTurretModelId = tostring(data.TurretModelId)
             end)
+            pcall(function()
+                if fireComponent.SyncCooldownStateForCurrentWeaponServer ~= nil then
+                    fireComponent:SyncCooldownStateForCurrentWeaponServer()
+                end
+            end)
         end
 
         local weaponModel = self:ResolveComponentSafe(self.Entity, "WeaponModelComponent", "CurrentWeaponId")

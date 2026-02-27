@@ -14,7 +14,8 @@
                            "RootDesk/MyDesk/ProjectGR/Components/RankingUIComponent.codeblock",
                            "RootDesk/MyDesk/ProjectGR/Components/LobbyFlowComponent.codeblock",
                            "RootDesk/MyDesk/ProjectGR/Components/Map01BootstrapComponent.codeblock",
-                           "map/lobby.map"
+                           "map/lobby.map",
+                           "map/map01.map"
                        ],
     "required_specs":  [
                            {

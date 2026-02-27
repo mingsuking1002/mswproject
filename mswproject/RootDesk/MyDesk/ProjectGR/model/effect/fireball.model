@@ -1,0 +1,40 @@
+{
+  "Id": "",
+  "GameId": "",
+  "EntryKey": "model://55bd9726-8847-4ffd-9058-f2a7a51c064a",
+  "ContentType": "x-mod/model",
+  "Content": "",
+  "Usage": 0,
+  "UsePublish": 1,
+  "UseService": 0,
+  "CoreVersion": "26.1.0.0",
+  "StudioVersion": "0.1.0.0",
+  "DynamicLoading": 0,
+  "ContentProto": {
+    "Use": "Json",
+    "Json": {
+      "Version": 1,
+      "Name": "fireball",
+      "BaseModelId": null,
+      "Id": "55bd9726-8847-4ffd-9058-f2a7a51c064a",
+      "Components": [
+        "MOD.Core.SpriteRendererComponent",
+        "MOD.Core.TransformComponent"
+      ],
+      "Properties": [],
+      "Values": [
+        {
+          "TargetType": "MOD.Core.SpriteRendererComponent",
+          "Name": "SpriteRUID",
+          "ValueType": {
+            "$type": "MODNativeType",
+            "type": "System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+          },
+          "Value": "f67f25d5f8e14d2c9962be0fa42808f7"
+        }
+      ],
+      "EventLinks": [],
+      "Children": []
+    }
+  }
+}
