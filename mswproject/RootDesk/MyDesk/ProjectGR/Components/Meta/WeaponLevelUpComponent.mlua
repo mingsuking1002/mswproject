@@ -3,6 +3,7 @@ script WeaponLevelUpComponent extends Component
 
     property string WeaponDataTableName = "WeaponData"
     property string WeaponLevelDataTableName = "WeaponLevelData"
+    property string WeaponLevelOverrideTableName = "WeaponLevelOverrideData"
     property integer DefaultRequiredExp = 10
     property integer DefaultStartLevel = 1
     property integer DefaultMaxLevel = 10
@@ -21,9 +22,11 @@ script WeaponLevelUpComponent extends Component
         self:EnsureGRUtil()
         self._T.WeaponConfigById = {}
         self._T.LevelRowByWeaponId = {}
+        self._T.OverrideByWeaponLevel = {}
         self._T.WeaponProgressById = {}
         self._T.IsWeaponConfigLoaded = false
         self._T.IsWeaponLevelLoaded = false
+        self._T.IsOverrideLoaded = false
         self._T.RequiredColumnWarned = {}
         self.CurrentWeaponLevel = math.max(1, self.DefaultStartLevel)
         self.CurrentWeaponExp = 0
@@ -53,6 +56,9 @@ script WeaponLevelUpComponent extends Component
         end
         if self._T.IsWeaponLevelLoaded ~= true then
             self:LoadWeaponLevelRowsServer()
+        end
+        if self._T.IsOverrideLoaded ~= true then
+            self:LoadWeaponLevelOverrideRowsServer()
         end
 
         if self._T.WeaponConfigById ~= nil then
@@ -110,6 +116,9 @@ script WeaponLevelUpComponent extends Component
         if currentWeaponId == weaponId then
             self:ApplyWeaponPowerToFireServer(weaponId)
             self:RefreshCurrentWeaponProgressSyncServer(weaponId)
+            if didLevelUp == true then
+                self:RequestReapplyCurrentWeaponServer(weaponId, progress.Level)
+            end
         end
     end
 
@@ -160,6 +169,17 @@ script WeaponLevelUpComponent extends Component
                 if parsedDamageRatio ~= nil and parsedDamageRatio > 0 then
                     damageRatio = parsedDamageRatio
                 end
+            end
+        end
+
+        if self._T.IsOverrideLoaded ~= true then
+            self:LoadWeaponLevelOverrideRowsServer()
+        end
+        local overrideData = self:GetOverrideForWeaponLevel(finalWeaponId, progress.Level)
+        if overrideData ~= nil and overrideData.DamageRatioOverride ~= nil then
+            local overrideRatio = tonumber(overrideData.DamageRatioOverride)
+            if overrideRatio ~= nil and overrideRatio > 0 then
+                damageRatio = overrideRatio
             end
         end
 
@@ -470,6 +490,157 @@ script WeaponLevelUpComponent extends Component
         self._T.IsWeaponLevelLoaded = true
     end
 
+    -- WeaponLevelOverrideData rows are cached by (weapon_id, level) for fast level-up stat override merge.
+    @ExecSpace("ServerOnly")
+    method void LoadWeaponLevelOverrideRowsServer()
+        if self._T.IsOverrideLoaded == true then
+            return
+        end
+
+        local tableData = self:LoadTableServer(self.WeaponLevelOverrideTableName)
+        if tableData == nil then
+            self._T.OverrideByWeaponLevel = {}
+            self._T.IsOverrideLoaded = true
+            return
+        end
+
+        local rows = nil
+        local rowsOk, rowsValue = pcall(function()
+            return tableData:GetAllRow()
+        end)
+        if rowsOk == true then
+            rows = rowsValue
+        end
+        if rows == nil then
+            self._T.OverrideByWeaponLevel = {}
+            self._T.IsOverrideLoaded = true
+            return
+        end
+
+        local cache = {}
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+
+            local weaponId = self:GetRowString(row, "weapon_id", "")
+            if weaponId == "" then
+                continue
+            end
+
+            local level = self:GetRowInteger(row, "level", -1)
+            if level <= 0 then
+                continue
+            end
+
+            local enabled = self:GetRowInteger(row, "enabled", 1)
+            if enabled ~= 1 then
+                continue
+            end
+
+            local key = tostring(weaponId) .. "|" .. tostring(level)
+            if cache[key] ~= nil then
+                log_warning(
+                    "[WeaponLevelUp] duplicated WeaponLevelOverrideData key; first row wins. key=",
+                    tostring(key)
+                )
+                continue
+            end
+
+            local overrideData = {}
+            overrideData.WeaponId = tostring(weaponId)
+            overrideData.Level = level
+            overrideData.FireCooldown = self:GetRowNumber(row, "fire_rate", -1)
+            overrideData.ReloadTime = self:GetRowNumber(row, "reload_time", -1)
+            overrideData.MaxAmmo = self:GetRowInteger(row, "max_basic_resource", -1)
+            overrideData.DamageRatioOverride = self:GetRowNumber(row, "dmg_raito", -1)
+            overrideData.ProjectileId = self:GetRowString(row, "projectile_id", "")
+            overrideData.SummonId = self:GetRowString(row, "summon_id", "")
+            overrideData.SpriteRuid = self:GetRowString(row, "sprite_ruid", "")
+            cache[key] = overrideData
+        end
+
+        self._T.OverrideByWeaponLevel = cache
+        self._T.IsOverrideLoaded = true
+    end
+
+    method table GetOverrideForWeaponLevel(string weaponId, integer level)
+        if weaponId == nil or weaponId == "" then
+            return nil
+        end
+
+        local safeLevel = math.floor(level or 0)
+        if safeLevel <= 0 then
+            return nil
+        end
+
+        if self._T.IsOverrideLoaded ~= true then
+            self:LoadWeaponLevelOverrideRowsServer()
+        end
+        if self._T.OverrideByWeaponLevel == nil then
+            return nil
+        end
+
+        local key = tostring(weaponId) .. "|" .. tostring(safeLevel)
+        return self._T.OverrideByWeaponLevel[key]
+    end
+
+    -- Override merge patches only explicit values; blank/null style values keep base slot data untouched.
+    @ExecSpace("ServerOnly")
+    method void MergeOverrideIntoSlotData(table slotData, string weaponId, integer level)
+        if slotData == nil then
+            return
+        end
+        if weaponId == nil or weaponId == "" then
+            return
+        end
+
+        local overrideData = self:GetOverrideForWeaponLevel(weaponId, level)
+        if overrideData == nil then
+            return
+        end
+
+        local fireType = string.lower(tostring(slotData.FireType or "projectile"))
+        if fireType ~= "summon" then
+            local fireCooldown = tonumber(overrideData.FireCooldown)
+            if fireCooldown ~= nil and fireCooldown > 0 then
+                slotData.FireCooldown = fireCooldown
+            end
+        end
+
+        local reloadTime = tonumber(overrideData.ReloadTime)
+        if reloadTime ~= nil and reloadTime > 0 then
+            slotData.ReloadTime = reloadTime
+        end
+
+        local maxAmmo = tonumber(overrideData.MaxAmmo)
+        if maxAmmo ~= nil and maxAmmo > 0 then
+            slotData.MaxAmmo = math.max(1, math.floor(maxAmmo))
+        end
+
+        local damageRatioOverride = tonumber(overrideData.DamageRatioOverride)
+        if damageRatioOverride ~= nil and damageRatioOverride > 0 then
+            slotData.DamageRatioOverride = damageRatioOverride
+        end
+
+        local projectileId = tostring(overrideData.ProjectileId or "")
+        if projectileId ~= "" and projectileId ~= tostring(slotData.ProjectileId or "") then
+            slotData.ProjectileId = projectileId
+            slotData.NeedsProjectileRequery = true
+        end
+
+        local summonId = tostring(overrideData.SummonId or "")
+        if summonId ~= "" and summonId ~= tostring(slotData.SummonId or "") then
+            slotData.SummonId = summonId
+            slotData.NeedsProjectileRequery = true
+        end
+
+        local spriteRuid = tostring(overrideData.SpriteRuid or "")
+        if spriteRuid ~= "" then
+            slotData.SpriteRuidOverride = spriteRuid
+        end
+    end
+
     -- Resolves level multiplier safely; invalid/missing data returns 1.0 as neutral multiplier.
     method number ResolveLevelMultiplierServer(string weaponId, integer level)
         if weaponId == nil or weaponId == "" then
@@ -497,6 +668,23 @@ script WeaponLevelUpComponent extends Component
             multiplier = 1.0
         end
         return multiplier
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RequestReapplyCurrentWeaponServer(string weaponId, integer level)
+        if weaponId == nil or weaponId == "" then
+            return
+        end
+
+        local swap = self:ResolveComponentSafe(self.Entity, "WeaponSwapComponent", "CurrentWeaponSlot")
+        if swap == nil or swap.ReapplyCurrentWeaponByLevelServer == nil then
+            return
+        end
+
+        local safeLevel = math.max(1, math.floor(level or 1))
+        pcall(function()
+            swap:ReapplyCurrentWeaponByLevelServer(weaponId, safeLevel)
+        end)
     end
 
     method void ValidateWeaponLevelRowColumnsServer(string weaponId, any row)

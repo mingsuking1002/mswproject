@@ -477,6 +477,19 @@ script WeaponSwapComponent extends Component
             data.Damage = math.max(math.floor(defaultDamage * damageRatio), 1)
         end
 
+        data.SpriteRuidOverride = ""
+        data.DamageRatioOverride = 0
+        data.NeedsProjectileRequery = false
+        self:ApplyProjectileAndSummonDerivedDataServer(data)
+    end
+
+    -- Projectile/Summon derived fields are centralized so swap and level-reapply paths share one parser.
+    @ExecSpace("ServerOnly")
+    method void ApplyProjectileAndSummonDerivedDataServer(table data)
+        if data == nil then
+            return
+        end
+
         data.ProjectileType = "single_projectile"
         data.SplashSize = 0
         data.SummonCooldown = 0
@@ -692,6 +705,15 @@ script WeaponSwapComponent extends Component
         if data.SmiteVisualLifetime == nil then
             data.SmiteVisualLifetime = 0.35
         end
+        if data.SpriteRuidOverride == nil then
+            data.SpriteRuidOverride = ""
+        end
+        if data.DamageRatioOverride == nil then
+            data.DamageRatioOverride = 0
+        end
+        if data.NeedsProjectileRequery == nil then
+            data.NeedsProjectileRequery = false
+        end
 
         local parsedSmiteDelay = tonumber(data.SmiteDamageDelay)
         if parsedSmiteDelay == nil or parsedSmiteDelay < 0 then
@@ -889,6 +911,230 @@ script WeaponSwapComponent extends Component
         self:SetSlotDataBySlot(finalSlot, data)
     end
 
+    -- Level-up reapply rebuilds current slot from base row + override while preserving active runtime timers.
+    @ExecSpace("ServerOnly")
+    method void ReapplyCurrentWeaponByLevelServer(string weaponId, integer level)
+        local finalSlot = self:ClampSlot(self.CurrentWeaponSlot)
+        local data = self:NormalizeSlotData(self:GetSlotDataBySlot(finalSlot), finalSlot)
+        local finalWeaponId = weaponId
+        if finalWeaponId == nil or finalWeaponId == "" then
+            finalWeaponId = tostring(data.WeaponId or "")
+        end
+        if finalWeaponId == "" then
+            return
+        end
+        if tostring(data.WeaponId or "") ~= finalWeaponId then
+            return
+        end
+
+        local safeLevel = math.max(1, math.floor(level or 1))
+        local savedAmmo = math.max(0, math.floor(tonumber(data.Ammo) or 0))
+        local savedIsReloading = (data.IsReloading == true)
+        local savedReloadEndTime = 0
+        local previousMaxAmmo = math.max(1, math.floor(tonumber(data.MaxAmmo) or self.DefaultAmmo))
+
+        local reloadComponent = self:ResolveComponentSafe(self.Entity, "ReloadComponent", "CurrentAmmo")
+        if reloadComponent ~= nil then
+            local ammoOk, ammoValue = pcall(function()
+                return reloadComponent:GetSlotAmmo(finalSlot)
+            end)
+            if ammoOk == true and ammoValue ~= nil then
+                savedAmmo = math.max(0, math.floor(tonumber(ammoValue) or savedAmmo))
+            end
+
+            local isReloadingOk, isReloadingValue = pcall(function()
+                return reloadComponent:IsReloadingInSlot(finalSlot)
+            end)
+            if isReloadingOk == true then
+                savedIsReloading = (isReloadingValue == true)
+            end
+
+            local endOk, endValue = pcall(function()
+                if reloadComponent._T == nil or reloadComponent._T.ReloadEndTimeBySlot == nil then
+                    return 0
+                end
+                return reloadComponent._T.ReloadEndTimeBySlot[finalSlot]
+            end)
+            if endOk == true and endValue ~= nil then
+                savedReloadEndTime = math.max(0, tonumber(endValue) or 0)
+            end
+        end
+
+        self:ApplyWeaponRowToSlotDataServer(data, finalWeaponId)
+
+        local weaponLevel = self:ResolveComponentSafe(self.Entity, "WeaponLevelUpComponent", "WeaponDataTableName")
+        if weaponLevel ~= nil and weaponLevel.MergeOverrideIntoSlotData ~= nil then
+            pcall(function()
+                weaponLevel:MergeOverrideIntoSlotData(data, finalWeaponId, safeLevel)
+            end)
+        end
+
+        if data.NeedsProjectileRequery == true then
+            self:ApplyProjectileAndSummonDerivedDataServer(data)
+        end
+
+        local parsedMaxAmmo = tonumber(data.MaxAmmo)
+        if parsedMaxAmmo == nil or parsedMaxAmmo <= 0 then
+            parsedMaxAmmo = previousMaxAmmo
+        end
+        data.MaxAmmo = math.max(1, math.floor(parsedMaxAmmo))
+        data.Ammo = math.max(0, math.min(math.floor(savedAmmo), data.MaxAmmo))
+        data.IsReloading = savedIsReloading
+        data.NeedsProjectileRequery = false
+        self:SetSlotDataBySlot(finalSlot, data)
+
+        self:ApplySlotDataToCombatPreservingReload(finalSlot, savedIsReloading, savedReloadEndTime)
+    end
+
+    -- Preserve path avoids canceling in-flight reload/cooldown timers while applying new slot parameters.
+    @ExecSpace("ServerOnly")
+    method void ApplySlotDataToCombatPreservingReload(integer slot, boolean wasReloading, number savedReloadEndTime)
+        local finalSlot = self:ClampSlot(slot)
+        local data = self:NormalizeSlotData(self:GetSlotDataBySlot(finalSlot), finalSlot)
+        self:SetSlotDataBySlot(finalSlot, data)
+        self:SyncCurrentWeaponVisualFromRowServer(tostring(data.WeaponId))
+        local weaponLevel = self:ResolveComponentSafe(self.Entity, "WeaponLevelUpComponent", "WeaponDataTableName")
+        local useLevelAttackFormula = (weaponLevel ~= nil and weaponLevel.ApplyWeaponPowerToFireServer ~= nil)
+
+        local reloadComponent = self:ResolveComponentSafe(self.Entity, "ReloadComponent", "CurrentAmmo")
+        if reloadComponent ~= nil then
+            pcall(function()
+                reloadComponent:SetSlotMaxAmmo(finalSlot, data.MaxAmmo)
+            end)
+            pcall(function()
+                reloadComponent:SetSlotAmmo(finalSlot, data.Ammo)
+            end)
+            pcall(function()
+                reloadComponent.ReloadTime = data.ReloadTime
+            end)
+            pcall(function()
+                reloadComponent.FireRate = data.FireCooldown
+            end)
+
+            local safeSavedEnd = math.max(0, tonumber(savedReloadEndTime) or 0)
+            if wasReloading == true then
+                pcall(function()
+                    if reloadComponent._T ~= nil and reloadComponent._T.ReloadEndTimeBySlot ~= nil then
+                        reloadComponent._T.ReloadEndTimeBySlot[finalSlot] = safeSavedEnd
+                    end
+                end)
+            end
+
+            pcall(function()
+                if reloadComponent.CurrentWeaponSlot ~= finalSlot then
+                    return
+                end
+
+                local activeReload = reloadComponent:IsReloadingInSlot(finalSlot)
+                reloadComponent.IsReloading = (activeReload == true)
+                if reloadComponent.SetCurrentReloadWindowSync == nil then
+                    return
+                end
+
+                if reloadComponent.IsReloading == true then
+                    local endAt = safeSavedEnd
+                    if endAt <= 0 and reloadComponent._T ~= nil and reloadComponent._T.ReloadEndTimeBySlot ~= nil then
+                        endAt = math.max(0, tonumber(reloadComponent._T.ReloadEndTimeBySlot[finalSlot]) or 0)
+                    end
+                    local startAt = math.max(0, endAt - math.max(tonumber(reloadComponent.ReloadTime) or 0, 0))
+                    reloadComponent:SetCurrentReloadWindowSync(startAt, endAt)
+                else
+                    reloadComponent:SetCurrentReloadWindowSync(0, 0)
+                end
+            end)
+        end
+
+        local fireComponent = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "BaseWeaponAttack")
+        if fireComponent ~= nil then
+            if useLevelAttackFormula ~= true then
+                pcall(function()
+                    fireComponent.BaseWeaponAttack = data.Damage
+                end)
+            end
+            pcall(function()
+                fireComponent.FireCooldown = data.FireCooldown
+            end)
+            pcall(function()
+                fireComponent.ProjectileSpeed = data.ProjectileSpeed
+            end)
+            pcall(function()
+                fireComponent.ProjectileRange = data.ProjectileRange
+            end)
+            pcall(function()
+                fireComponent.ProjectileLifetime = data.ProjectileLifetime
+            end)
+            pcall(function()
+                fireComponent.ProjectileSpread = data.ProjectileSpread
+            end)
+            pcall(function()
+                fireComponent.ProjectileModelId = data.ProjectileModelId
+            end)
+            pcall(function()
+                fireComponent.CurrentWeaponId = tostring(data.WeaponId)
+            end)
+            pcall(function()
+                fireComponent.CurrentFireType = tostring(data.FireType)
+            end)
+            pcall(function()
+                fireComponent.CurrentProjectileType = tostring(data.ProjectileType)
+            end)
+            pcall(function()
+                fireComponent.CurrentProjectileId = tostring(data.ProjectileId)
+            end)
+            pcall(function()
+                fireComponent.CurrentSummonId = tostring(data.SummonId)
+            end)
+            pcall(function()
+                fireComponent.SplashSize = math.max(0, data.SplashSize)
+            end)
+            pcall(function()
+                fireComponent.SmiteDamageDelay = math.max(0, data.SmiteDamageDelay)
+            end)
+            pcall(function()
+                fireComponent.SmiteVisualLifetime = math.max(0, data.SmiteVisualLifetime)
+            end)
+            pcall(function()
+                fireComponent.CurrentSummonCooldown = math.max(0, data.SummonCooldown)
+            end)
+            pcall(function()
+                fireComponent.CurrentSummonDuration = math.max(0, data.SummonDuration)
+            end)
+            pcall(function()
+                fireComponent.CurrentSummonFireRate = math.max(0, data.SummonFireRate)
+            end)
+            pcall(function()
+                fireComponent.CurrentSummonProjectileId = tostring(data.SummonProjectileId)
+            end)
+            pcall(function()
+                fireComponent.CurrentTurretModelId = tostring(data.TurretModelId)
+            end)
+            pcall(function()
+                if fireComponent.BuildCurrentCooldownKeyServer ~= nil and
+                    fireComponent.EnsureCooldownStateServer ~= nil and
+                    fireComponent.ResolveCurrentCooldownDurationServer ~= nil then
+                    local key = fireComponent:BuildCurrentCooldownKeyServer()
+                    local state = fireComponent:EnsureCooldownStateServer(key)
+                    if state ~= nil then
+                        local configuredCooldown = fireComponent:ResolveCurrentCooldownDurationServer()
+                        state.Cooldown = math.max(tonumber(configuredCooldown) or 0, 0)
+                    end
+                end
+                if fireComponent.SyncCooldownStateForCurrentWeaponServer ~= nil then
+                    fireComponent:SyncCooldownStateForCurrentWeaponServer()
+                end
+            end)
+        end
+
+        if weaponLevel ~= nil and weaponLevel.ApplyWeaponPowerToFireServer ~= nil then
+            pcall(function()
+                weaponLevel:ApplyWeaponPowerToFireServer(tostring(data.WeaponId))
+            end)
+        end
+
+        self:RefreshWheelSlotUISyncServer()
+        self:NotifySwapMenuClient(self.IsSwapMenuOpen, finalSlot, self.CurrentWeaponSlot)
+    end
+
     -- Applying slot data routes through Reload/Fire so all downstream combat logic uses one source of truth.
     @ExecSpace("ServerOnly")
     method void ApplySlotDataToCombat(integer slot)
@@ -1022,6 +1268,7 @@ script WeaponSwapComponent extends Component
 
         local weaponName = ""
         local spriteRuid = ""
+        local weaponLevel = 1
         if finalWeaponId ~= "" then
             local row = self:GetWeaponRowByIdServer(finalWeaponId)
             if row ~= nil then
@@ -1030,11 +1277,84 @@ script WeaponSwapComponent extends Component
             else
                 weaponName = finalWeaponId
             end
+            weaponLevel = self:ResolveWeaponLevelForVisualServer(finalWeaponId, 1)
+            spriteRuid = self:ResolveSpriteRuidWithOverrideServer(finalWeaponId, weaponLevel, spriteRuid)
         end
 
         self.CurrentWeaponName = weaponName
         self.CurrentWeaponSpriteRuid = spriteRuid
         self.CurrentWeaponId = tostring(finalWeaponId)
+    end
+
+    -- Current visual level is resolved from WeaponLevelUp runtime to support level-based sprite override lookup.
+    method integer ResolveWeaponLevelForVisualServer(string weaponId, integer fallbackLevel)
+        local safeLevel = math.max(1, math.floor(fallbackLevel or 1))
+        if weaponId == nil or weaponId == "" then
+            return safeLevel
+        end
+
+        local weaponLevel = self:ResolveComponentSafe(self.Entity, "WeaponLevelUpComponent", "CurrentWeaponLevel")
+        if weaponLevel == nil then
+            return safeLevel
+        end
+
+        if weaponLevel.EnsureWeaponProgressByIdServer ~= nil then
+            local progressOk, progressValue = pcall(function()
+                return weaponLevel:EnsureWeaponProgressByIdServer(tostring(weaponId))
+            end)
+            if progressOk == true and type(progressValue) == "table" and progressValue.Level ~= nil then
+                local parsed = tonumber(progressValue.Level)
+                if parsed ~= nil and parsed > 0 then
+                    return math.max(1, math.floor(parsed))
+                end
+            end
+        end
+
+        local syncLevelOk, syncLevelValue = pcall(function()
+            return weaponLevel.CurrentWeaponLevel
+        end)
+        if syncLevelOk == true and syncLevelValue ~= nil then
+            local parsed = tonumber(syncLevelValue)
+            if parsed ~= nil and parsed > 0 then
+                return math.max(1, math.floor(parsed))
+            end
+        end
+
+        return safeLevel
+    end
+
+    -- Sprite override lookup keeps WeaponData base sprite unless WeaponLevelOverrideData.sprite_ruid is explicitly set.
+    method string ResolveSpriteRuidWithOverrideServer(string weaponId, integer level, string fallbackSpriteRuid)
+        local baseSpriteRuid = ""
+        if fallbackSpriteRuid ~= nil then
+            baseSpriteRuid = tostring(fallbackSpriteRuid)
+        end
+        if weaponId == nil or weaponId == "" then
+            return baseSpriteRuid
+        end
+
+        local safeLevel = math.max(1, math.floor(level or 1))
+        local weaponLevel = self:ResolveComponentSafe(self.Entity, "WeaponLevelUpComponent", "CurrentWeaponLevel")
+        if weaponLevel == nil or weaponLevel.GetOverrideForWeaponLevel == nil then
+            return baseSpriteRuid
+        end
+
+        local overrideData = nil
+        local overrideOk, overrideValue = pcall(function()
+            return weaponLevel:GetOverrideForWeaponLevel(tostring(weaponId), safeLevel)
+        end)
+        if overrideOk == true then
+            overrideData = overrideValue
+        end
+        if type(overrideData) ~= "table" then
+            return baseSpriteRuid
+        end
+
+        local overrideSpriteRuid = tostring(overrideData.SpriteRuid or "")
+        if overrideSpriteRuid == "" then
+            return baseSpriteRuid
+        end
+        return overrideSpriteRuid
     end
 
     -- Wheel UI snapshot is server-authored so client rendering remains deterministic and low-cost.
@@ -1095,6 +1415,8 @@ script WeaponSwapComponent extends Component
                         requiredExp = math.max(1, math.floor(parsedRequiredExp))
                     end
                 end
+
+                spriteRuid = self:ResolveSpriteRuidWithOverrideServer(weaponId, level, spriteRuid)
             end
 
             self:ApplyWheelSlotSyncBySlotServer(slot, weaponId, weaponName, spriteRuid, level, exp, requiredExp)

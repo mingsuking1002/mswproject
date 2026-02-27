@@ -3352,3 +3352,44 @@
 | Item | Detail |
 |---|---|
 | Swap-time cooldown restore | `ApplySlotDataToCombat()` now calls `FireSystemComponent:SyncCooldownStateForCurrentWeaponServer()` after slot fire fields are applied so active slot immediately reflects its own cooldown key state. |
+
+## 2026-02-27 Weapon Level Override Data Integration
+
+### WeaponLevelUpComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponLevelUpComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponLevelUpComponent.codeblock`
+- **Updated:** `2026-02-27`
+
+| Item | Detail |
+|---|---|
+| Override table contract | Added `WeaponLevelOverrideTableName = "WeaponLevelOverrideData"` and runtime cache `_T.OverrideByWeaponLevel`, `_T.IsOverrideLoaded`. |
+| Override loader | Added `LoadWeaponLevelOverrideRowsServer()` with `(weapon_id|level)` key cache, `enabled == 1` filter, duplicate-key warning with first-row-wins policy. |
+| Override resolver/merge | Added `GetOverrideForWeaponLevel()` and `MergeOverrideIntoSlotData()` to patch `fire_rate`, `reload_time`, `max_basic_resource`, `dmg_raito`, `projectile_id`, `summon_id`, `sprite_ruid` with null/blank fallback semantics. |
+| Summon fire-rate policy | `MergeOverrideIntoSlotData()` ignores `fire_rate` override when current slot `FireType` is `summon`, preserving SummonData cooldown-driven flow. |
+| Damage ratio override | `ApplyWeaponPowerToFireServer()` now prioritizes override `dmg_raito` when present for current `(weapon, level)` tuple. |
+| Level-up reinjection trigger | `AddWeaponExpServer()` now calls `RequestReapplyCurrentWeaponServer()` only when `didLevelUp == true` and the leveled weapon is currently equipped. |
+
+### WeaponSwapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.codeblock`
+- **Updated:** `2026-02-27`
+
+| Item | Detail |
+|---|---|
+| Reapply API | Added `ReapplyCurrentWeaponByLevelServer(weaponId, level)` to rebuild current slot from WeaponData base + level override and atomically reinject combat values. |
+| Preserve apply API | Added `ApplySlotDataToCombatPreservingReload(slot, wasReloading, savedReloadEndTime)` that updates combat parameters without calling reload cancel/swap-model flow. |
+| Reload preservation | Level-up reinjection keeps active reload timer and reload end-time; ammo is clamped by new `MaxAmmo` only. |
+| Cooldown preservation | Reinjection updates configured cooldown value in keyed cooldown state while preserving running timer id/end state. |
+| Derived parser reuse | Extracted projectile/summon derived parsing into `ApplyProjectileAndSummonDerivedDataServer()` and reused from both base apply and override requery path. |
+| Runtime slot fields | Extended normalized slot payload with `DamageRatioOverride` and `NeedsProjectileRequery` to support override patching and requery signaling. |
+| Level sprite override | Added `ResolveSpriteRuidWithOverrideServer()` + `ResolveWeaponLevelForVisualServer()` so `CurrentWeaponSpriteRuid` and wheel slot sprite both reflect `WeaponLevelOverrideData.sprite_ruid` when set. |
+
+### WeaponLevelOverrideData.csv (New)
+- **File:** `RootDesk/MyDesk/ProjectGR/Data/WeaponLevelOverrideData.csv`
+- **Updated:** `2026-02-27`
+
+| Item | Detail |
+|---|---|
+| Schema | Added columns: `id, weapon_id, level, enabled, fire_rate, reload_time, max_basic_resource, dmg_raito, projectile_id, summon_id, sprite_ruid`. |
+| Sample rows | Added `bow_2`, `bow_5` sample rows for level-based fire/reload/ammo override behavior validation. |
+| Dataset scope | `WeaponLevelOverrideData.userdataset` creation is intentionally excluded in this change-set (Maker-side setup pending). |

@@ -1,4 +1,4 @@
-# 🟡 대기중
+# 🟢 완료
 
 ---
 
@@ -34,6 +34,7 @@ WeaponData(베이스 스펙)는 건드리지 않고, **WeaponLevelOverrideData**
 | `dmg_raito` | FLOAT | 오버라이드 데미지 비율 |
 | `projectile_id` | STRING | 오버라이드 투사체 ID |
 | `summon_id` | STRING | 오버라이드 소환체 ID |
+| `sprite_ruid` | STRING | 오버라이드 무기 UI 스프라이트 RUID |
 
 > **적용 규칙**: 값이 빈 문자열 / `-` / `null` / `nil` → 해당 컬럼은 베이스 유지.
 > **유니크 키**: (weapon_id, level) 조합당 1개 row만 허용. 로드 시 중복 발견 → log_warning 후 첫 번째 row 사용.
@@ -41,9 +42,9 @@ WeaponData(베이스 스펙)는 건드리지 않고, **WeaponLevelOverrideData**
 ### 2-3. 예시 데이터 (2행)
 
 ```
-id,weapon_id,level,enabled,fire_rate,reload_time,max_basic_resource,dmg_raito,projectile_id,summon_id
-bow_2,bow,2,1,0.35,,,,,
-bow_5,bow,5,1,0.3,2.5,90,,,
+id,weapon_id,level,enabled,fire_rate,reload_time,max_basic_resource,dmg_raito,projectile_id,summon_id,sprite_ruid
+bow_2,bow,2,1,0.35,,,,,,
+bow_5,bow,5,1,0.3,2.5,90,,,,,
 ```
 
 ---
@@ -95,6 +96,7 @@ self._T.IsOverrideLoaded = false
    | `dmg_raito` | `.DamageRatioOverride` (신규 필드) | `tonumber`, > 0 |
    | `projectile_id` | `.ProjectileId` | string, ~= "" |
    | `summon_id` | `.SummonId` | string, ~= "" |
+   | `sprite_ruid` | `.SpriteRuidOverride` (신규 필드) | string, ~= "" |
 
    - `projectile_id`/`summon_id`가 변경되면 → `slotData.NeedsProjectileRequery = true` 플래그 설정.
    - `DamageRatioOverride`가 설정되면 → 이 값이 WeaponData의 `dmg_raito`를 대체.
