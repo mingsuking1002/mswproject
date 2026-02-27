@@ -3256,3 +3256,27 @@
 | Item | Detail |
 |---|---|
 | Shop table source | `ShopDataTableName` 기본값을 `ShopItemData.userdataset`으로 변경하여 `.userdataset` 테이블을 직접 로드하도록 조정. |
+
+## 2026-02-27 Start Button A/B Reset + Origin Position Reset
+
+### LobbyFlowComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.codeblock`
+- **Updated:** `2026-02-27`
+
+| Item | Detail |
+|---|---|
+| Run-start reset switches | Added `ResetABDataOnRunStart`, `ResetPositionOnRunStart`, `RunStartPositionX`, `RunStartPositionY` properties. |
+| Start-button reset hook | `BeginInGameStateServer()` now calls `PrepareRunStartStateServer()` before gameplay start. |
+| A/B data reset path | Added `TryResetTagStateForRunStartServer()` + existing `TryResetInventoryServer()`/`TryResetPassivesServer()` chaining on run start. |
+| Position reset path | Added `TryResetRunStartPositionServer()` to force player world position to configured origin (`0.0`, `0.0` default). |
+
+### TagManagerComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/TagManagerComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/TagManagerComponent.codeblock`
+- **Updated:** `2026-02-27`
+
+| Item | Detail |
+|---|---|
+| Run-start API | Added `ResetForNewRunServer()` to clear tag timers/cooldown, normalize active character to A, and rebuild A/B character snapshots. |
+| Client sync | `ResetForNewRunServer()` now calls `NotifyTagChangedClient(1)` so run start UI follows reset index immediately. |

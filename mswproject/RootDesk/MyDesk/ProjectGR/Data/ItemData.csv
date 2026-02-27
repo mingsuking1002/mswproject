@@ -1,5 +1,5 @@
 ﻿item_id,item_name,item_type,effect_type,effect_value_1,effect_value_2,max_stack,description,icon_ruid,-copy9,-copy10,-copy11,-copy12,-copy13
-potion_hp,포션,hp_plus,heal_hp,30,0,99,체력을 30 회복시킵니다.,2463dcc9de1e43bb811626a7b17d00f72463dcc9de1e43bb811626a7b17d00f7,,,,,
+potion_hp,포션,hp_plus,heal_hp,30,0,99,체력을 30 회복시킵니다.,2463dcc9de1e43bb811626a7b17,,,,,
 mag_a,베루아 마나 충전기,a_mana,a_mag,0,,99,A_탄약을 보충합니다,cc4ce28e7a5d4c04827bf396b1286ffb,,,,,
 mag_b,케르타 마나 충전기,b_mana,b_mag,0,1,99,B_탄약을 보충합니다,cc4ce28e7a5d4c04827bf396b1286ffb,,,,,
 gold,골드,total_money,None,0,0,0,상점에서 아이템을 살 수 있습니다.,dcb2f57cb344471aaefde6dc089032b6,,,,,

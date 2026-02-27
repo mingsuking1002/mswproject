@@ -18,6 +18,10 @@ script LobbyFlowComponent extends Component
     property string UIRootFallbackPath = "/ui/DefaultGroup"
     property string GRBGPath = "/ui/MainGroup/GRBG"
     property boolean EnableDebugLogs = true
+    property boolean ResetABDataOnRunStart = true
+    property boolean ResetPositionOnRunStart = true
+    property number RunStartPositionX = 0.0
+    property number RunStartPositionY = 0.0
 
     -- Server initializes utility and runtime-only button/debounce state.
     @ExecSpace("ServerOnly")
@@ -142,12 +146,15 @@ script LobbyFlowComponent extends Component
         if self.EnableDebugLogs == true then
             log("[LobbyFlow][DEBUG] BeginInGameStateServer called. targetUserId=", targetUserId)
         end
+
+        self:PrepareRunStartStateServer()
         self:SetLobbyStateServer(false)
         self:NotifyRunStartServer()
         self:TryStartRunTimerServer()
         self:TryResumeMonsterSpawnServer()
 
         if targetUserId == nil or targetUserId == "" then
+            self:TryResetRunStartPositionServer()
             log_warning("[LobbyFlow] Start request has empty user id. Applied in-game state without map move.")
             return
         end
@@ -155,9 +162,71 @@ script LobbyFlowComponent extends Component
         local moved = self:MoveUserToInGameMapByUserId(targetUserId)
         if moved ~= true then
             log_warning("[LobbyFlow] In-game map move failed. Keeping in-game state on current map. userId=", targetUserId, ", map=", self.InGameMapName)
-        elseif self.EnableDebugLogs == true then
-            log("[LobbyFlow][DEBUG] In-game map move success. userId=", targetUserId, ", map=", self.InGameMapName)
+        else
+            self:TryResetRunStartPositionServer()
+            if self.EnableDebugLogs == true then
+                log("[LobbyFlow][DEBUG] In-game map move success. userId=", targetUserId, ", map=", self.InGameMapName)
+            end
         end
+    end
+
+    -- Start-button run entry resets shared A/B runtime state and optional origin position before gameplay resumes.
+    @ExecSpace("ServerOnly")
+    method void PrepareRunStartStateServer()
+        if self.ResetABDataOnRunStart == true then
+            self:TryResetTagStateForRunStartServer()
+            self:TryResetInventoryServer()
+            self:TryResetPassivesServer()
+        end
+
+        if self.ResetPositionOnRunStart == true then
+            self:TryResetRunStartPositionServer()
+        end
+    end
+
+    -- Tag reset ensures A/B snapshot state starts deterministic even if previous run ended mid-tag.
+    @ExecSpace("ServerOnly")
+    method void TryResetTagStateForRunStartServer()
+        local tag = self:ResolveComponentSafe(self.Entity, "TagManagerComponent", "CurrentCharIndex")
+        if tag == nil then
+            return
+        end
+
+        if tag.ResetForNewRunServer ~= nil then
+            pcall(function()
+                tag:ResetForNewRunServer()
+            end)
+            return
+        end
+
+        pcall(function()
+            tag.CurrentCharIndex = 1
+            tag.IsTagReady = true
+            tag.TagCooldownEndAt = 0
+        end)
+    end
+
+    -- Origin reset is explicit so run start can always begin from a deterministic world coordinate.
+    @ExecSpace("ServerOnly")
+    method void TryResetRunStartPositionServer()
+        local transform = self.Entity.TransformComponent
+        if transform == nil or isvalid(transform) == false then
+            return
+        end
+
+        local currentZ = 0
+        local readOk, readValue = pcall(function()
+            return transform.WorldPosition
+        end)
+        if readOk == true and readValue ~= nil then
+            currentZ = readValue.z
+        end
+
+        local targetX = self.RunStartPositionX
+        local targetY = self.RunStartPositionY
+        pcall(function()
+            transform.WorldPosition = Vector3(targetX, targetY, currentZ)
+        end)
     end
 
     -- Timer kickoff is optional and nil-safe so lobby->ingame transition never depends on timer component state.

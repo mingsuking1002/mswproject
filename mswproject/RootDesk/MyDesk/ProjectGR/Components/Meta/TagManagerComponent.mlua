@@ -53,6 +53,43 @@ script TagManagerComponent extends Component
         self:EnsureGRUtil()
     end
 
+    -- Run-start reset normalizes active character to A and rebuilds A/B snapshots from fresh baseline.
+    @ExecSpace("ServerOnly")
+    method void ResetForNewRunServer()
+        if self._T.TagCooldownTimerId ~= nil and self._T.TagCooldownTimerId > 0 then
+            _TimerService:ClearTimer(self._T.TagCooldownTimerId)
+            self._T.TagCooldownTimerId = 0
+        end
+        if self._T.TagInvincibleTimerId ~= nil and self._T.TagInvincibleTimerId > 0 then
+            _TimerService:ClearTimer(self._T.TagInvincibleTimerId)
+            self._T.TagInvincibleTimerId = 0
+        end
+        if self._T.TagUnlockTimerId ~= nil and self._T.TagUnlockTimerId > 0 then
+            _TimerService:ClearTimer(self._T.TagUnlockTimerId)
+            self._T.TagUnlockTimerId = 0
+        end
+
+        self.IsTagReady = true
+        self.TagCooldownEndAt = 0
+        self.IsTagLocked = false
+        self._T.IsTagInProgress = false
+
+        if self._T.CharacterIdByIndex == nil then
+            self._T.CharacterIdByIndex = {}
+        end
+        self._T.CharacterIdByIndex[1] = "player_a"
+        self._T.CharacterIdByIndex[2] = "player_b"
+
+        self.CurrentCharIndex = 1
+        self:ApplyCharacterDataByIdServer(self:GetCharacterIdByIndex(1))
+
+        self._T.CharacterStates = {}
+        self._T.CharacterStates[1] = self:CaptureCurrentCharacterState()
+        self._T.CharacterStates[2] = self:BuildInitialCharacterStateByIndexServer(2)
+
+        self:NotifyTagChangedClient(1)
+    end
+
     -- Q requests server-authoritative tag swap; all swap decisions stay on server.
     @EventSender("Service", "InputService")
     handler HandleKeyDownEvent(KeyDownEvent event)
