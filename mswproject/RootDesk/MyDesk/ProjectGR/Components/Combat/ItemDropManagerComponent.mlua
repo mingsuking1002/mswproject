@@ -450,6 +450,29 @@ script ItemDropManagerComponent extends Component
             end
         end
 
+        -- Passive drop items open a server-authoritative 3-choice selection flow.
+        local isPassiveCommon = (effectType == "passive_common" or normalizedItemId == "passive_common_drop")
+        if isPassiveCommon == true then
+            local passiveSystem = self:ResolveComponentSafe(self.Entity, "PassiveSystemComponent", "AcquiredPassiveCount")
+            if passiveSystem ~= nil and passiveSystem.RequestPassiveSelectionFromDropServer ~= nil then
+                pcall(function()
+                    passiveSystem:RequestPassiveSelectionFromDropServer("common")
+                end)
+            end
+            return
+        end
+
+        local isPassiveUnique = (effectType == "passive_unique" or normalizedItemId == "passive_unique_drop")
+        if isPassiveUnique == true then
+            local passiveSystem = self:ResolveComponentSafe(self.Entity, "PassiveSystemComponent", "AcquiredPassiveCount")
+            if passiveSystem ~= nil and passiveSystem.RequestPassiveSelectionFromDropServer ~= nil then
+                pcall(function()
+                    passiveSystem:RequestPassiveSelectionFromDropServer("unique")
+                end)
+            end
+            return
+        end
+
         local isPotion = (effectType == "heal_hp" or normalizedItemId == "heal_hp" or normalizedItemId == "potion_hp")
         if isPotion == true then
             local inventory = self:ResolveOrAttachInventoryComponentServer("PotionCount")

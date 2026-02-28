@@ -1,0 +1,557 @@
+@Component
+script PassiveSelectionUIComponent extends Component
+
+    property Entity DimOverlayEntity = nil
+    property string DimOverlayPath = "/ui/DefaultGroup/PassiveDimOverlay"
+
+    property Entity PanelEntity = nil
+    property string PanelPath = "/ui/DefaultGroup/PassivePanel"
+
+    property Entity Option1Entity = nil
+    property Entity Option2Entity = nil
+    property Entity Option3Entity = nil
+    property string Option1Path = "/ui/DefaultGroup/PassivePanel/Option1"
+    property string Option2Path = "/ui/DefaultGroup/PassivePanel/Option2"
+    property string Option3Path = "/ui/DefaultGroup/PassivePanel/Option3"
+
+    property string EmptyOptionName = "선택 불가"
+    property string EmptyOptionDescription = "사용 가능한 패시브가 없습니다."
+    property number OptionClickDebounceSeconds = 0.2
+
+    -- Client init resolves UI references once and applies hidden default state.
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self:EnsureGRUtil()
+        self:InitializeRuntimeClient()
+        self:ResolveAndBindUIClient()
+        self:ClosePassiveSelectionClient()
+    end
+
+    -- Map enter re-resolves entities because UI handles can be rebuilt after map transitions.
+    @ExecSpace("ClientOnly")
+    method void OnMapEnter(Entity enteredMap)
+        self:InitializeRuntimeClient()
+        self:ResolveAndBindUIClient()
+        self:ClosePassiveSelectionClient()
+    end
+
+    -- EndPlay detaches handlers/timers so stale callbacks cannot fire on destroyed entities.
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        self:DisconnectOptionButtonsClient()
+        self:ClearClickLockTimerClient()
+    end
+
+    -- Server invokes this RPC to present one token-bound 3-choice passive selection panel.
+    @ExecSpace("Client")
+    method void OpenPassiveSelectionClient(table candidates, integer token, string grade)
+        self:InitializeRuntimeClient()
+        self:ResolveAndBindUIClient()
+
+        self._T.CurrentToken = math.max(1, math.floor(tonumber(token) or 0))
+        self._T.CurrentGrade = tostring(grade or "")
+        self._T.CurrentCandidates = {}
+
+        for index = 1, 3 do
+            local candidate = nil
+            if candidates ~= nil then
+                candidate = candidates[index]
+            end
+            if candidate ~= nil and candidate.Id ~= nil and tostring(candidate.Id) ~= "" then
+                self._T.CurrentCandidates[index] = self:CloneTableShallow(candidate)
+            else
+                self._T.CurrentCandidates[index] = nil
+            end
+        end
+
+        self._T.ClickLocked = false
+        self:ClearClickLockTimerClient()
+        self:RenderOptionsClient()
+        self:SetSelectionVisibleClient(true)
+    end
+
+    -- Server invokes this RPC after confirm/cleanup to hide panel and release local click lock.
+    @ExecSpace("Client")
+    method void ClosePassiveSelectionClient()
+        self:InitializeRuntimeClient()
+        self._T.CurrentToken = 0
+        self._T.CurrentGrade = ""
+        self._T.CurrentCandidates = {}
+        self._T.ClickLocked = false
+        self:ClearClickLockTimerClient()
+        self:SetSelectionVisibleClient(false)
+        self:RenderOptionsClient()
+    end
+
+    -- Runtime cache centralizes all transient client-only data for binding/rendering.
+    @ExecSpace("ClientOnly")
+    method void InitializeRuntimeClient()
+        if self._T.OptionUI == nil then
+            self._T.OptionUI = {}
+        end
+        if self._T.OptionClickable == nil then
+            self._T.OptionClickable = {}
+        end
+        if self._T.CurrentCandidates == nil then
+            self._T.CurrentCandidates = {}
+        end
+        if self._T.CurrentToken == nil then
+            self._T.CurrentToken = 0
+        end
+        if self._T.CurrentGrade == nil then
+            self._T.CurrentGrade = ""
+        end
+        if self._T.IsOpen == nil then
+            self._T.IsOpen = false
+        end
+        if self._T.ClickLocked == nil then
+            self._T.ClickLocked = false
+        end
+        if self._T.ClickLockTimerId == nil then
+            self._T.ClickLockTimerId = 0
+        end
+    end
+
+    -- Resolve and bind order is fixed so option cache always has final entity references before event hookup.
+    @ExecSpace("ClientOnly")
+    method void ResolveAndBindUIClient()
+        self:ResolveRootEntitiesClient()
+        self:CacheOptionUIClient()
+        self:BindOptionButtonsClient()
+    end
+
+    -- Root resolver supports explicit path and panel-child fallback naming.
+    @ExecSpace("ClientOnly")
+    method void ResolveRootEntitiesClient()
+        if self.DimOverlayEntity == nil or isvalid(self.DimOverlayEntity) == false then
+            self.DimOverlayEntity = self:ResolveEntityByPath(self.DimOverlayPath)
+        end
+        if self.PanelEntity == nil or isvalid(self.PanelEntity) == false then
+            self.PanelEntity = self:ResolveEntityByPath(self.PanelPath)
+        end
+
+        if self.Option1Entity == nil or isvalid(self.Option1Entity) == false then
+            self.Option1Entity = self:ResolveOptionRootClient(1, self.Option1Path)
+        end
+        if self.Option2Entity == nil or isvalid(self.Option2Entity) == false then
+            self.Option2Entity = self:ResolveOptionRootClient(2, self.Option2Path)
+        end
+        if self.Option3Entity == nil or isvalid(self.Option3Entity) == false then
+            self.Option3Entity = self:ResolveOptionRootClient(3, self.Option3Path)
+        end
+    end
+
+    -- Option root lookup starts with direct path and falls back to panel child search.
+    @ExecSpace("ClientOnly")
+    method Entity ResolveOptionRootClient(integer index, string path)
+        local found = self:ResolveEntityByPath(path)
+        if found ~= nil and isvalid(found) == true then
+            return found
+        end
+
+        if self.PanelEntity == nil or isvalid(self.PanelEntity) == false then
+            return nil
+        end
+
+        local optionName = "Option" .. tostring(index)
+        return self:ResolveChildByNameCandidates(self.PanelEntity, optionName, "Card" .. tostring(index), "Slot" .. tostring(index), "")
+    end
+
+    -- Option cache pre-resolves button/name/description references to avoid repeat hierarchy traversal on every open.
+    @ExecSpace("ClientOnly")
+    method void CacheOptionUIClient()
+        self._T.OptionUI[1] = self:BuildOptionUIEntryClient(self.Option1Entity)
+        self._T.OptionUI[2] = self:BuildOptionUIEntryClient(self.Option2Entity)
+        self._T.OptionUI[3] = self:BuildOptionUIEntryClient(self.Option3Entity)
+    end
+
+    @ExecSpace("ClientOnly")
+    method table BuildOptionUIEntryClient(Entity optionRoot)
+        local entry = {
+            Root = optionRoot,
+            ButtonEntity = nil,
+            NameText = nil,
+            DescriptionText = nil,
+            ButtonHandler = nil
+        }
+
+        if optionRoot == nil or isvalid(optionRoot) == false then
+            return entry
+        end
+
+        entry.ButtonEntity = optionRoot
+        self:EnsureButtonComponentClient(entry.ButtonEntity)
+        entry.NameText = self:ResolveTextByNameCandidates(optionRoot, "NameText", "TitleText", "ItemName", "Name")
+        entry.DescriptionText = self:ResolveTextByNameCandidates(optionRoot, "DescriptionText", "Description", "DescText", "BodyText")
+        return entry
+    end
+
+    -- Option button handlers are rebound on every resolve pass to prevent duplicate callback chains.
+    @ExecSpace("ClientOnly")
+    method void BindOptionButtonsClient()
+        self:DisconnectOptionButtonsClient()
+
+        for index = 1, 3 do
+            local entry = self._T.OptionUI[index]
+            if entry ~= nil and entry.ButtonEntity ~= nil and isvalid(entry.ButtonEntity) == true then
+                local button = self:EnsureButtonComponentClient(entry.ButtonEntity)
+                if button ~= nil then
+                    local callback = function(event)
+                        self:OnOptionClickedClient(index, event)
+                    end
+
+                    local bindOk, bindHandler = pcall(function()
+                        return entry.ButtonEntity:ConnectEvent(ButtonClickEvent, callback)
+                    end)
+                    if bindOk == true then
+                        entry.ButtonHandler = bindHandler
+                    end
+                end
+            end
+        end
+    end
+
+    -- Disconnect before reconnect keeps exactly one click handler per option.
+    @ExecSpace("ClientOnly")
+    method void DisconnectOptionButtonsClient()
+        if self._T.OptionUI == nil then
+            return
+        end
+
+        for index = 1, 3 do
+            local entry = self._T.OptionUI[index]
+            if entry ~= nil and entry.ButtonHandler ~= nil and entry.ButtonEntity ~= nil and isvalid(entry.ButtonEntity) == true then
+                pcall(function()
+                    entry.ButtonEntity:DisconnectEvent(ButtonClickEvent, entry.ButtonHandler)
+                end)
+                entry.ButtonHandler = nil
+            end
+        end
+    end
+
+    -- Click handler validates local state first, then forwards only selected id+token to server authority.
+    @ExecSpace("ClientOnly")
+    method void OnOptionClickedClient(integer index, ButtonClickEvent event)
+        if self._T.IsOpen ~= true then
+            return
+        end
+        if self._T.ClickLocked == true then
+            return
+        end
+        if self:IsOptionClickableClient(index) ~= true then
+            return
+        end
+
+        local candidate = self:GetCandidateByIndexClient(index)
+        if candidate == nil or candidate.Id == nil or tostring(candidate.Id) == "" then
+            return
+        end
+
+        local passiveSystem = self:ResolveComponentSafe(self.Entity, "PassiveSystemComponent", "IsPassiveSelectionOpen")
+        if passiveSystem == nil or passiveSystem.RequestSelectPassiveFromDropServer == nil then
+            return
+        end
+
+        self._T.ClickLocked = true
+        self:StartClickLockTimerClient()
+
+        local selectedId = tostring(candidate.Id)
+        local token = math.floor(tonumber(self._T.CurrentToken) or 0)
+        pcall(function()
+            passiveSystem:RequestSelectPassiveFromDropServer(selectedId, token)
+        end)
+    end
+
+    -- Visible wrapper toggles dim+panel together and keeps option clickability coherent with current open state.
+    @ExecSpace("ClientOnly")
+    method void SetSelectionVisibleClient(boolean visible)
+        self:SetEntityVisibleClient(self.DimOverlayEntity, visible)
+        self:SetEntityVisibleClient(self.PanelEntity, visible)
+        self._T.IsOpen = (visible == true)
+
+        if visible ~= true then
+            for index = 1, 3 do
+                self:SetOptionClickableClient(index, false)
+            end
+        end
+    end
+
+    -- Renderer applies candidate text and disables empty slots when candidate count is below 3.
+    @ExecSpace("ClientOnly")
+    method void RenderOptionsClient()
+        if self._T.OptionUI == nil then
+            return
+        end
+
+        for index = 1, 3 do
+            local entry = self._T.OptionUI[index]
+            local candidate = self:GetCandidateByIndexClient(index)
+            local hasCandidate = (candidate ~= nil and candidate.Id ~= nil and tostring(candidate.Id) ~= "")
+            local isClickable = (self._T.IsOpen == true and hasCandidate == true)
+
+            local optionName = self.EmptyOptionName
+            local optionDescription = self.EmptyOptionDescription
+            if hasCandidate == true then
+                if candidate.Name ~= nil and tostring(candidate.Name) ~= "" then
+                    optionName = tostring(candidate.Name)
+                else
+                    optionName = "패시브"
+                end
+                if candidate.Description ~= nil then
+                    optionDescription = tostring(candidate.Description)
+                else
+                    optionDescription = ""
+                end
+            end
+
+            if entry ~= nil then
+                if entry.NameText ~= nil then
+                    pcall(function()
+                        entry.NameText.Text = optionName
+                    end)
+                end
+                if entry.DescriptionText ~= nil then
+                    pcall(function()
+                        entry.DescriptionText.Text = optionDescription
+                    end)
+                end
+            end
+
+            self:SetOptionClickableClient(index, isClickable)
+        end
+    end
+
+    -- Clickable state stores local guard and applies visual alpha hint to option row.
+    @ExecSpace("ClientOnly")
+    method void SetOptionClickableClient(integer index, boolean clickable)
+        if self._T.OptionClickable == nil then
+            self._T.OptionClickable = {}
+        end
+        self._T.OptionClickable[index] = (clickable == true)
+
+        local entry = nil
+        if self._T.OptionUI ~= nil then
+            entry = self._T.OptionUI[index]
+        end
+        if entry == nil or entry.ButtonEntity == nil or isvalid(entry.ButtonEntity) == false then
+            return
+        end
+
+        local sprite = entry.ButtonEntity.SpriteGUIRendererComponent
+        if sprite ~= nil then
+            local alpha = 1.0
+            if clickable ~= true then
+                alpha = 0.5
+            end
+            pcall(function()
+                sprite.Color = Color(1, 1, 1, alpha)
+            end)
+        end
+    end
+
+    method boolean IsOptionClickableClient(integer index)
+        if self._T.OptionClickable == nil then
+            return false
+        end
+        return self._T.OptionClickable[index] == true
+    end
+
+    method table GetCandidateByIndexClient(integer index)
+        if self._T.CurrentCandidates == nil then
+            return nil
+        end
+        return self._T.CurrentCandidates[index]
+    end
+
+    -- Debounce timer prevents accidental multi-click RPC bursts on high-latency frames.
+    @ExecSpace("ClientOnly")
+    method void StartClickLockTimerClient()
+        self:ClearClickLockTimerClient()
+
+        local delay = math.max(0.05, self.OptionClickDebounceSeconds)
+        local unlock = function()
+            self._T.ClickLocked = false
+            self._T.ClickLockTimerId = 0
+        end
+        self._T.ClickLockTimerId = _TimerService:SetTimerOnce(unlock, delay)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ClearClickLockTimerClient()
+        if self._T.ClickLockTimerId ~= nil and self._T.ClickLockTimerId > 0 then
+            _TimerService:ClearTimer(self._T.ClickLockTimerId)
+            self._T.ClickLockTimerId = 0
+        end
+    end
+
+    -- Entity visible helper supports both SetEnable API and direct Enable/Visible assignment.
+    @ExecSpace("ClientOnly")
+    method void SetEntityVisibleClient(Entity targetEntity, boolean visible)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+
+        if targetEntity.SetEnable ~= nil then
+            pcall(function()
+                targetEntity:SetEnable(visible, false, true)
+            end)
+        else
+            pcall(function()
+                targetEntity.Enable = visible
+            end)
+        end
+
+        pcall(function()
+            targetEntity.Visible = visible
+        end)
+    end
+
+    -- Shared path resolver isolates nil/validity checks for all UI references.
+    @ExecSpace("ClientOnly")
+    method Entity ResolveEntityByPath(string path)
+        if path == nil or path == "" then
+            return nil
+        end
+
+        local entity = _EntityService:GetEntityByPath(path)
+        if entity == nil or isvalid(entity) == false then
+            return nil
+        end
+        return entity
+    end
+
+    -- Candidate-based child resolver keeps naming variance handling in one utility function.
+    @ExecSpace("ClientOnly")
+    method Entity ResolveChildByNameCandidates(Entity rootEntity, string nameA, string nameB, string nameC, string nameD)
+        if rootEntity == nil or isvalid(rootEntity) == false then
+            return nil
+        end
+
+        local candidates = {nameA, nameB, nameC, nameD}
+        for _, name in pairs(candidates) do
+            if name ~= nil and name ~= "" then
+                local findOk, child = pcall(function()
+                    return rootEntity:GetChildByName(name, true)
+                end)
+                if findOk == true and child ~= nil and isvalid(child) == true then
+                    return child
+                end
+            end
+        end
+
+        return nil
+    end
+
+    @ExecSpace("ClientOnly")
+    method TextComponent ResolveTextByNameCandidates(Entity rootEntity, string nameA, string nameB, string nameC, string nameD)
+        local child = self:ResolveChildByNameCandidates(rootEntity, nameA, nameB, nameC, nameD)
+        if child == nil or isvalid(child) == false then
+            return nil
+        end
+        return child.TextComponent
+    end
+
+    @ExecSpace("ClientOnly")
+    method ButtonComponent EnsureButtonComponentClient(Entity targetEntity)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+        if targetEntity.ButtonComponent ~= nil then
+            return targetEntity.ButtonComponent
+        end
+
+        pcall(function()
+            targetEntity:AddComponent("MOD.Core.ButtonComponent")
+        end)
+        return targetEntity.ButtonComponent
+    end
+
+    method table CloneTableShallow(table source)
+        local copy = {}
+        if source == nil then
+            return copy
+        end
+        for key, value in pairs(source) do
+            copy[key] = value
+        end
+        return copy
+    end
+
+    -- Utility bootstrap first; fallback local lookup keeps component resilient in partially configured maps.
+    method void EnsureGRUtil()
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, utilApi = pcall(function()
+                return utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and utilApi ~= nil then
+                self._T.GRUtil = utilApi
+            end
+        end
+    end
+
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local checkOk, _ = pcall(function()
+                return component[markerField]
+            end)
+            if checkOk == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+end
+

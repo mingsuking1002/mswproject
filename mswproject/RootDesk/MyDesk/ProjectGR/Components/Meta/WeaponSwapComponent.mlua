@@ -258,6 +258,16 @@ script WeaponSwapComponent extends Component
             end
         end
 
+        local passiveSystem = self:ResolveComponentSafe(self.Entity, "PassiveSystemComponent", "IsPassiveSelectionOpen")
+        if passiveSystem ~= nil then
+            local passiveOpenOk, passiveOpen = pcall(function()
+                return passiveSystem.IsPassiveSelectionOpen
+            end)
+            if passiveOpenOk == true and passiveOpen == true then
+                return false
+            end
+        end
+
         return true
     end
 

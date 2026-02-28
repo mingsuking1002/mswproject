@@ -4,6 +4,8 @@ script PassiveSystemComponent extends Component
     property string PassiveDataTableName = "PassiveData"
     @Sync
     property integer AcquiredPassiveCount = 0
+    @Sync
+    property boolean IsPassiveSelectionOpen = false
     property integer MaxPassiveSlots = 20
     property boolean EnableDebugLogs = true
 
@@ -19,7 +21,12 @@ script PassiveSystemComponent extends Component
         self._T.AttackHitCounter = 0
         self._T.HasHealOnHitPassive = false
         self._T.PendingCandidate = nil
+        self._T.SelectionToken = 0
+        self._T.PendingSelection = nil
+        self._T.SelectionQueue = {}
+        self._T.LockSnapshot = nil
         self.AcquiredPassiveCount = 0
+        self.IsPassiveSelectionOpen = false
     end
 
     @ExecSpace("ServerOnly")
@@ -140,6 +147,356 @@ script PassiveSystemComponent extends Component
         return true
     end
 
+    -- Drop pickup entry point opens server-authoritative 3-choice UI or queues if one is already active.
+    @ExecSpace("ServerOnly")
+    method void RequestPassiveSelectionFromDropServer(string gradeHint)
+        self:LoadPassiveDataServer()
+
+        if self.AcquiredPassiveCount >= math.max(1, self.MaxPassiveSlots) then
+            return
+        end
+
+        local normalizedGrade = self:NormalizeGrade(gradeHint)
+        if normalizedGrade == "" then
+            normalizedGrade = self:ResolvePreferredGradeServer()
+        end
+        if normalizedGrade == "" then
+            normalizedGrade = "common"
+        end
+
+        if self.IsPassiveSelectionOpen == true then
+            table.insert(self._T.SelectionQueue, normalizedGrade)
+            return
+        end
+
+        if self:OpenPassiveSelectionFromDropServer(normalizedGrade) ~= true then
+            self:TryProcessQueuedPassiveSelectionServer()
+        end
+    end
+
+    -- Non-replacement random draw builds up to count candidates from a filtered passive pool.
+    @ExecSpace("ServerOnly")
+    method table BuildPassiveCandidatesServer(string gradeHint, integer count)
+        self:LoadPassiveDataServer()
+
+        local normalizedGrade = self:NormalizeGrade(gradeHint)
+        if normalizedGrade == "" then
+            normalizedGrade = self:ResolvePreferredGradeServer()
+        end
+        if normalizedGrade == "" then
+            normalizedGrade = "common"
+        end
+
+        local maxCount = math.max(1, math.floor(count))
+        local pool = self:BuildPassivePoolServer(normalizedGrade)
+        local candidates = {}
+        if pool == nil or #pool <= 0 then
+            return candidates
+        end
+
+        local working = self:CloneArray(pool)
+        while #working > 0 and #candidates < maxCount do
+            local pickIndex = math.random(1, #working)
+            local picked = working[pickIndex]
+            table.remove(working, pickIndex)
+            if picked ~= nil then
+                local candidate = self:BuildCandidateFromRow(picked)
+                if candidate ~= nil and candidate.Id ~= nil and tostring(candidate.Id) ~= "" then
+                    table.insert(candidates, candidate)
+                end
+            end
+        end
+
+        return candidates
+    end
+
+    -- Client confirm RPC validates token/candidate membership before applying one selected passive.
+    @ExecSpace("Server")
+    method void RequestSelectPassiveFromDropServer(string passiveId, integer token)
+        if self.IsPassiveSelectionOpen ~= true then
+            return
+        end
+
+        local pending = self._T.PendingSelection
+        if pending == nil then
+            return
+        end
+
+        local requestedToken = math.floor(tonumber(token) or -1)
+        if requestedToken < 0 or requestedToken ~= math.floor(tonumber(pending.Token) or -2) then
+            return
+        end
+
+        local requestedId = ""
+        if passiveId ~= nil then
+            requestedId = tostring(passiveId)
+        end
+        if requestedId == "" then
+            return
+        end
+
+        if pending.CandidateSet == nil or pending.CandidateSet[requestedId] ~= true then
+            return
+        end
+
+        local applyGrade = pending.Grade
+        if applyGrade == nil or tostring(applyGrade) == "" then
+            applyGrade = "common"
+        end
+
+        local applied = self:ApplyRandomPassiveServer(applyGrade, requestedId)
+        self:ClosePassiveSelectionServer(true, true)
+        if applied == true then
+            self:TryProcessQueuedPassiveSelectionServer()
+            return
+        end
+
+        self:TryProcessQueuedPassiveSelectionServer()
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean OpenPassiveSelectionFromDropServer(string gradeHint)
+        if self.IsPassiveSelectionOpen == true then
+            return false
+        end
+        if self.AcquiredPassiveCount >= math.max(1, self.MaxPassiveSlots) then
+            return false
+        end
+
+        local normalizedGrade = self:NormalizeGrade(gradeHint)
+        if normalizedGrade == "" then
+            normalizedGrade = self:ResolvePreferredGradeServer()
+        end
+        if normalizedGrade == "" then
+            normalizedGrade = "common"
+        end
+
+        local candidates = self:BuildPassiveCandidatesServer(normalizedGrade, 3)
+        if candidates == nil or #candidates <= 0 then
+            return false
+        end
+
+        local nextToken = math.floor(tonumber(self._T.SelectionToken) or 0) + 1
+        if nextToken <= 0 then
+            nextToken = 1
+        end
+        self._T.SelectionToken = nextToken
+
+        local candidateSet = {}
+        for _, candidate in pairs(candidates) do
+            if candidate ~= nil and candidate.Id ~= nil and tostring(candidate.Id) ~= "" then
+                candidateSet[tostring(candidate.Id)] = true
+            end
+        end
+
+        self._T.PendingSelection = {
+            Grade = normalizedGrade,
+            Token = nextToken,
+            CandidateList = self:CloneArray(candidates),
+            CandidateSet = candidateSet
+        }
+
+        self.IsPassiveSelectionOpen = true
+        self:ApplyPassiveSelectionLockServer(true)
+        self:NotifyPassiveSelectionOpenClient(candidates, nextToken, normalizedGrade)
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TryProcessQueuedPassiveSelectionServer()
+        if self.IsPassiveSelectionOpen == true then
+            return
+        end
+        if self._T.SelectionQueue == nil or #self._T.SelectionQueue <= 0 then
+            return
+        end
+        if self.AcquiredPassiveCount >= math.max(1, self.MaxPassiveSlots) then
+            self._T.SelectionQueue = {}
+            return
+        end
+
+        while self._T.SelectionQueue ~= nil and #self._T.SelectionQueue > 0 and self.IsPassiveSelectionOpen ~= true do
+            local nextGrade = table.remove(self._T.SelectionQueue, 1)
+            local normalized = self:NormalizeGrade(nextGrade)
+            if normalized == "" then
+                normalized = self:ResolvePreferredGradeServer()
+            end
+            if normalized == "" then
+                normalized = "common"
+            end
+
+            local opened = self:OpenPassiveSelectionFromDropServer(normalized)
+            if opened == true then
+                return
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ClosePassiveSelectionServer(boolean releaseLock, boolean notifyClient)
+        self.IsPassiveSelectionOpen = false
+        self._T.PendingSelection = nil
+
+        if notifyClient == true then
+            self:NotifyPassiveSelectionCloseClient()
+        end
+        if releaseLock == true then
+            self:ApplyPassiveSelectionLockServer(false)
+        end
+    end
+
+    -- Selection lock freezes movement/attack/tag and pauses run timer only when timer was actively ticking.
+    @ExecSpace("ServerOnly")
+    method void ApplyPassiveSelectionLockServer(boolean locked)
+        if locked == true then
+            if self._T.LockSnapshot ~= nil then
+                return
+            end
+
+            local snapshot = {}
+            snapshot.MoveCanMove = true
+            snapshot.FireCanAttack = true
+            snapshot.TagWasLocked = false
+            snapshot.TimerWasPaused = false
+            snapshot.TimerPauseApplied = false
+
+            self:TryCloseWeaponSwapMenuServer()
+
+            local movement = self:ResolveComponentSafe(self.Entity, "MovementComponent", "CanMove")
+            if movement ~= nil then
+                local moveOk, moveValue = pcall(function()
+                    return movement.CanMove
+                end)
+                if moveOk == true and moveValue ~= nil then
+                    snapshot.MoveCanMove = (moveValue == true)
+                end
+                self:SetCanMoveSafely(false)
+            end
+
+            local fire = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "CanAttack")
+            if fire ~= nil then
+                local attackOk, attackValue = pcall(function()
+                    return fire.CanAttack
+                end)
+                if attackOk == true and attackValue ~= nil then
+                    snapshot.FireCanAttack = (attackValue == true)
+                end
+                self:SetCanAttackSafely(false)
+            end
+
+            local tag = self:ResolveComponentSafe(self.Entity, "TagManagerComponent", "IsTagLocked")
+            if tag ~= nil then
+                local tagOk, tagValue = pcall(function()
+                    return tag.IsTagLocked
+                end)
+                if tagOk == true and tagValue ~= nil then
+                    snapshot.TagWasLocked = (tagValue == true)
+                end
+                self:SetTagLockedSafely(true)
+            end
+
+            local timer = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "IsPaused")
+            if timer ~= nil then
+                local isRunning = false
+                local runningOk, runningValue = pcall(function()
+                    return timer.IsRunning
+                end)
+                if runningOk == true and runningValue ~= nil then
+                    isRunning = (runningValue == true)
+                end
+
+                local pausedOk, pausedValue = pcall(function()
+                    return timer.IsPaused
+                end)
+                if pausedOk == true and pausedValue ~= nil then
+                    snapshot.TimerWasPaused = (pausedValue == true)
+                end
+
+                if isRunning == true and snapshot.TimerWasPaused ~= true and timer.PauseGame ~= nil then
+                    local pauseOk, _ = pcall(function()
+                        timer:PauseGame()
+                    end)
+                    if pauseOk == true then
+                        snapshot.TimerPauseApplied = true
+                    end
+                end
+            end
+
+            self._T.LockSnapshot = snapshot
+            return
+        end
+
+        local snapshot = self._T.LockSnapshot
+        self._T.LockSnapshot = nil
+        if snapshot == nil then
+            return
+        end
+
+        self:SetCanMoveSafely(snapshot.MoveCanMove == true)
+        self:SetCanAttackSafely(snapshot.FireCanAttack == true)
+        self:SetTagLockedSafely(snapshot.TagWasLocked == true)
+
+        if snapshot.TimerPauseApplied == true then
+            local timer = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "IsPaused")
+            if timer ~= nil and timer.ResumeGame ~= nil then
+                pcall(function()
+                    timer:ResumeGame()
+                end)
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void NotifyPassiveSelectionOpenClient(table candidates, integer token, string grade)
+        local uiComponent = self:ResolveComponentSafe(self.Entity, "PassiveSelectionUIComponent", "PanelPath")
+        if uiComponent == nil or uiComponent.OpenPassiveSelectionClient == nil then
+            return
+        end
+
+        local safeCandidates = self:CloneArray(candidates)
+        pcall(function()
+            uiComponent:OpenPassiveSelectionClient(safeCandidates, token, grade)
+        end)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void NotifyPassiveSelectionCloseClient()
+        local uiComponent = self:ResolveComponentSafe(self.Entity, "PassiveSelectionUIComponent", "PanelPath")
+        if uiComponent == nil or uiComponent.ClosePassiveSelectionClient == nil then
+            return
+        end
+
+        pcall(function()
+            uiComponent:ClosePassiveSelectionClient()
+        end)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TryCloseWeaponSwapMenuServer()
+        local swapComponent = self:ResolveComponentSafe(self.Entity, "WeaponSwapComponent", "IsSwapMenuOpen")
+        if swapComponent == nil then
+            return
+        end
+        if swapComponent.CloseSwapMenuServer == nil then
+            return
+        end
+
+        local isOpen = false
+        local openOk, openValue = pcall(function()
+            return swapComponent.IsSwapMenuOpen
+        end)
+        if openOk == true and openValue == true then
+            isOpen = true
+        end
+        if isOpen ~= true then
+            return
+        end
+
+        pcall(function()
+            swapComponent:CloseSwapMenuServer()
+        end)
+    end
+
     -- FireSystem hook: every successful fire increments counter and heals 1 HP every 20 shots.
     @ExecSpace("ServerOnly")
     method void OnProjectileFiredServer()
@@ -175,6 +532,10 @@ script PassiveSystemComponent extends Component
         self._T.AttackHitCounter = 0
         self._T.HasHealOnHitPassive = false
         self._T.PendingCandidate = nil
+        self._T.PendingSelection = nil
+        self._T.SelectionQueue = {}
+        self._T.SelectionToken = 0
+        self:ClosePassiveSelectionServer(true, true)
         self.AcquiredPassiveCount = 0
 
         local fire = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "PassiveFlatAttack")
@@ -232,6 +593,12 @@ script PassiveSystemComponent extends Component
             end
         end
         self.AcquiredPassiveCount = math.max(0, math.floor(tonumber(state.AcquiredPassiveCount) or #self._T.AcquiredList))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        self:ClosePassiveSelectionServer(true, true)
+        self._T.SelectionQueue = {}
     end
 
     @ExecSpace("ServerOnly")
@@ -644,6 +1011,57 @@ script PassiveSystemComponent extends Component
             return false
         end
         return fallbackValue
+    end
+
+    method boolean SetCanMoveSafely(boolean canMove)
+        if self._T.GRUtil ~= nil and self._T.GRUtil.TrySetCanMove ~= nil then
+            return self._T.GRUtil.TrySetCanMove(self.Entity, canMove)
+        end
+
+        local movement = self:ResolveComponentSafe(self.Entity, "MovementComponent", "CanMove")
+        if movement == nil then
+            return false
+        end
+
+        local writeOk, _ = pcall(function()
+            movement.CanMove = canMove
+        end)
+        return writeOk
+    end
+
+    method boolean SetCanAttackSafely(boolean canAttack)
+        local fire = self:ResolveComponentSafe(self.Entity, "FireSystemComponent", "CanAttack")
+        if fire == nil then
+            return false
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.TrySetField ~= nil then
+            return self._T.GRUtil.TrySetField(fire, "CanAttack", canAttack)
+        end
+
+        local writeOk, _ = pcall(function()
+            fire.CanAttack = canAttack
+        end)
+        return writeOk
+    end
+
+    method boolean SetTagLockedSafely(boolean locked)
+        local tag = self:ResolveComponentSafe(self.Entity, "TagManagerComponent", "IsTagLocked")
+        if tag == nil then
+            return false
+        end
+
+        if tag.SetTagLocked ~= nil then
+            local callOk, _ = pcall(function()
+                tag:SetTagLocked(locked)
+            end)
+            return callOk
+        end
+
+        local writeOk, _ = pcall(function()
+            tag.IsTagLocked = locked
+        end)
+        return writeOk
     end
 
     -- Utility bootstrap first; fallback local lookup keeps component resilient in partially configured maps.

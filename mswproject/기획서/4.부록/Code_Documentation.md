@@ -3393,3 +3393,105 @@
 | Schema | Added columns: `id, weapon_id, level, enabled, fire_rate, reload_time, max_basic_resource, dmg_raito, projectile_id, summon_id, sprite_ruid`. |
 | Sample rows | Added `bow_2`, `bow_5` sample rows for level-based fire/reload/ammo override behavior validation. |
 | Dataset scope | `WeaponLevelOverrideData.userdataset` creation is intentionally excluded in this change-set (Maker-side setup pending). |
+
+## 2026-02-28 Passive Drop Item 3-Choice UI
+
+### ItemData.csv (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Data/ItemData.csv`
+- **Updated:** `2026-02-28`
+
+| Item | Detail |
+|---|---|
+| Passive drop item rows | Added `passive_common_drop`, `passive_unique_drop`. |
+| Effect type contract | Added `effect_type` values: `passive_common`, `passive_unique`. |
+| Icon policy | Reused existing in-game icon RUID (`dcb2f57cb344471aaefde6dc089032b6`) for immediate visibility. |
+
+### DropData.csv (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Data/DropData.csv`
+- **Updated:** `2026-02-28`
+
+| Item | Detail |
+|---|---|
+| Elite drop table | `elite_drop01.drop_item_3 = passive_common_drop`, `rate = 1`, `amount = 1`. |
+| Boss drop table | `boss_drop01.drop_item_3 = passive_unique_drop`, `rate = 1`, `amount = 1`. |
+| Existing rewards | 기존 potion/gold 슬롯(`drop_item_1`, `drop_item_2`)은 유지. |
+
+### ItemDropManagerComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ItemDropManagerComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ItemDropManagerComponent.codeblock`
+- **Updated:** `2026-02-28`
+
+| Item | Detail |
+|---|---|
+| Pickup effect branch | `ApplyItemPickupEffectServer()`에 `passive_common`, `passive_unique` 분기를 potion/mag/gold보다 먼저 추가. |
+| Passive open request | `PassiveSystemComponent:RequestPassiveSelectionFromDropServer("common"|"unique")` 호출 후 즉시 `return` 처리. |
+
+### PassiveSystemComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/PassiveSystemComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/PassiveSystemComponent.codeblock`
+- **Updated:** `2026-02-28`
+
+| Item | Detail |
+|---|---|
+| New sync property | `IsPassiveSelectionOpen`(Sync) 추가. |
+| New server APIs | `RequestPassiveSelectionFromDropServer`, `BuildPassiveCandidatesServer`, `RequestSelectPassiveFromDropServer` 추가. |
+| Runtime state machine | `_T.SelectionToken`, `_T.PendingSelection`, `_T.SelectionQueue`, `_T.LockSnapshot` 기반 드롭 선택 상태/큐 관리 추가. |
+| Candidate rule | 비복원 랜덤 추출로 중복 없는 최대 3후보 구성. |
+| Validation | 토큰 불일치/후보 외 passive id 요청 무시. |
+| Queue processing | 선택창 오픈 중 추가 드롭은 큐 적재, 선택 완료 후 다음 요청 순차 오픈. |
+| Gameplay lock | 선택창 오픈 시 이동/공격/태그 잠금 + 무기교체창 강제 종료 + 타이머 필요 시 `PauseGame()`, 종료 시 스냅샷 복원. |
+| UI bridge | `PassiveSelectionUIComponent`의 `OpenPassiveSelectionClient`/`ClosePassiveSelectionClient` 호출 추가. |
+
+### PassiveSelectionUIComponent (New)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/UI/PassiveSelectionUIComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/UI/PassiveSelectionUIComponent.codeblock`
+- **Updated:** `2026-02-28`
+
+| Item | Detail |
+|---|---|
+| UI role | 패시브 3선택 팝업 표시, 옵션 렌더링, 버튼 이벤트 바인딩, 서버 선택 요청 전달 담당. |
+| Public client RPC | `OpenPassiveSelectionClient(candidates, token, grade)`, `ClosePassiveSelectionClient()` 구현. |
+| Input path | `OnOptionClickedClient(index, event)`에서 `PassiveSystemComponent:RequestSelectPassiveFromDropServer(passiveId, token)` 호출. |
+| Slot fallback | 후보가 3개 미만인 경우 빈 슬롯을 비활성 상태로 렌더링. |
+| Map-safe binding | `OnBeginPlay`, `OnMapEnter`에서 경로 재해결 + 버튼 재바인딩 수행. |
+
+### ui/DefaultGroup.ui (Updated)
+- **File:** `ui/DefaultGroup.ui`
+- **Updated:** `2026-02-28`
+
+| Item | Detail |
+|---|---|
+| New overlay/panel | Added `/ui/DefaultGroup/PassiveDimOverlay`, `/ui/DefaultGroup/PassivePanel` (기본 hidden). |
+| Panel hierarchy | Added `TitleText`, `Option1~3`, 각 옵션의 `NameText`/`DescriptionText` 자식 텍스트. |
+| Render order | 패시브 팝업 `displayOrder`를 ShopPanel(8)보다 높은 18/19로 설정. |
+| Interaction policy | 닫기 버튼 없이 옵션 버튼 3개만 제공(1개 선택 강제 흐름). |
+
+### WeaponSwapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.codeblock`
+- **Updated:** `2026-02-28`
+
+| Item | Detail |
+|---|---|
+| Swap gate extension | `IsSwapAvailableServer()`에 `PassiveSystemComponent.IsPassiveSelectionOpen` 체크 추가. |
+
+### Map01BootstrapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.codeblock`
+- **Updated:** `2026-02-28`
+
+| Item | Detail |
+|---|---|
+| Required component list | `AttachRequiredComponentsServer()` required 목록에 `PassiveSelectionUIComponent` 추가. |
+
+## 2026-02-28 Passive Selection Click Fix
+
+### PassiveSelectionUIComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/UI/PassiveSelectionUIComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/UI/PassiveSelectionUIComponent.codeblock`
+- **Updated:** `2026-02-28`
+
+| Item | Detail |
+|---|---|
+| Option callback index capture | `BindOptionButtonsClient()` now captures `optionIndex` per iteration before creating click callback, preventing all option callbacks from sharing an invalid loop index. |
+| Stale-panel close guard | Added client `OnUpdate(delta)` sync guard that auto-closes panel when `PassiveSystemComponent.IsPassiveSelectionOpen == false`, covering missed close RPC cases. |

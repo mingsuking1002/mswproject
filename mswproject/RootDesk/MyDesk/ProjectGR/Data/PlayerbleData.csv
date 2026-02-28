@@ -1,5 +1,5 @@
 ﻿id,name,player_hp,player_atk,movespeed,current_weaponslot,weaponslot1,weaponslot2,weaponslot3,weaponslot4,tag_skill,idle_ruid,walk_ruid,dead_ruid,dead_last_ruid,-copy15,-copy16,-copy17,-copy18,-copy19
-player_a,베루아,100,100,3,,bow,cannon,turret_minigun,deathperado,tag_skill_a,e7dae469096d4c04a0a5378d07801afa,1e3524d38b974c80b348a23ecb1bb083,d9212148bc364dada63218913bbb4775,a959073c331d474ca3e0c02ea32c9bde,,,,,
+player_a,베루아,9999990,100,3,,bow,cannon,turret_minigun,deathperado,tag_skill_a,e7dae469096d4c04a0a5378d07801afa,1e3524d38b974c80b348a23ecb1bb083,d9212148bc364dada63218913bbb4775,a959073c331d474ca3e0c02ea32c9bde,,,,,
 player_b,카르테,90,100,3,,gun,fireball,turret_sniper,gungnir,tag_skill_b,a02de449888a41f981084922bba36c89,6d9688ed9b544d4dba87bba3bbb9249f,c8895e5741134fd5bf76ee85da99a91a,fddf8c51c3e242659e40757c5b2b2f19,,,,,
 ,,,,,,,,,,,,,,,,,,,
 ,,,,,,,,,,,,,,,,,,,

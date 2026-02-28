@@ -3,6 +3,8 @@ potion_hp,포션,hp_plus,heal_hp,30,0,99,체력을 30 회복시킵니다.,2463dc
 mag_a,베루아 마나 충전기,a_mana,a_mag,0,,99,A_탄약을 보충합니다,cc4ce28e7a5d4c04827bf396b1286ffb,,,,,
 mag_b,케르타 마나 충전기,b_mana,b_mag,0,1,99,B_탄약을 보충합니다,cc4ce28e7a5d4c04827bf396b1286ffb,,,,,
 gold,골드,total_money,None,0,0,0,상점에서 아이템을 살 수 있습니다.,dcb2f57cb344471aaefde6dc089032b6,,,,,
+passive_common_drop,상시 패시브 선택권,passive_drop,passive_common,0,0,0,상시 패시브 3개 중 1개를 선택합니다.,dcb2f57cb344471aaefde6dc089032b6,,,,,
+passive_unique_drop,유일 패시브 선택권,passive_drop,passive_unique,0,0,0,유일 패시브 3개 중 1개를 선택합니다.,dcb2f57cb344471aaefde6dc089032b6,,,,,
 ,,,,,,,,,,,,,
 ,,,,,,,,,,,,,
 ,,,,,,,,,,,,,
