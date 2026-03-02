@@ -166,7 +166,7 @@
                 "z": 0.0
               },
               "Position": {
-                "x": 0.0309934616,
+                "x": 0.018517971,
                 "y": -0.214412928,
                 "z": 0.0
               },
@@ -263,8 +263,8 @@
               "BackdropBoundPadding": 0.25,
               "SpawnAtRectTileCenterOnConfigure": false,
               "CenterSpawnRectTilePath": "/maps/games/MapleMapLayer/GRBaseRectTileMap",
-              "CenterSpawnTileCountX": 48,
-              "CenterSpawnTileCountY": 48,
+              "CenterSpawnTileCountX": 200,
+              "CenterSpawnTileCountY": 200,
               "ApplyCenterSpawnOncePerUser": true
             }
           ],
@@ -327,87 +327,6 @@
         }
       },
       {
-        "id": "8cc65f6e-9fbf-408d-9b51-2c3632fcc75c",
-        "path": "/maps/games/Shop_East",
-        "componentNames": "MOD.Core.TransformComponent,MOD.Core.SpriteRendererComponent,MOD.Core.TriggerComponent",
-        "jsonString": {
-          "name": "Shop_East",
-          "path": "/maps/games/Shop_East",
-          "nameEditable": true,
-          "enable": false,
-          "visible": true,
-          "localize": false,
-          "displayOrder": 4,
-          "pathConstraints": "///",
-          "revision": 1,
-          "modelId": null,
-          "@components": [
-            {
-              "@type": "MOD.Core.TransformComponent",
-              "Rotation": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "Position": {
-                "x": -20.8562946,
-                "y": -0.4474306,
-                "z": 0.0
-              },
-              "QuaternionRotation": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0,
-                "w": 1.0
-              },
-              "ZRotation": 0.0,
-              "Enable": true
-            },
-            {
-              "@type": "MOD.Core.SpriteRendererComponent",
-              "ActionSheet": {},
-              "EndFrameIndex": 2147483647,
-              "OrderInLayer": 0,
-              "RenderSetting": 0,
-              "SortingLayer": "Default",
-              "SpriteRUID": "ba7443a453644bccb209350b4ab780c5",
-              "StartFrameIndex": 0,
-              "Color": {
-                "r": 1.0,
-                "g": 1.0,
-                "b": 1.0,
-                "a": 1.0
-              },
-              "Enable": true
-            },
-            {
-              "@type": "MOD.Core.TriggerComponent",
-              "BoxOffset": {
-                "x": 0.0,
-                "y": 0.0
-              },
-              "BoxSize": {
-                "x": 5.0,
-                "y": 5.0
-              },
-              "CircleRadius": 10.0,
-              "ColliderOffset": {
-                "x": 0.103317261,
-                "y": 0.4303832
-              },
-              "ColliderType": 1,
-              "CollisionGroup": {
-                "Id": "MOD@TriggerBox"
-              },
-              "IsLegacy": false,
-              "IsPassive": false,
-              "Enable": true
-            }
-          ],
-          "@version": 1
-        }
-      },
-      {
         "id": "3e6de59b-2e35-4f5f-aeb5-9a8d8cf43af2",
         "path": "/maps/games/MonsterContainer",
         "componentNames": "MOD.Core.TransformComponent",
@@ -418,7 +337,7 @@
           "enable": true,
           "visible": true,
           "localize": false,
-          "displayOrder": 5,
+          "displayOrder": 4,
           "pathConstraints": "///",
           "revision": 1,
           "modelId": null,
@@ -464,7 +383,7 @@
           "enable": true,
           "visible": true,
           "localize": false,
-          "displayOrder": 6,
+          "displayOrder": 5,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {
@@ -505,6 +424,88 @@
               "OrderInLayer": 1,
               "RenderSetting": 0,
               "StartFrameIndex": 0,
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "8cc65f6e-9fbf-408d-9b51-2c3632fcc75c",
+        "path": "/maps/games/Shop_East",
+        "componentNames": "MOD.Core.TransformComponent,MOD.Core.SpriteRendererComponent,MOD.Core.TriggerComponent",
+        "jsonString": {
+          "name": "Shop_East",
+          "path": "/maps/games/Shop_East",
+          "nameEditable": true,
+          "enable": false,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 6,
+          "pathConstraints": "///",
+          "revision": 1,
+          "modelId": null,
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "Position": {
+                "x": -20.8562946,
+                "y": -0.4474306,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "ZRotation": 0.0,
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.SpriteRendererComponent",
+              "ActionSheet": {},
+              "EndFrameIndex": 2147483647,
+              "FlipX": false,
+              "OrderInLayer": 0,
+              "RenderSetting": 0,
+              "SortingLayer": "Default",
+              "SpriteRUID": "dfa2ad99cdbe4e718eaf36d604739688",
+              "StartFrameIndex": 0,
+              "Color": {
+                "r": 1.0,
+                "g": 1.0,
+                "b": 1.0,
+                "a": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.TriggerComponent",
+              "BoxOffset": {
+                "x": 0.0,
+                "y": 0.0
+              },
+              "BoxSize": {
+                "x": 5.0,
+                "y": 5.0
+              },
+              "CircleRadius": 10.0,
+              "ColliderOffset": {
+                "x": 0.103317261,
+                "y": 0.4303832
+              },
+              "ColliderType": 1,
+              "CollisionGroup": {
+                "Id": "MOD@TriggerBox"
+              },
+              "IsLegacy": false,
+              "IsPassive": false,
               "Enable": true
             }
           ],
@@ -555,7 +556,7 @@
               "OrderInLayer": 0,
               "RenderSetting": 0,
               "SortingLayer": "Default",
-              "SpriteRUID": "ba7443a453644bccb209350b4ab780c5",
+              "SpriteRUID": "dfa2ad99cdbe4e718eaf36d604739688",
               "StartFrameIndex": 0,
               "Color": {
                 "r": 1.0,
@@ -636,7 +637,7 @@
               "OrderInLayer": 0,
               "RenderSetting": 0,
               "SortingLayer": "Default",
-              "SpriteRUID": "ba7443a453644bccb209350b4ab780c5",
+              "SpriteRUID": "dfa2ad99cdbe4e718eaf36d604739688",
               "StartFrameIndex": 0,
               "Color": {
                 "r": 1.0,
@@ -717,7 +718,7 @@
               "OrderInLayer": 0,
               "RenderSetting": 0,
               "SortingLayer": "Default",
-              "SpriteRUID": "ba7443a453644bccb209350b4ab780c5",
+              "SpriteRUID": "dfa2ad99cdbe4e718eaf36d604739688",
               "StartFrameIndex": 0,
               "Color": {
                 "r": 1.0,

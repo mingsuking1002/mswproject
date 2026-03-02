@@ -1,6 +1,25 @@
 # 🟢 완료
 # SPEC_Movement — 8방향 이동 + 카메라 시스템
 
+## 0. 상태 이력
+
+| 일시 | 상태 | 비고 |
+|---|---|---|
+| 2026-03-03 | 🟡 대기중 | 카메라 first-stop(카메라 먼저 정지) 요청 접수 |
+| 2026-03-03 | 🔵 진행중 | CameraFollowComponent 경계 분리/재시도/하드락 적용 구현 시작 |
+| 2026-03-03 | 🟢 완료 | `.mlua`/`.codeblock` 동기화 및 문서 갱신 완료 |
+| 2026-03-03 | 🟡 대기중 | 카메라를 맵 타일 경계 기준으로 정렬 요청 접수 |
+| 2026-03-03 | 🔵 진행중 | RectTileMap 경계 우선 계산(타일 경계 기준) 반영 시작 |
+| 2026-03-03 | 🟢 완료 | 카메라 타일 경계 기준 정렬 및 문서 갱신 완료 |
+| 2026-03-03 | 🟡 대기중 | 캐릭터 이동 경계를 CenterSpawn RectTile 기준으로 통일 요청 접수 |
+| 2026-03-03 | 🔵 진행중 | Movement/Bootstrap 경계를 RectTile 기준 우선 계산으로 통일 작업 시작 |
+| 2026-03-03 | 🟢 완료 | 캐릭터 이동 경계도 CenterSpawn RectTile 기준으로 동기화 완료 |
+| 2026-03-03 | 🟡 대기중 | 카메라 제한 제거 + 캐릭터 중심(0,0) 고정 요청 접수 |
+| 2026-03-03 | 🔵 진행중 | CameraFollowComponent 경계/부트스트랩 로직 제거 및 하드락 추적 단순화 시작 |
+| 2026-03-03 | 🟢 완료 | 카메라 제한 제거 완료 (`UseCustomBound=false`, `CameraOffset=(0,0)` 고정) |
+
+---
+
 ## 1. 개요
 
 | 항목 | 내용 |
@@ -19,7 +38,7 @@
 | WASD 입력 감지 | `[client only]` | `_InputService` → `IsKeyPressed()` |
 | 이동 벡터 계산 | `[client only]` | 방향 벡터 정규화(Normalize) |
 | 위치 이동 (물리) | `[server]` | RigidbodyComponent 또는 TransformComponent |
-| 카메라 추적 | `[client only]` | 카메라 위치 = 캐릭터 위치 (맵 Bounds 내 클램핑) |
+| 카메라 추적 | `[client only]` | 카메라 위치 = 캐릭터 위치 (`CameraOffset=(0,0)`, 경계 클램프 없음) |
 
 ---
 
@@ -38,9 +57,10 @@
 
 | Property Name | Type | Sync | Default | 설명 |
 |---|---|---|---|---|
-| `CameraOffset` | `Vector2` | `None` | `(0, 0)` | 카메라 오프셋 |
-| `MapBoundsMin` | `Vector2` | `None` | `(-50, -50)` | 맵 최소 경계 |
-| `MapBoundsMax` | `Vector2` | `None` | `(50, 50)` | 맵 최대 경계 |
+| `CameraOffset` | `Vector2` | `None` | `(0, 0)` | 카메라 오프셋 (캐릭터 중심 0,0 유지) |
+| `ForceHardLockFollow` | `boolean` | `None` | `true` | DeadZone/SoftZone/Damping 0 강제 여부 |
+| `CameraApplyRetryInterval` | `number` | `None` | `0.2` | 카메라 적용 재시도 간격(초) |
+| `CameraApplyRetryMaxCount` | `integer` | `None` | `10` | 카메라 적용 최대 재시도 횟수 |
 
 ---
 
@@ -53,6 +73,8 @@
 | `RigidbodyComponent` | 물리 기반 이동 (충돌/슬라이드) |
 | `StateComponent` | 이동/정지 애니메이션 상태 전환 |
 | `_CameraService` | 카메라 위치 제어 |
+| `_EntityService` | bootstrap 엔티티/컴포넌트 조회 |
+| `_TimerService` | 카메라 적용 재시도 타이머 |
 
 ---
 
@@ -69,8 +91,17 @@
 - 입력 벡터 기반으로 8방향 인덱스 계산 → `FacingDirection` 업데이트
 
 ### 5-3. 카메라 추적
-- 카메라 위치 = 캐릭터 위치 + `CameraOffset`
-- 맵 경계 클램핑
+- 기본 카메라 위치 = 캐릭터 위치 + `CameraOffset` (평상시 0,0 고정)
+- 카메라 커스텀 경계는 사용하지 않음 (`UseCustomBound=false`)
+- 경계/first-stop/부트스트랩 카메라 제한 로직 제거
+- `ForceHardLockFollow=true`인 경우 `DeadZone/SoftZone/Damping=0`, `ScreenOffset=(0.5,0.5)` 적용
+- 카메라 컴포넌트 초기화 레이스는 retry timer로 보완
+
+### 5-4. 이동 경계 클램프
+- `Map01BootstrapComponent.ResolveCenterSpawnRectBoundsServer()`에서 `CenterSpawnRectTilePath/CenterSpawnTileCountX/Y`를 기준으로 world-space 경계를 우선 계산
+- RectTile 경계가 유효하면 `MovementComponent.WorldBoundsMin/Max`에 동일 값 주입, `WorldBoundsPadding=0`으로 유지(조기 정지 방지)
+- RectTile 경계 계산 실패 시 기존 `BackdropCenter/Size + BackdropBoundPadding` 경계로 폴백
+- `MovementComponent.TryApplyWorldBoundsFromBootstrapServer()`도 같은 우선순위(RectTile → Backdrop)로 동작해 타이밍 레이스 시에도 동일 기준 유지
 
 ---
 
@@ -107,6 +138,7 @@
 | `TagManagerComponent` | Meta | `CanMove` 제어 — 태그 연출 중 이동 차단 |
 | `WeaponSwapComponent` | Meta | `CanMove` 제어 — 무기 교체 중 이동 차단 |
 | `FireSystemComponent` | Combat | `SpeedMultiplier` 참조 |
+| `Map01BootstrapComponent` | Bootstrap | RectTile 기반 이동/카메라 경계 소스 제공 (실패 시 backdrop 폴백) |
 
 ---
 
@@ -115,6 +147,7 @@
 - 대각선 보정값 ±0.7071은 기획서 확정 수치
 - `OnUpdate`에서 입력 처리하되 물리 이동은 엔진에 위임
 - 벽 슬라이드는 `RigidbodyComponent` 물리 충돌로 자연 처리
+- 카메라는 경계 클램프를 사용하지 않고 캐릭터 중심 추적만 수행
 
 ---
 
@@ -133,6 +166,7 @@
 ## 10. Maker 수동 백로그
 
 - [ ] Player 엔티티의 이동/카메라 컴포넌트 부착 및 WASD/카메라 추적 동작을 Maker Play에서 최종 확인
+- [ ] 맵 4방향 이동 시 카메라는 계속 캐릭터 중심(`0,0`)을 유지하는지 최종 확인
 
 ---
 
@@ -144,4 +178,3 @@
 | **담당자** | Codex |
 | **작성일** | 2026-02-18 |
 | **상태** | 🟢 완료 |
-

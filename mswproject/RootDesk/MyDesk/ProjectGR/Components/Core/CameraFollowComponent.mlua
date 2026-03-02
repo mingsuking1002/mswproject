@@ -1,70 +1,116 @@
-﻿@Component
+@Component
 script CameraFollowComponent extends Component
 
     property Vector2 CameraOffset = Vector2(0, 0)
-    property Vector2 MapBoundsMin = Vector2(-50, -50)
-    property Vector2 MapBoundsMax = Vector2(50, 50)
+    property boolean ForceHardLockFollow = true
+    property number CameraApplyRetryInterval = 0.2
+    property integer CameraApplyRetryMaxCount = 10
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
-        self:EnsureGRUtil()
         self:ApplyCameraSettings()
+        self:StartCameraApplyRetryClient()
     end
 
     @ExecSpace("ClientOnly")
     method void OnMapEnter(Entity enteredMap)
-        self:EnsureGRUtil()
         self:ApplyCameraSettings()
+        self:StartCameraApplyRetryClient()
     end
 
-    -- Camera bounds are clamped to map limits so out-of-map areas are never exposed to the player.
+    -- Retry handles camera lifecycle race so custom bounds are eventually applied even on delayed camera init.
     @ExecSpace("ClientOnly")
-    method void ApplyCameraSettings()
+    method void StartCameraApplyRetryClient()
+        self:StopCameraApplyRetryClient()
+
+        if self:ApplyCameraSettings() == true then
+            return
+        end
+
+        local retryMax = math.max(1, math.floor(self.CameraApplyRetryMaxCount))
+        local interval = self.CameraApplyRetryInterval
+        if interval <= 0 then
+            interval = 0.2
+        end
+
+        self._T.CameraApplyRetryCount = 0
+        local tick = function()
+            if self.Entity == nil or isvalid(self.Entity) == false then
+                self:StopCameraApplyRetryClient()
+                return
+            end
+
+            local applied = self:ApplyCameraSettings()
+            if applied == true then
+                self:StopCameraApplyRetryClient()
+                return
+            end
+
+            local retryCount = self._T.CameraApplyRetryCount
+            if retryCount == nil then
+                retryCount = 0
+            end
+            retryCount += 1
+            self._T.CameraApplyRetryCount = retryCount
+            if retryCount >= retryMax then
+                self:StopCameraApplyRetryClient()
+            end
+        end
+
+        self._T.CameraApplyRetryTimerId = _TimerService:SetTimerRepeat(tick, interval, 0)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void StopCameraApplyRetryClient()
+        if self._T.CameraApplyRetryTimerId ~= nil and self._T.CameraApplyRetryTimerId > 0 then
+            _TimerService:ClearTimer(self._T.CameraApplyRetryTimerId)
+            self._T.CameraApplyRetryTimerId = 0
+        end
+    end
+
+    -- Camera keeps character-centered view only; map-bound clamp is intentionally disabled.
+    @ExecSpace("ClientOnly")
+    method boolean ApplyCameraSettings()
         local camera = _CameraService:GetCurrentCameraComponent()
         if camera == nil or isvalid(camera) == false then
-            return
+            return false
         end
 
-        camera.UseCustomBound = true
-        camera.LeftBottom = self.MapBoundsMin
-        camera.RightTop = self.MapBoundsMax
-        camera.CameraOffset = self.CameraOffset
-    end
+        pcall(function()
+            camera.UseCustomBound = false
+        end)
+        pcall(function()
+            -- Request is to keep camera fixed to character center without any map boundary clamp.
+            self.CameraOffset = Vector2(0, 0)
+            camera.CameraOffset = self.CameraOffset
+        end)
 
-    -- Utility bootstrap keeps component lookup conventions aligned with the rest of modular scripts.
-    method void EnsureGRUtil()
-        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
-            return
-        end
-
-        local utilComponent = nil
-        if self.Entity ~= nil and isvalid(self.Entity) == true then
-            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
-            if utilComponent == nil then
-                utilComponent = self.Entity:GetComponent("GRUtilModule")
-            end
-            if utilComponent == nil then
-                local addOk1, addResult1 = pcall(function()
-                    return self.Entity:AddComponent("script.GRUtilModule")
-                end)
-                if addOk1 == true then
-                    utilComponent = addResult1
-                end
-            end
-            if utilComponent == nil then
-                local addOk2, addResult2 = pcall(function()
-                    return self.Entity:AddComponent("GRUtilModule")
-                end)
-                if addOk2 == true then
-                    utilComponent = addResult2
-                end
-            end
-        end
-
-        if utilComponent ~= nil and isvalid(utilComponent) == true then
+        if self.ForceHardLockFollow == true then
             pcall(function()
-                utilComponent:BootstrapUtil()
+                camera.DeadZone = Vector2(0, 0)
+            end)
+            pcall(function()
+                camera.SoftZone = Vector2(0, 0)
+            end)
+            pcall(function()
+                camera.Damping = Vector2(0, 0)
+            end)
+            pcall(function()
+                camera.ScreenOffset = Vector2(0.5, 0.5)
             end)
         end
+
+        return true
     end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        self:StopCameraApplyRetryClient()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnDestroy()
+        self:StopCameraApplyRetryClient()
+    end
+
 end

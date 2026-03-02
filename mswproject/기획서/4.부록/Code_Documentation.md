@@ -49,22 +49,26 @@
 
 ## CameraFollowComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Core/CameraFollowComponent.mlua`
-- **수정일:** `2026-02-18`
+- **수정일:** `2026-03-03`
 
 ### Properties
 | 이름 | 타입 | 설명 |
 |---|---|---|
-| `CameraOffset` | Vector2 | 카메라 중심 오프셋 |
-| `MapBoundsMin` | Vector2 | 카메라 경계 최소 좌표 |
-| `MapBoundsMax` | Vector2 | 카메라 경계 최대 좌표 |
+| `CameraOffset` | Vector2 | 카메라 중심 오프셋 (`0,0` 기본 유지) |
+| `ForceHardLockFollow` | boolean | DeadZone/SoftZone/Damping 0 강제 적용 여부 |
+| `CameraApplyRetryInterval` | number | 카메라 적용 재시도 간격(초) |
+| `CameraApplyRetryMaxCount` | integer | 카메라 적용 최대 재시도 횟수 |
 
 ### Functions
 | 함수명 | 파라미터 | 리턴값 | 설명 |
 |---|---|---|---|
 | `OnBeginPlay` | void | void | 클라이언트 시작 시 카메라 세팅 적용 |
-| `OnMapEnter` | `enteredMap: Entity` | void | 맵 진입 시 카메라 경계 재적용 |
-| `ApplyCameraSettings` | void | void | 현재 카메라 컴포넌트에 Bound/Offset 적용 |
-| `EnsureGRUtil` | void | void | `BootstrapUtil()` 결과를 `self._T.GRUtil`에 캐시하고 폴백 경로 유지 |
+| `OnMapEnter` | `enteredMap: Entity` | void | 맵 진입 시 카메라 세팅 재적용 |
+| `StartCameraApplyRetryClient` | void | void | 카메라 컴포넌트 준비 지연 시 재시도 타이머 시작 |
+| `StopCameraApplyRetryClient` | void | void | 카메라 재시도 타이머 정리 |
+| `ApplyCameraSettings` | void | boolean | 카메라 경계 제한 해제(`UseCustomBound=false`) + `CameraOffset=(0,0)` 중심 추적 적용 |
+| `OnEndPlay` | void | void | 맵 종료 시 카메라 재시도 타이머 정리 |
+| `OnDestroy` | void | void | 컴포넌트 제거 시 카메라 재시도 타이머 정리 |
 
 ## GoldComponent
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Core/GoldComponent.mlua`
@@ -3520,3 +3524,72 @@
 |---|---|
 | Open/render order fix | In `OpenPassiveSelectionClient()`, changed call order to `SetSelectionVisibleClient(true)` then `RenderOptionsClient()` so `_T.IsOpen` is true before clickability is computed. |
 | Symptom resolved | Prevents valid options from being marked non-clickable (`Click ignored: option not clickable`) immediately after panel open. |
+
+## 2026-03-03 Camera First-Stop Bounds Split
+
+### CameraFollowComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Core/CameraFollowComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Core/CameraFollowComponent.codeblock`
+- **Updated:** `2026-03-03`
+
+| Item | Detail |
+|---|---|
+| Camera offset policy | Keeps `CameraOffset=(0,0)` baseline so camera stays character-centered in normal movement. |
+| First-stop bounds split | Added `EnableCameraFirstStop` + `CameraFirstStopInsetX/Y` to clamp camera inside player move bounds, so camera stops first while player can still move in edge band. |
+| Bootstrap bound source | Added `UseBootstrapBounds` + `BootstrapEntityPath` and runtime resolver to read `Map01BootstrapComponent` backdrop bounds on client. |
+| Hard lock follow | When `ForceHardLockFollow=true`, applies `DeadZone/SoftZone/Damping=0` and `ScreenOffset=(0.5,0.5)` for fixed-center feel. |
+| Camera readiness retry | Added timer-based retry (`CameraApplyRetryInterval`, `CameraApplyRetryMaxCount`) to handle delayed camera component initialization on begin/map-enter. |
+
+## 2026-03-03 Camera Tile-Bounds Clamp Alignment
+
+### CameraFollowComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Core/CameraFollowComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Core/CameraFollowComponent.codeblock`
+- **Updated:** `2026-03-03`
+
+| Item | Detail |
+|---|---|
+| Tile bounds priority | Added `UseRectTileBoundsFromBootstrap` and `ResolveRectTileBoundsFromBootstrapClient()` so camera clamp uses bootstrap RectTileMap bounds first. |
+| Boundary source | Reads `CenterSpawnRectTilePath`, `CenterSpawnTileCountX`, `CenterSpawnTileCountY` from `Map01BootstrapComponent`, then converts tile index bounds to world-space bounds. |
+| Edge expansion | Expands sampled tile-center min/max by half tile step (`ToWorldPosition` delta) to align camera stop with tile edge boundary. |
+| Fallback path | If tile bounds cannot be resolved, keeps existing backdrop-bound calculation as fallback. |
+| Default behavior change | `EnableCameraFirstStop=false`, `CameraFirstStopInsetX/Y=0` defaults so camera stops on map tile boundary by default. |
+
+## 2026-03-03 Movement Tile-Bounds Clamp Alignment
+
+### Map01BootstrapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.codeblock`
+- **Updated:** `2026-03-03`
+
+| Item | Detail |
+|---|---|
+| Shared tile-bounds resolver | Added `ResolveCenterSpawnRectBoundsServer()` to convert `CenterSpawnRectTilePath` + `CenterSpawnTileCountX/Y` into world-space min/max bounds. |
+| Movement clamp source change | `ConfigurePlayer()` now injects `MovementComponent.WorldBoundsMin/Max` from RectTile bounds first, and falls back to backdrop bounds only when tile resolve fails. |
+| Padding policy | When RectTile bounds are used, `WorldBoundsPadding=0` is applied so movement boundary matches tile edge without early stop. |
+| Spawn center consistency | `ApplyCenterSpawnServer()` now reuses the shared tile-bounds resolver to keep spawn-center and movement-clamp center aligned. |
+
+### MovementComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Core/MovementComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Core/MovementComponent.codeblock`
+- **Updated:** `2026-03-03`
+
+| Item | Detail |
+|---|---|
+| Bootstrap fallback alignment | `TryApplyWorldBoundsFromBootstrapServer()` now tries `Map01BootstrapComponent.ResolveCenterSpawnRectBoundsServer()` first. |
+| Boundary priority | Applies RectTile bounds as first priority and keeps existing backdrop bounds as fallback when tile bounds are unavailable. |
+| Padding consistency | Forces `WorldBoundsPadding=0` on RectTile-bound path so runtime fallback cannot reintroduce inward inset. |
+
+## 2026-03-03 Camera Clamp Removal (Character-Centered 0,0 Only)
+
+### CameraFollowComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Core/CameraFollowComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Core/CameraFollowComponent.codeblock`
+- **Updated:** `2026-03-03`
+
+| Item | Detail |
+|---|---|
+| Clamp removal | Removed bootstrap/tile/first-stop 기반 카메라 경계 계산 경로를 삭제하고 `UseCustomBound=false`로 고정. |
+| Follow policy | 카메라는 항상 캐릭터 중심 추적만 수행하며 `CameraOffset=(0,0)`를 매 적용 시점에 강제 유지. |
+| Hard-lock keep | `ForceHardLockFollow=true`일 때 `DeadZone/SoftZone/Damping=0`, `ScreenOffset=(0.5,0.5)` 유지. |
+| Retry keep | 카메라 생성 타이밍 레이스 대응을 위해 `StartCameraApplyRetryClient`/`StopCameraApplyRetryClient` 유지. |

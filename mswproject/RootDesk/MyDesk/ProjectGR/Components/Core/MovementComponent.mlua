@@ -430,6 +430,28 @@ script MovementComponent extends Component
             clampEnabled = true
         end
 
+        local minX = nil
+        local maxX = nil
+        local minY = nil
+        local maxY = nil
+        local useTileBounds = false
+        if bootstrap.ResolveCenterSpawnRectBoundsServer ~= nil then
+            local tileOk, tileValue = pcall(function()
+                return bootstrap:ResolveCenterSpawnRectBoundsServer()
+            end)
+            if tileOk == true and tileValue ~= nil and tileValue.Success == true then
+                minX = tonumber(tileValue.MinX)
+                maxX = tonumber(tileValue.MaxX)
+                minY = tonumber(tileValue.MinY)
+                maxY = tonumber(tileValue.MaxY)
+                if minX ~= nil and maxX ~= nil and minY ~= nil and maxY ~= nil then
+                    useTileBounds = true
+                    -- Tile-edge world bounds already include full playable area; do not inset additional padding.
+                    padding = 0
+                end
+            end
+        end
+
         local centerXOk, centerXValue = pcall(function()
             return bootstrap.BackdropCenterX
         end)
@@ -464,6 +486,9 @@ script MovementComponent extends Component
         if paddingOk == true and paddingValue ~= nil then
             padding = math.max(0, tonumber(paddingValue) or 0)
         end
+        if useTileBounds == true then
+            padding = 0
+        end
 
         if clampEnabled ~= true then
             pcall(function()
@@ -472,16 +497,18 @@ script MovementComponent extends Component
             return true
         end
 
-        if sizeX <= 0 or sizeY <= 0 then
-            return false
-        end
+        if useTileBounds ~= true then
+            if sizeX <= 0 or sizeY <= 0 then
+                return false
+            end
 
-        local halfWidth = sizeX * 0.5
-        local halfHeight = sizeY * 0.5
-        local minX = centerX - halfWidth
-        local maxX = centerX + halfWidth
-        local minY = centerY - halfHeight
-        local maxY = centerY + halfHeight
+            local halfWidth = sizeX * 0.5
+            local halfHeight = sizeY * 0.5
+            minX = centerX - halfWidth
+            maxX = centerX + halfWidth
+            minY = centerY - halfHeight
+            maxY = centerY + halfHeight
+        end
 
         pcall(function()
             self.UseWorldBoundsClamp = true

@@ -270,6 +270,16 @@ script Map01BootstrapComponent extends Component
             local maxX = self.BackdropCenterX + halfWidth
             local minY = self.BackdropCenterY - halfHeight
             local maxY = self.BackdropCenterY + halfHeight
+            local clampPadding = math.max(0, self.BackdropBoundPadding)
+            local tileBounds = self:ResolveCenterSpawnRectBoundsServer()
+            if tileBounds ~= nil and tileBounds.Success == true then
+                minX = tileBounds.MinX
+                maxX = tileBounds.MaxX
+                minY = tileBounds.MinY
+                maxY = tileBounds.MaxY
+                -- Tile edge clamp should match playable tile field exactly, so extra inset padding is disabled.
+                clampPadding = 0
+            end
 
             pcall(function()
                 movement.UseWorldBoundsClamp = clampEnabled
@@ -287,7 +297,7 @@ script Map01BootstrapComponent extends Component
                 movement.WorldBoundsMaxY = maxY
             end)
             pcall(function()
-                movement.WorldBoundsPadding = math.max(0, self.BackdropBoundPadding)
+                movement.WorldBoundsPadding = clampPadding
             end)
         end
 
@@ -379,6 +389,125 @@ script Map01BootstrapComponent extends Component
         end
     end
 
+    -- RectTile bounds are the authoritative playable area so movement/camera can share the same edge clamp.
+    @ExecSpace("ServerOnly")
+    method table ResolveCenterSpawnRectBoundsServer()
+        local result = {}
+        result.Success = false
+        result.MinX = 0
+        result.MaxX = 0
+        result.MinY = 0
+        result.MaxY = 0
+
+        local tilePath = self.CenterSpawnRectTilePath
+        if tilePath == nil or tilePath == "" then
+            return result
+        end
+
+        local countX = math.max(1, math.floor(self.CenterSpawnTileCountX))
+        local countY = math.max(1, math.floor(self.CenterSpawnTileCountY))
+        if countX <= 0 or countY <= 0 then
+            return result
+        end
+
+        local tileEntity = _EntityService:GetEntityByPath(tilePath)
+        if tileEntity == nil or isvalid(tileEntity) == false then
+            return result
+        end
+
+        local tileMap = nil
+        local readOk, readValue = pcall(function()
+            return tileEntity.RectTileMapComponent
+        end)
+        if readOk == true then
+            tileMap = readValue
+        end
+        if tileMap == nil then
+            local getOk, getValue = pcall(function()
+                return tileEntity:GetComponent("MOD.Core.RectTileMapComponent")
+            end)
+            if getOk == true then
+                tileMap = getValue
+            end
+        end
+        if tileMap == nil then
+            return result
+        end
+
+        local minWorld = nil
+        local maxWorld = nil
+        local minOk, minValue = pcall(function()
+            return tileMap:ToWorldPosition(Vector2Int(0, 0))
+        end)
+        if minOk == true then
+            minWorld = minValue
+        end
+        local maxOk, maxValue = pcall(function()
+            return tileMap:ToWorldPosition(Vector2Int(countX - 1, countY - 1))
+        end)
+        if maxOk == true then
+            maxWorld = maxValue
+        end
+        if minWorld == nil or maxWorld == nil then
+            return result
+        end
+
+        local minX = math.min(minWorld.x, maxWorld.x)
+        local maxX = math.max(minWorld.x, maxWorld.x)
+        local minY = math.min(minWorld.y, maxWorld.y)
+        local maxY = math.max(minWorld.y, maxWorld.y)
+
+        local halfStepX = 0
+        if countX > 1 then
+            local nextXWorld = nil
+            local nextXOk, nextXValue = pcall(function()
+                return tileMap:ToWorldPosition(Vector2Int(1, 0))
+            end)
+            if nextXOk == true then
+                nextXWorld = nextXValue
+            end
+            if nextXWorld ~= nil then
+                local stepX = math.abs(nextXWorld.x - minWorld.x)
+                if stepX > 0 then
+                    halfStepX = stepX * 0.5
+                end
+            end
+        end
+
+        local halfStepY = 0
+        if countY > 1 then
+            local nextYWorld = nil
+            local nextYOk, nextYValue = pcall(function()
+                return tileMap:ToWorldPosition(Vector2Int(0, 1))
+            end)
+            if nextYOk == true then
+                nextYWorld = nextYValue
+            end
+            if nextYWorld ~= nil then
+                local stepY = math.abs(nextYWorld.y - minWorld.y)
+                if stepY > 0 then
+                    halfStepY = stepY * 0.5
+                end
+            end
+        end
+
+        if halfStepX > 0 then
+            minX -= halfStepX
+            maxX += halfStepX
+        end
+        if halfStepY > 0 then
+            minY -= halfStepY
+            maxY += halfStepY
+        end
+
+        result.Success = true
+        result.MinX = minX
+        result.MaxX = maxX
+        result.MinY = minY
+        result.MaxY = maxY
+        return result
+    end
+
     -- Player start position is aligned to tile-field center so first spawn always lands at map center.
     @ExecSpace("ServerOnly")
     method boolean ApplyCenterSpawnServer(Entity playerEntity)
@@ -402,55 +531,13 @@ script Map01BootstrapComponent extends Component
             end
         end
 
-        local tileEntity = nil
-        if self.CenterSpawnRectTilePath ~= nil and self.CenterSpawnRectTilePath ~= "" then
-            tileEntity = _EntityService:GetEntityByPath(self.CenterSpawnRectTilePath)
-        end
-        if tileEntity == nil or isvalid(tileEntity) == false then
+        local tileBounds = self:ResolveCenterSpawnRectBoundsServer()
+        if tileBounds == nil or tileBounds.Success ~= true then
             return false
         end
 
-        local tileMap = nil
-        local readOk, readValue = pcall(function()
-            return tileEntity.RectTileMapComponent
-        end)
-        if readOk == true then
-            tileMap = readValue
-        end
-        if tileMap == nil then
-            local getOk, getValue = pcall(function()
-                return tileEntity:GetComponent("MOD.Core.RectTileMapComponent")
-            end)
-            if getOk == true then
-                tileMap = getValue
-            end
-        end
-        if tileMap == nil then
-            return false
-        end
-
-        local maxX = math.max(0, self.CenterSpawnTileCountX - 1)
-        local maxY = math.max(0, self.CenterSpawnTileCountY - 1)
-        local minWorld = nil
-        local maxWorld = nil
-        local minOk, minValue = pcall(function()
-            return tileMap:ToWorldPosition(Vector2Int(0, 0))
-        end)
-        if minOk == true then
-            minWorld = minValue
-        end
-        local maxOk, maxValue = pcall(function()
-            return tileMap:ToWorldPosition(Vector2Int(maxX, maxY))
-        end)
-        if maxOk == true then
-            maxWorld = maxValue
-        end
-        if minWorld == nil or maxWorld == nil then
-            return false
-        end
-
-        local centerX = (minWorld.x + maxWorld.x) * 0.5
-        local centerY = (minWorld.y + maxWorld.y) * 0.5
+        local centerX = (tileBounds.MinX + tileBounds.MaxX) * 0.5
+        local centerY = (tileBounds.MinY + tileBounds.MaxY) * 0.5
         local transform = playerEntity.TransformComponent
         if transform == nil then
             return false
