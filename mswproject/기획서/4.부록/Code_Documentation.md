@@ -3593,3 +3593,90 @@
 | Follow policy | 카메라는 항상 캐릭터 중심 추적만 수행하며 `CameraOffset=(0,0)`를 매 적용 시점에 강제 유지. |
 | Hard-lock keep | `ForceHardLockFollow=true`일 때 `DeadZone/SoftZone/Damping=0`, `ScreenOffset=(0.5,0.5)` 유지. |
 | Retry keep | 카메라 생성 타이밍 레이스 대응을 위해 `StartCameraApplyRetryClient`/`StopCameraApplyRetryClient` 유지. |
+
+## 2026-03-03 Debug Panel Tooling
+
+### DebugPanelComponent (New)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/UI/DebugPanelComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/UI/DebugPanelComponent.codeblock`
+- **Updated:** `2026-03-03`
+
+| Item | Detail |
+|---|---|
+| UI click bridge | Client 버튼 클릭(`시간+5분`, `무기레벨+1`)을 서버 RPC(`RequestAddTimeServer`, `RequestWeaponLevelUpServer`)로 전달. |
+| Timer debug action | `GameTimerComponent.ElapsedTime += 300`으로 5분 점프를 서버 권위로 적용해 스폰 타이밍 테스트를 즉시 수행. |
+| Weapon debug action | `WeaponLevelUpComponent` 진행도(`progress.Level`)를 +1하고 화력/동기화/현재무기 재적용 파이프라인을 호출. |
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `DebugPanelEntity` | Entity | 디버그 패널 루트 엔티티 참조 |
+| `BtnAddTimeEntity` | Entity | `시간 +5분` 버튼 엔티티 참조 |
+| `BtnWeaponLevelEntity` | Entity | `무기 레벨+1` 버튼 엔티티 참조 |
+| `EnableDebugLogs` | boolean | 디버그 패널 로그 출력 여부 |
+| `IsPanelEnabled` | boolean | 디버그 패널 노출/동작 활성화 스위치(릴리즈 비활성화용) |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `OnBeginPlay` | void | void | 클라이언트 런타임 캐시 초기화, 버튼 바인딩, 패널 가시성 적용 |
+| `OnMapEnter` | `enteredMap: Entity` | void | 맵 전환 시 버튼 재바인딩/가시성 재적용 |
+| `RequestAddTimeServer` | void | void | 서버에서 `GameTimerComponent.ElapsedTime`을 300초 증가 |
+| `RequestWeaponLevelUpServer` | void | void | 서버에서 현재 무기 진행도를 +1 처리 후 화력/Sync/재장착 적용 |
+
+## 2026-03-03 Debug Panel UI Auto-Wiring
+
+### DebugPanelComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/UI/DebugPanelComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/UI/DebugPanelComponent.codeblock`
+- **Updated:** `2026-03-03`
+
+| Item | Detail |
+|---|---|
+| Path fallback | Added `DebugPanelPath`, `BtnAddTimePath`, `BtnWeaponLevelPath` and path resolver so component auto-finds panel/buttons without manual entity reference wiring. |
+| Release toggle | Added `IsPanelEnabled` guard to hide panel and block debug RPC calls in non-debug runs. |
+| Runtime robustness | `ResolvePanelEntitiesClient()` now resolves panel root first, then path lookup, then child-name fallback order. |
+
+### Map01BootstrapComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/Map01BootstrapComponent.codeblock`
+- **Updated:** `2026-03-03`
+
+| Item | Detail |
+|---|---|
+| Required component list | Added `DebugPanelComponent` to `AttachRequiredComponentsServer()` required list so player entity auto-attaches debug panel logic. |
+
+### ui/DefaultGroup.ui (Updated)
+- **File:** `ui/DefaultGroup.ui`
+- **Updated:** `2026-03-03`
+
+| Item | Detail |
+|---|---|
+| New panel root | Added `/ui/DefaultGroup/DebugPanel` sprite panel for debug controls. |
+| New debug buttons | Added `/ui/DefaultGroup/DebugPanel/BtnAddTime`, `/ui/DefaultGroup/DebugPanel/BtnWeaponLevel` with `ButtonComponent` + label text. |
+| Wiring contract | Entity names/paths are aligned with `DebugPanelComponent` fallback keys so runtime auto-binding works immediately. |
+
+## 2026-03-03 Passive Selection Sync Race Guard Fix
+
+### PassiveSelectionUIComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/UI/PassiveSelectionUIComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/UI/PassiveSelectionUIComponent.codeblock`
+- **Updated:** `2026-03-03`
+
+| Item | Detail |
+|---|---|
+| Runtime grace timer field | Added `_T.OpenSyncGraceTimer` init in `InitializeRuntimeClient()` to keep client-local sync defer state deterministic. |
+| Open-time grace arm | `OpenPassiveSelectionClient()` now sets `OpenSyncGraceTimer = 1.5` right after option render so open RPC and sync arrival can be decoupled safely. |
+| Sync guard defer | `OnUpdate(delta)` now skips stale-close sync guard while grace time remains, preventing immediate false close caused by delayed `IsPassiveSelectionOpen` sync. |
+
+### Runtime Fields
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `self._T.OpenSyncGraceTimer` | number | 패널 오픈 직후 sync 지연 구간 동안 자동 닫힘 가드를 잠시 유예하는 클라이언트 런타임 타이머(초). |
+
+### Functions (Updated)
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `InitializeRuntimeClient` | void | void | `_T.OpenSyncGraceTimer`를 `0.0`으로 초기화해 맵 전환/재오픈 시 grace 상태를 예측 가능하게 유지. |
+| `OpenPassiveSelectionClient` | `candidates: table, token: integer, grade: string` | void | UI 오픈 렌더 직후 `OpenSyncGraceTimer=1.5`를 설정해 sync 도착 지연으로 인한 즉시 닫힘을 방지. |
+| `OnUpdate` | `delta: number` | void | 패널 오픈 상태에서 grace 타이머가 남아 있으면 sync guard를 건너뛰고 타이머를 감소시켜 레이스 컨디션 구간을 흡수. |

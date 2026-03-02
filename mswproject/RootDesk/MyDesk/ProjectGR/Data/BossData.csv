@@ -1,6 +1,6 @@
 ﻿id,name,mon_type,model_type,mon_hp,mon_atk,mon_spd,spawn_stage,spawn_time,atk_interval,summon_id,creep_score,drop_id,sprite_ruid,sound_ruid,death_effect_ruid,-copy16,-copy17,-copy18,-copy19,-copy20
-mon_b001,중간보스,boss,boss1,130000,50,0,1,14,10,mon_n006,2000,boss_drop01,85f81e86b059408594ad82d5cd70914d,71d2fb5c9fcf4b71adc834c47f98416b,cb316c3624f04c11b14fd26e57f1c363,,BossData자료형 정의,,,
-mon_b002,보스,boss,boss2,270000,60,0,2,14,5,mon_n011,2000,boss_drop01,f1638f90a7f54db68205b733f1d8197a,dce8ae67d2dc4cce93f9023e1497d4ca,4c8fb12bdead4c92bba66ad0261278cc,,컬럼명,역할,자료형,설명
+mon_b001,중간보스,boss,boss1,40000,50,0,1,14,6,mon_n007,40000,boss_drop01,85f81e86b059408594ad82d5cd70914d,71d2fb5c9fcf4b71adc834c47f98416b,cb316c3624f04c11b14fd26e57f1c363,,BossData자료형 정의,,,
+mon_b002,보스,boss,boss2,500000,60,0,2,14,3,mon_n014,500000,boss_drop02,f1638f90a7f54db68205b733f1d8197a,dce8ae67d2dc4cce93f9023e1497d4ca,4c8fb12bdead4c92bba66ad0261278cc,,컬럼명,역할,자료형,설명
 ,,,,,,,,,,,,,,,,,id,몬스터 테이블 키,STRING,
 ,,,,,,,,,,,,,,,,,name,몬스터 테이블 이름,STRING,
 ,,,,,,,,,,,,,,,,,mon_type,몬스터 타입,ERUM,

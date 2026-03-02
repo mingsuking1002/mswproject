@@ -1,0 +1,23 @@
+{
+  "Id": "",
+  "GameId": "",
+  "EntryKey": "userdataset://38b0fce9-676f-4d7f-b66a-939500177d80",
+  "ContentType": "x-mod/userdataset",
+  "Content": "",
+  "Usage": 0,
+  "UsePublish": 1,
+  "UseService": 0,
+  "CoreVersion": "26.1.0.0",
+  "StudioVersion": "0.1.0.0",
+  "DynamicLoading": 0,
+  "ContentProto": {
+    "Use": "Json",
+    "Json": {
+      "name": "WeaponLevelOverrideData",
+      "id": "38b0fce9-676f-4d7f-b66a-939500177d80",
+      "serveronly": false,
+      "syncDataSetWebUrl": "https://docs.google.com/spreadsheets/d/e/2PACX-1vQOxEymcT_FyHC8daomhi2sXzlyhrG8xTEExyYGhrcls92rGTedMvLOtLDlYuDvWQaakeuBsAe0-eIc/pub?gid=586411744&single=true&output=csv",
+      "dynamicloading": 0
+    }
+  }
+}

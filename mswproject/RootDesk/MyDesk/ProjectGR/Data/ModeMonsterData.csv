@@ -1,7 +1,9 @@
 ﻿id,name,mon_type,model_type,mode_mon_hp,mode_mon_hp_up,mon_atk,mode_mon_atk_up,mon_spd,mon_spd_up,spawn_time,creep_score,drop_id,sprite_ruid,sound_ruid,death_effect_ruid,-copy16,-copy17,-copy18,-copy19,-copy20
-mode_mon_n001,무한 몬스터 1,mode_normal,normal_s,13000,2000,20,5,2.6,0.1,0,10,normal_drop01,,,,,,,,
-mode_mon_e001,무한 엘리트 B,mode_elite,elite_l,14000,3000,25,5,3.3,0.2,1,500,elite_drop01,,,,,ModeMonsterData 자료형 정의,,,
-mode_mon_e002,무한 엘리트 A,mode_elite,,25000,5000,35,10,2.3,0.1,1,500,elite_drop01,,,,,컬럼명,역할,자료형,설명
+mode_mon_n001,무한 몬스터 1,mode_normal,normal_s,20000,2000,20,5,2.6,0.1,0,10,normal_drop01,,,,,,,,
+mode_mon_e001,무한 엘리트 B,mode_elite,elite_l,14000,3000,25,5,3.3,0.2,1,500,elite_drop01,,,,,,,,
+mode_mon_e002,무한 엘리트 A,mode_elite,,25000,5000,35,10,2.3,0.1,1,500,elite_drop01,,,,,,,,
+,,,,,,,,,,,,,,,,,ModeMonsterData 자료형 정의,,,
+,,,,,,,,,,,,,,,,,컬럼명,역할,자료형,설명
 ,,,,,,,,,,,,,,,,,id,몬스터 테이블 ID,STRING,
 ,,,,,,,,,,,,,,,,,name,몬스터 테이블 이름,STRING,
 ,,,,,,,,,,,,,,,,,mon_type,몬스터 타입,ERUM,

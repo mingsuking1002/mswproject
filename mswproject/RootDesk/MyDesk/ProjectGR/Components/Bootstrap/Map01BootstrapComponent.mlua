@@ -864,6 +864,7 @@ script Map01BootstrapComponent extends Component
             "RankingUIComponent",
             "ShopUIComponent",
             "PassiveSelectionUIComponent",
+            "DebugPanelComponent",
             "InGameHUDComponent",
             "LobbyFlowComponent"
         }

@@ -42,6 +42,10 @@ script PassiveSelectionUIComponent extends Component
         if self._T.IsOpen ~= true then
             return
         end
+        if self._T.OpenSyncGraceTimer ~= nil and self._T.OpenSyncGraceTimer > 0 then
+            self._T.OpenSyncGraceTimer = self._T.OpenSyncGraceTimer - delta
+            return
+        end
 
         local passiveSystem = self:ResolveComponentSafe(self.Entity, "PassiveSystemComponent", "IsPassiveSelectionOpen")
         if passiveSystem == nil then
@@ -98,6 +102,7 @@ script PassiveSelectionUIComponent extends Component
         self:ClearClickLockTimerClient()
         self:SetSelectionVisibleClient(true)
         self:RenderOptionsClient()
+        self._T.OpenSyncGraceTimer = 1.5
         if self.EnableDebugLogs == true then
             log("[PassiveUI][DEBUG] Open panel. token=", self._T.CurrentToken, ", grade=", self._T.CurrentGrade, ", candidateCount=", candidateCount)
         end
@@ -146,6 +151,10 @@ script PassiveSelectionUIComponent extends Component
         end
         if self._T.ClickLockTimerId == nil then
             self._T.ClickLockTimerId = 0
+        end
+        local openSyncGraceTimerKey = "OpenSyncGraceTimer"
+        if self._T[openSyncGraceTimerKey] == nil then
+            self._T[openSyncGraceTimerKey] = 0.0
         end
     end
 

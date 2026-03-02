@@ -1,0 +1,436 @@
+@Component
+script DebugPanelComponent extends Component
+
+    property Entity DebugPanelEntity = nil
+    property string DebugPanelPath = "/ui/DefaultGroup/DebugPanel"
+    property Entity BtnAddTimeEntity = nil
+    property string BtnAddTimePath = "/ui/DefaultGroup/DebugPanel/BtnAddTime"
+    property Entity BtnWeaponLevelEntity = nil
+    property string BtnWeaponLevelPath = "/ui/DefaultGroup/DebugPanel/BtnWeaponLevel"
+    property boolean EnableDebugLogs = true
+    property boolean IsPanelEnabled = true
+
+    -- Client bootstraps runtime caches and binds button click handlers when map UI is ready.
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self:EnsureGRUtil()
+        self:InitializeRuntimeClient()
+        self:ResolvePanelEntitiesClient()
+        self:BindButtonsClient()
+        self:ApplyPanelVisibleClient()
+    end
+
+    -- Map enter rebinds because UI entities can be reconstructed between map transitions.
+    @ExecSpace("ClientOnly")
+    method void OnMapEnter(Entity enteredMap)
+        self:InitializeRuntimeClient()
+        self:ResolvePanelEntitiesClient()
+        self:BindButtonsClient()
+        self:ApplyPanelVisibleClient()
+    end
+
+    -- EndPlay detaches handlers so stale callbacks cannot target recycled UI entities.
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        self:DisconnectButtonsClient()
+    end
+
+    -- Runtime cache keeps handler refs centralized for safe reconnect/disconnect flow.
+    @ExecSpace("ClientOnly")
+    method void InitializeRuntimeClient()
+        if self._T.AddTimeButtonHandler == nil then
+            self._T.AddTimeButtonHandler = nil
+        end
+        if self._T.WeaponLevelButtonHandler == nil then
+            self._T.WeaponLevelButtonHandler = nil
+        end
+    end
+
+    -- Resolver keeps Maker-assigned entity refs and optional panel-child fallback in one path.
+    @ExecSpace("ClientOnly")
+    method void ResolvePanelEntitiesClient()
+        if self.DebugPanelEntity == nil or isvalid(self.DebugPanelEntity) == false then
+            self.DebugPanelEntity = self:ResolveEntityByPath(self.DebugPanelPath)
+        end
+
+        if self.BtnAddTimeEntity == nil or isvalid(self.BtnAddTimeEntity) == false then
+            self.BtnAddTimeEntity = self:ResolveEntityByPath(self.BtnAddTimePath)
+            if self.BtnAddTimeEntity == nil or isvalid(self.BtnAddTimeEntity) == false then
+                self.BtnAddTimeEntity = self:ResolveChildByNameCandidates(self.DebugPanelEntity, "BtnAddTime", "ButtonAddTime", "AddTimeButton", "TimePlusButton")
+            end
+        end
+
+        if self.BtnWeaponLevelEntity == nil or isvalid(self.BtnWeaponLevelEntity) == false then
+            self.BtnWeaponLevelEntity = self:ResolveEntityByPath(self.BtnWeaponLevelPath)
+            if self.BtnWeaponLevelEntity == nil or isvalid(self.BtnWeaponLevelEntity) == false then
+                self.BtnWeaponLevelEntity = self:ResolveChildByNameCandidates(self.DebugPanelEntity, "BtnWeaponLevel", "ButtonWeaponLevel", "WeaponLevelButton", "WeaponPlusButton")
+            end
+        end
+    end
+
+    -- Central bind method always disconnects first so each button has exactly one callback.
+    @ExecSpace("ClientOnly")
+    method void BindButtonsClient()
+        self:DisconnectButtonsClient()
+
+        if self.IsPanelEnabled ~= true then
+            return
+        end
+
+        self._T.AddTimeButtonHandler = self:TryBindButtonClient(self.BtnAddTimeEntity, "AddTime")
+        self._T.WeaponLevelButtonHandler = self:TryBindButtonClient(self.BtnWeaponLevelEntity, "WeaponLevel")
+    end
+
+    -- Disconnect path is shared by map rebind/endplay to prevent duplicate RPC requests per click.
+    @ExecSpace("ClientOnly")
+    method void DisconnectButtonsClient()
+        if self.BtnAddTimeEntity ~= nil and isvalid(self.BtnAddTimeEntity) == true and self._T.AddTimeButtonHandler ~= nil then
+            pcall(function()
+                self.BtnAddTimeEntity:DisconnectEvent(ButtonClickEvent, self._T.AddTimeButtonHandler)
+            end)
+            self._T.AddTimeButtonHandler = nil
+        end
+
+        if self.BtnWeaponLevelEntity ~= nil and isvalid(self.BtnWeaponLevelEntity) == true and self._T.WeaponLevelButtonHandler ~= nil then
+            pcall(function()
+                self.BtnWeaponLevelEntity:DisconnectEvent(ButtonClickEvent, self._T.WeaponLevelButtonHandler)
+            end)
+            self._T.WeaponLevelButtonHandler = nil
+        end
+    end
+
+    -- Generic binder keeps add-time/weapon-level handlers consistent and nil-safe.
+    @ExecSpace("ClientOnly")
+    method any TryBindButtonClient(Entity buttonEntity, string buttonType)
+        if buttonEntity == nil or isvalid(buttonEntity) == false then
+            if self.EnableDebugLogs == true then
+                log_warning("[DebugPanel] bind skipped: invalid button entity. type=", buttonType)
+            end
+            return nil
+        end
+
+        local button = self:EnsureButtonComponentClient(buttonEntity)
+        if button == nil then
+            if self.EnableDebugLogs == true then
+                log_warning("[DebugPanel] bind skipped: ButtonComponent missing. type=", buttonType)
+            end
+            return nil
+        end
+
+        local callback = nil
+        if buttonType == "AddTime" then
+            callback = function(event)
+                self:HandleAddTimeButtonClickClient(event)
+            end
+        else
+            callback = function(event)
+                self:HandleWeaponLevelButtonClickClient(event)
+            end
+        end
+
+        local bindOk, bindResult = pcall(function()
+            return buttonEntity:ConnectEvent(ButtonClickEvent, callback)
+        end)
+        if bindOk ~= true then
+            if self.EnableDebugLogs == true then
+                log_warning("[DebugPanel] bind failed. type=", buttonType)
+            end
+            return nil
+        end
+
+        if self.EnableDebugLogs == true then
+            log("[DebugPanel] bound button. type=", buttonType)
+        end
+        return bindResult
+    end
+
+    -- Add-time click is client entry point and forwards authority work to server RPC.
+    @ExecSpace("ClientOnly")
+    method void HandleAddTimeButtonClickClient(ButtonClickEvent event)
+        if self.IsPanelEnabled ~= true then
+            return
+        end
+        if self.EnableDebugLogs == true then
+            log("[DebugPanel] Click AddTime")
+        end
+        self:RequestAddTimeServer()
+    end
+
+    -- Weapon-level click is client entry point and forwards authority work to server RPC.
+    @ExecSpace("ClientOnly")
+    method void HandleWeaponLevelButtonClickClient(ButtonClickEvent event)
+        if self.IsPanelEnabled ~= true then
+            return
+        end
+        if self.EnableDebugLogs == true then
+            log("[DebugPanel] Click WeaponLevel")
+        end
+        self:RequestWeaponLevelUpServer()
+    end
+
+    -- Server mutates timer elapsed time so spawn/boss schedule stays authoritative and deterministic.
+    @ExecSpace("Server")
+    method void RequestAddTimeServer()
+        if self.IsPanelEnabled ~= true then
+            return
+        end
+
+        local timer = self:ResolveComponentSafe(self.Entity, "GameTimerComponent", "ElapsedTime")
+        if timer == nil then
+            log_warning("[DebugPanel] RequestAddTimeServer skipped: GameTimerComponent missing.")
+            return
+        end
+
+        local nextElapsed = 0
+        local writeOk, _ = pcall(function()
+            local currentElapsed = math.max(0, tonumber(timer.ElapsedTime) or 0)
+            nextElapsed = currentElapsed + 300
+            timer.ElapsedTime = nextElapsed
+        end)
+        if writeOk ~= true then
+            log_warning("[DebugPanel] RequestAddTimeServer failed: cannot write ElapsedTime.")
+            return
+        end
+
+        if self.EnableDebugLogs == true then
+            log("[DebugPanel] Time +5min, now=", nextElapsed)
+        end
+    end
+
+    -- Server increments current-weapon level and triggers same reapply/sync pipeline as normal level-up flow.
+    @ExecSpace("Server")
+    method void RequestWeaponLevelUpServer()
+        if self.IsPanelEnabled ~= true then
+            return
+        end
+
+        local wlu = self:ResolveComponentSafe(self.Entity, "WeaponLevelUpComponent", "CurrentWeaponLevel")
+        if wlu == nil then
+            log_warning("[DebugPanel] RequestWeaponLevelUpServer skipped: WeaponLevelUpComponent missing.")
+            return
+        end
+        if wlu.ResolveCurrentWeaponIdServer == nil or wlu.EnsureWeaponProgressByIdServer == nil then
+            log_warning("[DebugPanel] RequestWeaponLevelUpServer skipped: required WeaponLevelUp API missing.")
+            return
+        end
+
+        local weaponId = ""
+        local idOk, idValue = pcall(function()
+            return wlu:ResolveCurrentWeaponIdServer()
+        end)
+        if idOk == true and idValue ~= nil then
+            weaponId = tostring(idValue)
+        end
+        if weaponId == "" then
+            log_warning("[DebugPanel] RequestWeaponLevelUpServer skipped: current weapon id is empty.")
+            return
+        end
+
+        local progress = nil
+        local progressOk, progressValue = pcall(function()
+            return wlu:EnsureWeaponProgressByIdServer(weaponId)
+        end)
+        if progressOk == true then
+            progress = progressValue
+        end
+        if progress == nil then
+            log_warning("[DebugPanel] RequestWeaponLevelUpServer skipped: progress unavailable. weaponId=", weaponId)
+            return
+        end
+
+        local currentLevel = math.max(1, math.floor(tonumber(progress.Level) or 1))
+        local maxLevel = math.max(currentLevel, math.floor(tonumber(progress.MaxLevel) or currentLevel))
+        if currentLevel >= maxLevel then
+            if self.EnableDebugLogs == true then
+                log("[DebugPanel] Weapon level already max. weaponId=", weaponId, ", level=", currentLevel)
+            end
+            return
+        end
+
+        local nextLevel = currentLevel + 1
+        pcall(function()
+            progress.Level = nextLevel
+            if progress.Exp ~= nil then
+                progress.Exp = 0
+            end
+        end)
+
+        if wlu.ApplyWeaponPowerToFireServer ~= nil then
+            pcall(function()
+                wlu:ApplyWeaponPowerToFireServer(weaponId)
+            end)
+        end
+        if wlu.RefreshCurrentWeaponProgressSyncServer ~= nil then
+            pcall(function()
+                wlu:RefreshCurrentWeaponProgressSyncServer(weaponId)
+            end)
+        end
+        if wlu.RequestReapplyCurrentWeaponServer ~= nil then
+            pcall(function()
+                wlu:RequestReapplyCurrentWeaponServer(weaponId, nextLevel)
+            end)
+        end
+
+        if self.EnableDebugLogs == true then
+            log("[DebugPanel] Weapon level +1. weaponId=", weaponId, ", level=", nextLevel, "/", maxLevel)
+        end
+    end
+
+    -- Panel visibility switch supports release-time disable without removing component wiring.
+    @ExecSpace("ClientOnly")
+    method void ApplyPanelVisibleClient()
+        self:SetEntityVisibleClient(self.DebugPanelEntity, self.IsPanelEnabled == true)
+    end
+
+    -- Visibility helper supports SetEnable API and fallback fields for mixed UI entity types.
+    @ExecSpace("ClientOnly")
+    method void SetEntityVisibleClient(Entity targetEntity, boolean visible)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+
+        if targetEntity.SetEnable ~= nil then
+            pcall(function()
+                targetEntity:SetEnable(visible, false, true)
+            end)
+        else
+            pcall(function()
+                targetEntity.Enable = visible
+            end)
+        end
+
+        pcall(function()
+            targetEntity.Visible = visible
+        end)
+    end
+
+    -- Child resolver keeps optional button-name fallback lookup in one utility function.
+    @ExecSpace("ClientOnly")
+    method Entity ResolveChildByNameCandidates(Entity rootEntity, string nameA, string nameB, string nameC, string nameD)
+        if rootEntity == nil or isvalid(rootEntity) == false then
+            return nil
+        end
+
+        local candidates = {nameA, nameB, nameC, nameD}
+        for _, name in pairs(candidates) do
+            if name ~= nil and name ~= "" then
+                local findOk, child = pcall(function()
+                    return rootEntity:GetChildByName(name, true)
+                end)
+                if findOk == true and child ~= nil and isvalid(child) == true then
+                    return child
+                end
+            end
+        end
+
+        return nil
+    end
+
+    -- Path resolver isolates entity lookup and validity checks for fixed UI paths.
+    @ExecSpace("ClientOnly")
+    method Entity ResolveEntityByPath(string path)
+        if path == nil or path == "" then
+            return nil
+        end
+
+        local entity = _EntityService:GetEntityByPath(path)
+        if entity == nil or isvalid(entity) == false then
+            return nil
+        end
+        return entity
+    end
+
+    -- Button ensure path allows Maker-side missing button component to be auto-fixed at runtime.
+    @ExecSpace("ClientOnly")
+    method ButtonComponent EnsureButtonComponentClient(Entity targetEntity)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+        if targetEntity.ButtonComponent ~= nil then
+            return targetEntity.ButtonComponent
+        end
+
+        pcall(function()
+            targetEntity:AddComponent("MOD.Core.ButtonComponent")
+        end)
+        return targetEntity.ButtonComponent
+    end
+
+    -- Utility bootstrap first; fallback local lookup keeps component resilient in partially configured maps.
+    method void EnsureGRUtil()
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, utilApi = pcall(function()
+                return utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and utilApi ~= nil then
+                self._T.GRUtil = utilApi
+            end
+        end
+    end
+
+    -- Safe resolver centralizes script/component lookup and optional marker-field validation.
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local checkOk, _ = pcall(function()
+                return component[markerField]
+            end)
+            if checkOk == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+end

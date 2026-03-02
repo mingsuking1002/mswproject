@@ -1,21 +1,21 @@
-﻿id,name,grade,description,is_stackable,price,player_a_stat,player_b_stat,pass_value
-pass_com_01,상시 패시브 1,common,체력 증가,TRUE,200,player_hp,player_hp,5
-pass_com_02,상시 패시브 2,common,무기 공격력 증가 1,TRUE,200,player_atk,player_atk,0.05
-pass_com_03,상시 패시브 3,common,무기 공격력 증가 2,TRUE,200,player_atk,player_atk,0.1
-pass_com_04,상시 패시브 4,common,무기 공격력 증가 3,TRUE,200,player_atk,player_atk,0.15
-pass_com_05,상시 패시브 5,common,베루아 무기 전체 공격력 증가 1,TRUE,200,player_atk,-,0.05
-pass_com_06,상시 패시브 6,common,베루아 무기 전체 공격력 증가 2,TRUE,200,player_atk,-,0.1
-pass_com_07,상시 패시브 7,common,베루아 무기 전체 공격력 증가 3,TRUE,200,player_atk,-,0.15
-pass_com_08,상시 패시브 8,common,베루아 무기 전체 공격력 증가 4,TRUE,200,player_atk,-,0.2
-pass_com_09,상시 패시브 9,common,카르테 무기 전체 공격력 증가 1,TRUE,200,-,player_atk,0.05
-pass_com_10,상시 패시브 10,common,카르테 무기 전체 공격력 증가 2,TRUE,200,-,player_atk,0.1
-pass_com_11,상시 패시브 11,common,카르테 무기 전체 공격력 증가 3,TRUE,200,-,player_atk,0.15
-pass_com_12,상시 패시브 12,common,카르테 무기 전체 공격력 증가 4,TRUE,200,-,player_atk,0.2
-pass_com_13,상시 패시브 13,common,전체 이동속도 증가 1,TRUE,200,movespeed,movespeed,0.05
-pass_com_14,상시 패시브 14,common,전체 이동속도 증가 2,TRUE,200,movespeed,movespeed,0.1
-pass_com_15,상시 패시브 15,common,전체 이동속도 증가 3,TRUE,200,movespeed,movespeed,0.15
-pass_com_16,상시 패시브 16,common,전체 이동속도 증가 4,TRUE,200,movespeed,movespeed,0.2
-pass_uni_01,유일 패시브 1,unique,무기 공격력 증가 4,FALSE,500,player_atk,player_atk,0.4
-pass_uni_02,유일 패시브 2,unique,이동속도 증가 5,FALSE,500,movespeed,movespeed,0.3
-pass_uni_03,유일 패시브 3,unique,20회 공격 당 현재 체력 1 회복,FALSE,500,-,-,-
-pass_uni_04,유일 패시브 4,unique,체력 50 증가,FALSE,500,player_hp,player_hp,50
+﻿id,name,grade,description,is_stackable,player_a_stat,player_b_stat,pass_value,price,-copy9,-copy10,-copy11,-copy12,-copy13
+pass_com_01,상시 패시브 1,common,체력 증가,TRUE,player_hp,player_hp,5,1500,,,,,
+pass_com_02,상시 패시브 2,common,무기 공격력 증가 1,TRUE,player_atk,player_atk,0.05,1500,,,,,
+pass_com_03,상시 패시브 3,common,무기 공격력 증가 2,TRUE,player_atk,player_atk,0.1,1500,,PassiveData자료형 정의,,,
+pass_com_04,상시 패시브 4,common,무기 공격력 증가 3,TRUE,player_atk,player_atk,0.15,1500,,컬럼명,역할,자료형,설명
+pass_com_05,상시 패시브 5,common,베루아 무기 전체 공격력 증가 1,TRUE,player_atk,-,0.05,1500,,id,아이디값,string,패시브 아이디입니다.
+pass_com_06,상시 패시브 6,common,베루아 무기 전체 공격력 증가 2,TRUE,player_atk,-,0.1,1500,,name,구분,string,패시브의 이름입니다.
+pass_com_07,상시 패시브 7,common,베루아 무기 전체 공격력 증가 3,TRUE,player_atk,-,0.15,1500,,grade,등급,string,패시브의 등급입니다.
+pass_com_08,상시 패시브 8,common,베루아 무기 전체 공격력 증가 4,TRUE,player_atk,-,0.2,1500,,description,설명,string,패시브의 효과에 대한 설명입니다.
+pass_com_09,상시 패시브 9,common,카르테 무기 전체 공격력 증가 1,TRUE,-,player_atk,0.05,1500,,is_stackable,중복 등장 여부,boolean,패시브의 중복 등장 여부입니다.
+pass_com_10,상시 패시브 10,common,카르테 무기 전체 공격력 증가 2,TRUE,-,player_atk,0.1,1500,,pass_value,능력치 변화치,int,패시브 능력치 변화치값입니다.
+pass_com_11,상시 패시브 11,common,카르테 무기 전체 공격력 증가 3,TRUE,-,player_atk,0.15,1500,,,,,
+pass_com_12,상시 패시브 12,common,카르테 무기 전체 공격력 증가 4,TRUE,-,player_atk,0.2,1500,,,,,
+pass_com_13,상시 패시브 13,common,전체 이동속도 증가 1,TRUE,movespeed,movespeed,0.05,1500,,,,,
+pass_com_14,상시 패시브 14,common,전체 이동속도 증가 2,TRUE,movespeed,movespeed,0.1,1500,,,,,
+pass_com_15,상시 패시브 15,common,전체 이동속도 증가 3,TRUE,movespeed,movespeed,0.15,1500,,,,,
+pass_com_16,상시 패시브 16,common,전체 이동속도 증가 4,TRUE,movespeed,movespeed,0.2,1500,,,,,
+pass_uni_01,유일 패시브 1,unique,무기 공격력 증가 4,FALSE,player_atk,player_atk,0.4,1500,,,,,
+pass_uni_02,유일 패시브 2,unique,이동속도 증가 5 ,FALSE,movespeed,movespeed,0.3,1500,,,,,
+pass_uni_03,유일 패시브 3,unique,20회 공격 당 현재 체력 1 회복 ,FALSE,-,-,-,1500,,,,,
+pass_uni_04,유일 패시브 4,unique,체력 50 증가,FALSE,player_hp,player_hp,50,1500,,,,,

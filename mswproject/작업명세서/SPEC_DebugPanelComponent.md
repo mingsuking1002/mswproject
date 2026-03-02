@@ -1,4 +1,4 @@
-# 🟡 대기중
+# 🟢 완료
 
 ---
 
@@ -6,9 +6,14 @@
 
 ## 상태 이력
 
-| 일시 | 상태 |
-|---|---|
+| 일시 | 상태 | 비고 |
+|---|---|---|
 | 2026-03-03 | 🟡 대기중 |
+| 2026-03-03 | 🔵 진행중 | `DebugPanelComponent` 신규 구현 시작 |
+| 2026-03-03 | 🟢 완료 | `.mlua/.codeblock` 신규 생성 및 Code_Documentation 갱신 완료 |
+| 2026-03-03 | 🟡 대기중 | 디버그 패널 UI 엔티티 자동 생성 요청 |
+| 2026-03-03 | 🔵 진행중 | `ui/DefaultGroup.ui` DebugPanel/버튼 2종 추가 및 자동 경로 해석 반영 시작 |
+| 2026-03-03 | 🟢 완료 | UI 패널 생성 + Bootstrap 자동 부착 + `.codeblock` 동기화 완료 |
 
 ---
 
@@ -16,9 +21,13 @@
 * **Execution Space:** `[둘 다]` — 버튼 UI는 Client, 실제 처리는 Server
 * **Properties:**
   - `(Entity) DebugPanelEntity = nil  // 디버그 패널 루트 Entity(Maker 배치)`
+  - `(string) DebugPanelPath = "/ui/DefaultGroup/DebugPanel"`
   - `(Entity) BtnAddTimeEntity = nil  // "시간 +5분" 버튼 Entity`
+  - `(string) BtnAddTimePath = "/ui/DefaultGroup/DebugPanel/BtnAddTime"`
   - `(Entity) BtnWeaponLevelEntity = nil  // "무기 레벨+1" 버튼 Entity`
+  - `(string) BtnWeaponLevelPath = "/ui/DefaultGroup/DebugPanel/BtnWeaponLevel"`
   - `(boolean) EnableDebugLogs = true`
+  - `(boolean) IsPanelEnabled = true`
 
 * **Required MSW Services:**
   - `_InputService` (UI 버튼 핸들러 등록)
@@ -26,6 +35,7 @@
 * **연동 컴포넌트:**
   - `GameTimerComponent` — `ElapsedTime += 300` 으로 5분 증가
   - `WeaponLevelUpComponent` — `ResolveCurrentWeaponIdServer()`, `EnsureWeaponProgressByIdServer()`, progress.Level 증가 후 `ApplyWeaponPowerToFireServer`, `RefreshCurrentWeaponProgressSyncServer`, `RequestReapplyCurrentWeaponServer`
+  - `Map01BootstrapComponent` — `AttachRequiredComponentsServer()` required 목록에 `DebugPanelComponent` 포함
 
 * **Logic Architecture:**
 
