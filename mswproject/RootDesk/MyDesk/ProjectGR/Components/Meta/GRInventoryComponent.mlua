@@ -2,17 +2,13 @@
 script GRInventoryComponent extends Component
 
     @Sync
-    property integer MagazineA = 0
-    @Sync
-    property integer MagazineB = 0
+    property integer Mana = 0
     @Sync
     property integer PotionCount = 0
-    property integer MaxMagazine = 99
+    property integer MaxMana = 99
     property integer MaxPotion = 10
     property integer PotionHealAmount = 0
     property string ItemDataTableName = "ItemData"
-    property string MagazineAItemId = "a_mag"
-    property string MagazineBItemId = "b_mag"
     property string PotionItemId = "heal_hp"
     property number NoAmmoMessageDuration = 1.0
     property string NoAmmoTextPath = "/ui/DefaultGroup/GRNoAmmoText"
@@ -21,8 +17,7 @@ script GRInventoryComponent extends Component
     @ExecSpace("ServerOnly")
     method void OnInitialize()
         self:EnsureGRUtil()
-        self.MagazineA = 0
-        self.MagazineB = 0
+        self.Mana = 0
         self.PotionCount = 0
         self._T.NoAmmoHideTimerId = 0
     end
@@ -65,25 +60,12 @@ script GRInventoryComponent extends Component
 
     @ExecSpace("ServerOnly")
     method boolean ConsumeMagazineServer(string charId)
-        local finalChar = charId
-        if finalChar == nil or finalChar == "" then
-            finalChar = self:ResolveCurrentCharIdServer()
-        end
-
-        if finalChar == "B" then
-            if self.MagazineB <= 0 then
-                self:ShowNoAmmoMessageClient()
-                return false
-            end
-            self.MagazineB = math.max(0, self.MagazineB - 1)
-            return true
-        end
-
-        if self.MagazineA <= 0 then
+        -- Legacy charId parameter is intentionally ignored for unified mana compatibility.
+        if self.Mana <= 0 then
             self:ShowNoAmmoMessageClient()
             return false
         end
-        self.MagazineA = math.max(0, self.MagazineA - 1)
+        self.Mana = math.max(0, self.Mana - 1)
         return true
     end
 
@@ -94,16 +76,8 @@ script GRInventoryComponent extends Component
             return
         end
 
-        local finalChar = charId
-        if finalChar == nil or finalChar == "" then
-            finalChar = self:ResolveCurrentCharIdServer()
-        end
-
-        if finalChar == "B" then
-            self.MagazineB = math.min(self.MaxMagazine, self.MagazineB + addAmount)
-            return
-        end
-        self.MagazineA = math.min(self.MaxMagazine, self.MagazineA + addAmount)
+        -- Legacy charId parameter is intentionally ignored for unified mana compatibility.
+        self.Mana = math.min(self.MaxMana, self.Mana + addAmount)
     end
 
     @ExecSpace("ServerOnly")
@@ -117,46 +91,18 @@ script GRInventoryComponent extends Component
 
     @ExecSpace("ServerOnly")
     method integer GetCurrentCharMagazine()
-        local charId = self:ResolveCurrentCharIdServer()
-        if charId == "B" then
-            return self.MagazineB
-        end
-        return self.MagazineA
+        return self.Mana
     end
 
     @ExecSpace("ServerOnly")
     method void SetCurrentCharMagazine(integer amount)
         local value = math.max(0, math.floor(amount))
-        local charId = self:ResolveCurrentCharIdServer()
-        if charId == "B" then
-            self.MagazineB = math.min(self.MaxMagazine, value)
-            return
-        end
-        self.MagazineA = math.min(self.MaxMagazine, value)
-    end
-
-    @ExecSpace("ServerOnly")
-    method string ResolveCurrentCharIdServer()
-        local tag = self:ResolveComponentSafe(self.Entity, "TagManagerComponent", "CurrentCharIndex")
-        if tag ~= nil then
-            local idx = 1
-            local readOk, readValue = pcall(function()
-                return tag.CurrentCharIndex
-            end)
-            if readOk == true and readValue ~= nil then
-                idx = math.max(1, math.floor(readValue))
-            end
-            if idx == 2 then
-                return "B"
-            end
-        end
-        return "A"
+        self.Mana = math.min(self.MaxMana, value)
     end
 
     @ExecSpace("ServerOnly")
     method void ResetInventoryServer()
-        self.MagazineA = 0
-        self.MagazineB = 0
+        self.Mana = 0
         self.PotionCount = 0
     end
 
@@ -165,7 +111,7 @@ script GRInventoryComponent extends Component
         local textEntity = _EntityService:GetEntityByPath(self.NoAmmoTextPath)
         if textEntity ~= nil and isvalid(textEntity) == true and textEntity.TextComponent ~= nil then
             pcall(function()
-                textEntity.TextComponent.Text = "탄약이 없습니다"
+                textEntity.TextComponent.Text = "마나가 부족합니다"
                 textEntity.Enable = true
                 textEntity.Visible = true
             end)

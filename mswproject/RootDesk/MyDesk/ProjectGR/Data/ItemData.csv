@@ -1,7 +1,7 @@
 ﻿item_id,item_name,item_type,effect_type,effect_value_1,effect_value_2,max_stack,description,icon_ruid,-copy9,-copy10,-copy11,-copy12,-copy13
 potion_hp,포션,hp_plus,heal_hp,30,0,99,체력을 30 회복시킵니다.,323920d2805d4ec1aa85eca9e3e1cab2,,,,,
-mag_a,베루아 마나 충전기,a_mana,a_mag,0,,99,A_탄약을 보충합니다,cc4ce28e7a5d4c04827bf396b1286ffb,,,,,
-mag_b,케르타 마나 충전기,b_mana,b_mag,0,1,99,B_탄약을 보충합니다,cc4ce28e7a5d4c04827bf396b1286ffb,,,,,
+mag_a,베루아 마나 충전기,a_mana,mana,0,,99,마나를 보충합니다,cc4ce28e7a5d4c04827bf396b1286ffb,,,,,
+mag_b,케르타 마나 충전기,b_mana,mana,0,1,99,마나를 보충합니다,cc4ce28e7a5d4c04827bf396b1286ffb,,,,,
 gold,골드,total_money,None,0,0,0,상점에서 아이템을 살 수 있습니다.,dcb2f57cb344471aaefde6dc089032b6,,,,,
 passive_common_drop,상시 패시브 선택권,passive_drop,passive_common,0,0,0,상시 패시브 선택권 입니다.,f8812ea665ed49199f12b0eaab078c3f,,,,,
 passive_unique_drop,유일 패시브 선택권,passive_drop,passive_unique,0,0,0,유일 패시브 선택권 입니다.,f8812ea665ed49199f12b0eaab078c3f,,,,,
@@ -14,7 +14,7 @@ passive_unique_drop,유일 패시브 선택권,passive_drop,passive_unique,0,0,0
 ,,,,,,,,,,item_type,호출되는 아이템의 타입,string,호출되는 아이템의 타입입니다.
 ,,,,,,,,,,effect_type,효과 적용,string,호출된 아이템의 효과 입니다.
 ,,,,,,,,,,effect_value_1,체력 회복,int,현재 활성화된 캐릭터의 체력을 수치만큼 회복시킵니다.
-,,,,,,,,,,effect_value_2,탄약 회복,int,현재 활성화된 캐릭터의 무기의 탄약을 최대치로 회복시킵니다.
+,,,,,,,,,,effect_value_2,마나 회복,int,현재 보유한 통합 마나를 회복시킵니다.
 ,,,,,,,,,,max_stack,최대 소지 수,int,플레이어가 최대로 소지할 수 있는 수치입니다.
 ,,,,,,,,,,description,아이템 설명,string,아이템 설명
 ,,,,,,,,,,icon_ruid,아이콘 RUID,string,아이콘 RUID

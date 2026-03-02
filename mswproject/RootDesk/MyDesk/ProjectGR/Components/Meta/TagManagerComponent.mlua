@@ -331,19 +331,6 @@ script TagManagerComponent extends Component
             end
         end
 
-        local inventory = self:ResolveComponentSafe(self.Entity, "GRInventoryComponent", "MagazineA")
-        if inventory == nil then
-            inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", "MagazineA")
-        end
-        if inventory ~= nil and inventory.GetCurrentCharMagazine ~= nil then
-            local magOk, magValue = pcall(function()
-                return inventory:GetCurrentCharMagazine()
-            end)
-            if magOk == true and magValue ~= nil then
-                state.MagazineCount = math.max(0, math.floor(tonumber(magValue) or 0))
-            end
-        end
-
         return state
     end
 
@@ -496,33 +483,6 @@ script TagManagerComponent extends Component
             end
         end
 
-        local inventory = self:ResolveComponentSafe(self.Entity, "GRInventoryComponent", "MagazineA")
-        if inventory == nil then
-            inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", "MagazineA")
-        end
-        if inventory ~= nil and state.MagazineCount ~= nil then
-            local maxMagazine = 99
-            local maxOk, maxValue = pcall(function()
-                return inventory.MaxMagazine
-            end)
-            if maxOk == true and maxValue ~= nil then
-                maxMagazine = math.max(1, math.floor(tonumber(maxValue) or 99))
-            end
-
-            local magazineCount = math.max(0, math.floor(tonumber(state.MagazineCount) or 0))
-            if magazineCount > maxMagazine then
-                magazineCount = maxMagazine
-            end
-            if targetIndex == 2 then
-                pcall(function()
-                    inventory.MagazineB = math.max(0, math.floor(magazineCount))
-                end)
-            else
-                pcall(function()
-                    inventory.MagazineA = math.max(0, math.floor(magazineCount))
-                end)
-            end
-        end
     end
 
     -- Stores active character snapshot back into its index.

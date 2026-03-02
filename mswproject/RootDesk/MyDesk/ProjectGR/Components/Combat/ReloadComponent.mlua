@@ -103,8 +103,8 @@ script ReloadComponent extends Component
             return
         end
 
-        -- Magazine-gated reload: one inventory magazine is consumed only when reload actually starts.
-        local inventory = self:ResolveOrAttachInventoryComponentServer("MagazineA")
+        -- Unified mana-gated reload: one mana is consumed only when reload actually starts.
+        local inventory = self:ResolveOrAttachInventoryComponentServer("Mana")
         if inventory == nil or inventory.ConsumeMagazineServer == nil then
             return
         end

@@ -600,8 +600,8 @@ script ShopManagerComponent extends Component
 		            if maxPurchaseCount <= 0 then
 		                maxPurchaseCount = 1
 		            end
-		            local itemName = self:GetRowStringWithAlias(row, "ItemName", "name", "탄창 보충")
-		            local description = self:GetRowStringWithAlias(row, "Description", "description", "현재 캐릭터 탄창 1개 획득")
+		            local itemName = self:GetRowStringWithAlias(row, "ItemName", "name", "마나 보충")
+		            local description = self:GetRowStringWithAlias(row, "Description", "description", "마나 1개 획득")
 		            return {
 		                Type = "ammo",
 		                Name = itemName,
@@ -1043,7 +1043,7 @@ script ShopManagerComponent extends Component
 
 	@ExecSpace("ServerOnly")
 	method void ApplyAmmoPurchaseServer(number effectValue)
-		        local inventory = self:ResolveOrAttachInventoryComponentServer("MagazineA")
+		        local inventory = self:ResolveOrAttachInventoryComponentServer("Mana")
 		        if inventory == nil or inventory.AddMagazineServer == nil then
 		            return
 		        end
@@ -1057,8 +1057,7 @@ script ShopManagerComponent extends Component
 		        end
 		
 		        pcall(function()
-		            inventory:AddMagazineServer("A", amount)
-		            inventory:AddMagazineServer("B", amount)
+		            inventory:AddMagazineServer("", amount)
 		        end)
 	end
 

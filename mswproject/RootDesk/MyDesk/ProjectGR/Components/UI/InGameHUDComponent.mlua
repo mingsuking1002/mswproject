@@ -20,7 +20,7 @@ script InGameHUDComponent extends Component
     property Entity EXPForegroundEntity = nil
     property Entity AmmoTextEntity = nil
     property Entity PotionTextEntity = nil
-    property Entity MagazineTextEntity = nil
+    property Entity ManaTextEntity = nil
     property Entity WeaponIconEntity = nil
     property Entity WeaponSwapIconEntity = nil
     property Entity WeaponLevelTextEntity = nil
@@ -52,7 +52,7 @@ script InGameHUDComponent extends Component
     property string EXP_ForegroundPath = "/ui/DefaultGroup/GRInGameHUD/EXPGauge/Fore"
     property string AmmoTextPath = "/ui/DefaultGroup/GRInGameHUD/AmmoText"
     property string PotionTextPath = "/ui/DefaultGroup/GRPotionText"
-    property string MagazineTextPath = "/ui/DefaultGroup/GRMagazineText"
+    property string ManaTextPath = "/ui/DefaultGroup/GRMagazineText"
     property string WeaponIconPath = "/ui/DefaultGroup/GRInGameHUD/WeaponIcon"
     property string WeaponLevelTextPath = "/ui/DefaultGroup/GRWeaponRightBottomHUD/weapon_level_text"
     property string TagCooldown_ForegroundPath = "/ui/DefaultGroup/GRInGameHUD/TagCooldownGauge/Fore"
@@ -96,6 +96,14 @@ script InGameHUDComponent extends Component
         self:CacheGaugeDimensionsClient()
         self:LoadHudIconDataCacheClient()
         self:RefreshHUDClient()
+    end
+
+    -- Sync trigger keeps potion/mana counters responsive even when refresh loop interval is increased.
+    @ExecSpace("ClientOnly")
+    method void OnSyncProperty(string propertyName, any value)
+        if propertyName == "Mana" or propertyName == "PotionCount" then
+            self:RefreshInventoryTextsClient()
+        end
     end
 
     -- EndPlay clears refresh timer to prevent callbacks on invalid entities.
@@ -240,7 +248,7 @@ script InGameHUDComponent extends Component
             self.EXPForegroundEntity,
             self.AmmoTextEntity,
             self.PotionTextEntity,
-            self.MagazineTextEntity,
+            self.ManaTextEntity,
             self.WeaponRightBottomRootEntity,
             self.WeaponIconEntity,
             self.WeaponSwapIconEntity,
@@ -296,7 +304,7 @@ script InGameHUDComponent extends Component
             self.LegacyHPBarValueTextEntity,
             self.LegacyAmmoBarValueTextEntity,
             self.PotionTextEntity,
-            self.MagazineTextEntity,
+            self.ManaTextEntity,
             self.CharacterReloadBarBackEntity,
             self.CharacterReloadBarForeEntity
         }
@@ -516,7 +524,7 @@ script InGameHUDComponent extends Component
             end
         end
 
-        local ammoLabel = "탄창 " .. tostring(math.max(0, math.floor(ammo))) .. "/" .. tostring(math.max(0, math.floor(maxAmmo)))
+        local ammoLabel = "마나 " .. tostring(math.max(0, math.floor(ammo))) .. "/" .. tostring(math.max(0, math.floor(maxAmmo)))
         self:SetValueTextByPathClient(self.LegacyAmmoBarValueTextEntity, self.LegacyAmmoBarValueTextPath, ammoLabel)
 
         local showGauge = false
@@ -770,11 +778,11 @@ script InGameHUDComponent extends Component
         self:RefreshCharacterReloadBarClient(showGauge, reloadRatio)
     end
 
-    -- Inventory HUD text always reflects synced potion count and current character magazine count.
+    -- Inventory HUD text always reflects synced potion count and unified mana count.
     @ExecSpace("ClientOnly")
     method void RefreshInventoryTextsClient()
         local potionCount = 0
-        local magazineCount = 0
+        local manaCount = 0
 
         local inventory = self:ResolveComponentSafe(self.Entity, "GRInventoryComponent", "PotionCount")
         if inventory == nil then
@@ -793,13 +801,13 @@ script InGameHUDComponent extends Component
                     return inventory:GetCurrentCharMagazine()
                 end)
                 if magOk == true and magValue ~= nil then
-                    magazineCount = math.max(0, math.floor(tonumber(magValue) or 0))
+                    manaCount = math.max(0, math.floor(tonumber(magValue) or 0))
                 end
             end
         end
 
         self:SetTextByPathClient(self.PotionTextEntity, self.PotionTextPath, "포션 x" .. tostring(potionCount))
-        self:SetTextByPathClient(self.MagazineTextEntity, self.MagazineTextPath, "탄창 x" .. tostring(magazineCount))
+        self:SetTextByPathClient(self.ManaTextEntity, self.ManaTextPath, "마나 x" .. tostring(manaCount))
     end
 
     -- Character-follow reload bar uses panel back/fore pair and appears only during active reload window.
@@ -1337,7 +1345,7 @@ script InGameHUDComponent extends Component
         self.EXPForegroundEntity = self:ResolveEntityWithCacheClient(self.EXPForegroundEntity, self.EXP_ForegroundPath)
         self.AmmoTextEntity = self:ResolveEntityWithCacheClient(self.AmmoTextEntity, self.AmmoTextPath)
         self.PotionTextEntity = self:ResolveEntityWithCacheClient(self.PotionTextEntity, self.PotionTextPath)
-        self.MagazineTextEntity = self:ResolveEntityWithCacheClient(self.MagazineTextEntity, self.MagazineTextPath)
+        self.ManaTextEntity = self:ResolveEntityWithCacheClient(self.ManaTextEntity, self.ManaTextPath)
         self.WeaponIconEntity = self:ResolveEntityWithCacheClient(self.WeaponIconEntity, self.WeaponIconPath)
         self.WeaponSwapIconEntity = self:ResolveEntityWithCacheClient(self.WeaponSwapIconEntity, self.WeaponSwapIconPath)
         self.WeaponLevelTextEntity = self:ResolveEntityWithCacheClient(self.WeaponLevelTextEntity, self.WeaponLevelTextPath)

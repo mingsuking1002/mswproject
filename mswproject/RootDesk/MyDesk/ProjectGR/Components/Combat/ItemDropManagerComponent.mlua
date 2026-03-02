@@ -520,19 +520,22 @@ script ItemDropManagerComponent extends Component
             return
         end
 
-        local isMagA = (effectType == "a_mag" or normalizedItemId == "a_mag" or normalizedItemId == "mag_a")
-        local isMagB = (effectType == "b_mag" or normalizedItemId == "b_mag" or normalizedItemId == "mag_b")
-        if isMagA == true or isMagB == true then
-            local inventory = self:ResolveOrAttachInventoryComponentServer("MagazineA")
+        local isMana = (
+            effectType == "mana" or
+            effectType == "a_mag" or
+            effectType == "b_mag" or
+            normalizedItemId == "mana" or
+            normalizedItemId == "mag_a" or
+            normalizedItemId == "mag_b" or
+            normalizedItemId == "a_mag" or
+            normalizedItemId == "b_mag"
+        )
+        if isMana == true then
+            local inventory = self:ResolveOrAttachInventoryComponentServer("Mana")
             if inventory ~= nil and inventory.AddMagazineServer ~= nil then
-                local charId = "A"
-                if isMagB == true then
-                    charId = "B"
-                end
-
                 local addAmount = math.max(1, payloadAmount)
                 pcall(function()
-                    inventory:AddMagazineServer(charId, addAmount)
+                    inventory:AddMagazineServer("", addAmount)
                 end)
             end
             return

@@ -429,9 +429,9 @@ script LobbyFlowComponent extends Component
 
     @ExecSpace("ServerOnly")
     method void TryResetInventoryServer()
-        local inventory = self:ResolveComponentSafe(self.Entity, "GRInventoryComponent", "MagazineA")
+        local inventory = self:ResolveComponentSafe(self.Entity, "GRInventoryComponent", "Mana")
         if inventory == nil then
-            inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", "MagazineA")
+            inventory = self:ResolveComponentSafe(self.Entity, "InventoryComponent", "Mana")
         end
         if inventory == nil or inventory.ResetInventoryServer == nil then
             return

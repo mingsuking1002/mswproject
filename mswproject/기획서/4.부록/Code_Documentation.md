@@ -3680,3 +3680,136 @@
 | `InitializeRuntimeClient` | void | void | `_T.OpenSyncGraceTimer`를 `0.0`으로 초기화해 맵 전환/재오픈 시 grace 상태를 예측 가능하게 유지. |
 | `OpenPassiveSelectionClient` | `candidates: table, token: integer, grade: string` | void | UI 오픈 렌더 직후 `OpenSyncGraceTimer=1.5`를 설정해 sync 도착 지연으로 인한 즉시 닫힘을 방지. |
 | `OnUpdate` | `delta: number` | void | 패널 오픈 상태에서 grace 타이머가 남아 있으면 sync guard를 건너뛰고 타이머를 감소시켜 레이스 컨디션 구간을 흡수. |
+
+## 2026-03-03 Unified Mana System
+
+## [GRInventoryComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/GRInventoryComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/GRInventoryComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `Mana` | integer (`@Sync`) | 기존 `MagazineA/B`를 대체하는 통합 마나 보유량 |
+| `MaxMana` | integer | 통합 마나 최대치 (기존 `MaxMagazine` 대체) |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `ConsumeMagazineServer` | `charId: string` | `boolean` | `charId`를 무시하고 `Mana`를 1 소모, 부족 시 `ShowNoAmmoMessageClient()` 호출 |
+| `AddMagazineServer` | `charId: string, amount: integer` | `void` | `charId`를 무시하고 `Mana = min(MaxMana, Mana + amount)` 적용 |
+| `GetCurrentCharMagazine` | void | `integer` | 현재 캐릭터 분기 없이 통합 `Mana` 반환 |
+| `SetCurrentCharMagazine` | `amount: integer` | `void` | 현재 캐릭터 분기 없이 통합 `Mana` 설정 |
+| `ResetInventoryServer` | void | `void` | 런 초기화 시 `Mana`, `PotionCount`를 0으로 리셋 |
+| `ShowNoAmmoMessageClient` | void | `void` | 부족 메시지를 `"마나가 부족합니다"`로 변경 |
+
+## [ReloadComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ReloadComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ReloadComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `-` | `-` | 프로퍼티 변경 없음 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `StartReloadForSlot` | `slot: integer` | `void` | 인벤토리 탐색 마커를 `MagazineA`에서 `Mana`로 변경해 통합 마나 재장전 게이트와 연결 |
+
+## [InGameHUDComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/UI/InGameHUDComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/UI/InGameHUDComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `ManaTextEntity` | Entity | 통합 마나 텍스트 엔티티 캐시 (`MagazineTextEntity` 리네임) |
+| `ManaTextPath` | string | 통합 마나 텍스트 경로 (`MagazineTextPath` 리네임, 기본 경로 유지) |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `OnSyncProperty` | `propertyName: string, value: any` | `void` | `Mana`/`PotionCount` 동기화 변경 시 인벤토리 텍스트 즉시 갱신 |
+| `RefreshLegacyAmmoAndCooldownTextClient` | void | `void` | 레거시 탄약 라벨을 `"마나 {현재}/{최대}"` 형식으로 변경 |
+| `RefreshInventoryTextsClient` | void | `void` | `"탄창 xN"`을 `"마나 xN"`으로 변경하고 `ManaText*` 경로 사용 |
+| `ResolveUIEntitiesClient` | void | `void` | `ManaTextEntity`와 `ManaTextPath` 기반 UI 캐시 갱신 |
+
+## [ShopManagerComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/ShopManagerComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/ShopManagerComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `-` | `-` | 프로퍼티 변경 없음 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `BuildSlotDataServer` | `slotType: string` | `table` | 탄창 슬롯 기본 문구를 `"마나 보충"`, `"마나 1개 획득"`으로 변경 |
+| `ApplyAmmoPurchaseServer` | `effectValue: number` | `void` | 구매 시 `AddMagazineServer("", amount)` 1회 호출로 통합 마나만 증가 |
+
+## [ItemDropManagerComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ItemDropManagerComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ItemDropManagerComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `-` | `-` | 프로퍼티 변경 없음 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `ApplyItemPickupEffectServer` | `runtime: table` | `void` | `a_mag`/`b_mag` 분기를 `mana` 통합 분기로 교체하고 `AddMagazineServer("", amount)` 호출 |
+
+## [TagManagerComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/TagManagerComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/TagManagerComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `-` | `-` | 프로퍼티 변경 없음 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `CaptureCurrentCharacterState` | void | `table` | 캐릭터별 탄창 스냅샷(`MagazineCount`) 저장 로직 제거 |
+| `ApplyCharacterState` | `charIndex: integer` | `void` | 태그 스왑 시 캐릭터별 `MagazineA/B` 복원 로직 제거 |
+
+## [LobbyFlowComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `-` | `-` | 프로퍼티 변경 없음 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `TryResetInventoryServer` | void | `void` | 인벤토리 탐색 마커를 `MagazineA`에서 `Mana`로 전환해 런 시작 시 통합 마나 리셋 유지 |
+
+## [ItemData.csv]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Data/ItemData.csv`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `effect_type` | string | `mag_a`, `mag_b` 행의 `effect_type`을 `mana`로 통합 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `-` | `-` | 데이터 파일이므로 함수 없음 |
