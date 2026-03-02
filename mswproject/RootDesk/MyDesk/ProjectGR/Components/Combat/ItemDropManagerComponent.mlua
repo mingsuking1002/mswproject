@@ -13,7 +13,7 @@ script ItemDropManagerComponent extends Component
 
     property string FieldItemModelId = "model://ff52b16c-daad-4d86-a30e-4b081bfc6581"
     property string DefaultItemIconRuid = ""
-    property boolean EnableDebugLogs = false
+    property boolean EnableDebugLogs = true
 
     @ExecSpace("ServerOnly")
     method void OnInitialize()
@@ -229,10 +229,19 @@ script ItemDropManagerComponent extends Component
 
     @ExecSpace("Server")
     method void RequestPickupServer(Entity itemEntity, string itemId)
+        if self.EnableDebugLogs == true then
+            log("[ItemDrop][DEBUG] RequestPickupServer. itemId=", tostring(itemId), ", sender=", tostring(senderUserId))
+        end
         if self:IsOwnerRequest(senderUserId) ~= true then
+            if self.EnableDebugLogs == true then
+                log_warning("[ItemDrop][DEBUG] Pickup rejected: non-owner request.")
+            end
             return
         end
         if itemEntity == nil or isvalid(itemEntity) == false then
+            if self.EnableDebugLogs == true then
+                log_warning("[ItemDrop][DEBUG] Pickup rejected: invalid item entity.")
+            end
             return
         end
 
@@ -241,9 +250,15 @@ script ItemDropManagerComponent extends Component
             runtime = self._T.FieldItemByEntity[itemEntity]
         end
         if runtime == nil then
+            if self.EnableDebugLogs == true then
+                log_warning("[ItemDrop][DEBUG] Pickup rejected: runtime not found.")
+            end
             return
         end
         if runtime.State ~= "grounded" then
+            if self.EnableDebugLogs == true then
+                log_warning("[ItemDrop][DEBUG] Pickup rejected: item not grounded. state=", tostring(runtime.State))
+            end
             return
         end
 
@@ -256,9 +271,15 @@ script ItemDropManagerComponent extends Component
             actual = tostring(runtime.ItemId)
         end
         if requested ~= "" and requested ~= actual then
+            if self.EnableDebugLogs == true then
+                log_warning("[ItemDrop][DEBUG] Pickup rejected: item id mismatch. requested=", requested, ", actual=", actual)
+            end
             return
         end
 
+        if self.EnableDebugLogs == true then
+            log("[ItemDrop][DEBUG] Pickup accepted. itemId=", actual)
+        end
         self:ApplyItemPickupEffectServer(runtime)
         self:RemoveFieldItemServer(itemEntity, true)
     end
@@ -450,14 +471,23 @@ script ItemDropManagerComponent extends Component
             end
         end
 
+        if self.EnableDebugLogs == true then
+            log("[ItemDrop][DEBUG] ApplyItemPickupEffectServer. itemId=", itemId, ", effectType=", effectType, ", payload=", payloadAmount)
+        end
+
         -- Passive drop items open a server-authoritative 3-choice selection flow.
         local isPassiveCommon = (effectType == "passive_common" or normalizedItemId == "passive_common_drop")
         if isPassiveCommon == true then
             local passiveSystem = self:ResolveComponentSafe(self.Entity, "PassiveSystemComponent", "AcquiredPassiveCount")
             if passiveSystem ~= nil and passiveSystem.RequestPassiveSelectionFromDropServer ~= nil then
-                pcall(function()
+                local callOk, _ = pcall(function()
                     passiveSystem:RequestPassiveSelectionFromDropServer("common")
                 end)
+                if self.EnableDebugLogs == true then
+                    log("[ItemDrop][DEBUG] Passive common request sent. callOk=", callOk)
+                end
+            elseif self.EnableDebugLogs == true then
+                log_warning("[ItemDrop][DEBUG] Passive common request skipped: PassiveSystem missing.")
             end
             return
         end
@@ -466,9 +496,14 @@ script ItemDropManagerComponent extends Component
         if isPassiveUnique == true then
             local passiveSystem = self:ResolveComponentSafe(self.Entity, "PassiveSystemComponent", "AcquiredPassiveCount")
             if passiveSystem ~= nil and passiveSystem.RequestPassiveSelectionFromDropServer ~= nil then
-                pcall(function()
+                local callOk, _ = pcall(function()
                     passiveSystem:RequestPassiveSelectionFromDropServer("unique")
                 end)
+                if self.EnableDebugLogs == true then
+                    log("[ItemDrop][DEBUG] Passive unique request sent. callOk=", callOk)
+                end
+            elseif self.EnableDebugLogs == true then
+                log_warning("[ItemDrop][DEBUG] Passive unique request skipped: PassiveSystem missing.")
             end
             return
         end

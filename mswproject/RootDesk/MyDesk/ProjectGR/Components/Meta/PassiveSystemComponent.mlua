@@ -151,8 +151,18 @@ script PassiveSystemComponent extends Component
     @ExecSpace("ServerOnly")
     method void RequestPassiveSelectionFromDropServer(string gradeHint)
         self:LoadPassiveDataServer()
+        if self.EnableDebugLogs == true then
+            local queueLen = 0
+            if self._T.SelectionQueue ~= nil then
+                queueLen = #self._T.SelectionQueue
+            end
+            log("[PassiveSystem][DEBUG] RequestPassiveSelectionFromDropServer. gradeHint=", tostring(gradeHint), ", acquired=", self.AcquiredPassiveCount, "/", self.MaxPassiveSlots, ", isOpen=", self.IsPassiveSelectionOpen, ", queueLen=", queueLen)
+        end
 
         if self.AcquiredPassiveCount >= math.max(1, self.MaxPassiveSlots) then
+            if self.EnableDebugLogs == true then
+                log_warning("[PassiveSystem][DEBUG] Request rejected: max passive slots reached.")
+            end
             return
         end
 
@@ -166,10 +176,17 @@ script PassiveSystemComponent extends Component
 
         if self.IsPassiveSelectionOpen == true then
             table.insert(self._T.SelectionQueue, normalizedGrade)
+            if self.EnableDebugLogs == true then
+                log("[PassiveSystem][DEBUG] Selection already open. queued grade=", normalizedGrade, ", queueLen=", #self._T.SelectionQueue)
+            end
             return
         end
 
-        if self:OpenPassiveSelectionFromDropServer(normalizedGrade) ~= true then
+        local opened = self:OpenPassiveSelectionFromDropServer(normalizedGrade)
+        if self.EnableDebugLogs == true then
+            log("[PassiveSystem][DEBUG] Open request result. grade=", normalizedGrade, ", opened=", opened)
+        end
+        if opened ~= true then
             self:TryProcessQueuedPassiveSelectionServer()
         end
     end
@@ -213,17 +230,29 @@ script PassiveSystemComponent extends Component
     -- Client confirm RPC validates token/candidate membership before applying one selected passive.
     @ExecSpace("Server")
     method void RequestSelectPassiveFromDropServer(string passiveId, integer token)
+        if self.EnableDebugLogs == true then
+            log("[PassiveSystem][DEBUG] RequestSelectPassiveFromDropServer. passiveId=", tostring(passiveId), ", token=", token, ", isOpen=", self.IsPassiveSelectionOpen)
+        end
         if self.IsPassiveSelectionOpen ~= true then
+            if self.EnableDebugLogs == true then
+                log_warning("[PassiveSystem][DEBUG] Select rejected: selection is not open.")
+            end
             return
         end
 
         local pending = self._T.PendingSelection
         if pending == nil then
+            if self.EnableDebugLogs == true then
+                log_warning("[PassiveSystem][DEBUG] Select rejected: pending selection is nil.")
+            end
             return
         end
 
         local requestedToken = math.floor(tonumber(token) or -1)
         if requestedToken < 0 or requestedToken ~= math.floor(tonumber(pending.Token) or -2) then
+            if self.EnableDebugLogs == true then
+                log_warning("[PassiveSystem][DEBUG] Select rejected: token mismatch. requested=", requestedToken, ", pending=", pending.Token)
+            end
             return
         end
 
@@ -232,10 +261,16 @@ script PassiveSystemComponent extends Component
             requestedId = tostring(passiveId)
         end
         if requestedId == "" then
+            if self.EnableDebugLogs == true then
+                log_warning("[PassiveSystem][DEBUG] Select rejected: empty passive id.")
+            end
             return
         end
 
         if pending.CandidateSet == nil or pending.CandidateSet[requestedId] ~= true then
+            if self.EnableDebugLogs == true then
+                log_warning("[PassiveSystem][DEBUG] Select rejected: passive not in candidate set. passiveId=", requestedId)
+            end
             return
         end
 
@@ -245,6 +280,9 @@ script PassiveSystemComponent extends Component
         end
 
         local applied = self:ApplyRandomPassiveServer(applyGrade, requestedId)
+        if self.EnableDebugLogs == true then
+            log("[PassiveSystem][DEBUG] ApplyRandomPassiveServer result. passiveId=", requestedId, ", grade=", applyGrade, ", applied=", applied)
+        end
         self:ClosePassiveSelectionServer(true, true)
         if applied == true then
             self:TryProcessQueuedPassiveSelectionServer()
@@ -257,9 +295,15 @@ script PassiveSystemComponent extends Component
     @ExecSpace("ServerOnly")
     method boolean OpenPassiveSelectionFromDropServer(string gradeHint)
         if self.IsPassiveSelectionOpen == true then
+            if self.EnableDebugLogs == true then
+                log_warning("[PassiveSystem][DEBUG] Open denied: selection already open.")
+            end
             return false
         end
         if self.AcquiredPassiveCount >= math.max(1, self.MaxPassiveSlots) then
+            if self.EnableDebugLogs == true then
+                log_warning("[PassiveSystem][DEBUG] Open denied: max passive slots reached.")
+            end
             return false
         end
 
@@ -273,6 +317,9 @@ script PassiveSystemComponent extends Component
 
         local candidates = self:BuildPassiveCandidatesServer(normalizedGrade, 3)
         if candidates == nil or #candidates <= 0 then
+            if self.EnableDebugLogs == true then
+                log_warning("[PassiveSystem][DEBUG] Open denied: no passive candidates. grade=", normalizedGrade)
+            end
             return false
         end
 
@@ -299,6 +346,9 @@ script PassiveSystemComponent extends Component
         self.IsPassiveSelectionOpen = true
         self:ApplyPassiveSelectionLockServer(true)
         self:NotifyPassiveSelectionOpenClient(candidates, nextToken, normalizedGrade)
+        if self.EnableDebugLogs == true then
+            log("[PassiveSystem][DEBUG] Opened selection. token=", nextToken, ", grade=", normalizedGrade, ", candidateCount=", #candidates)
+        end
         return true
     end
 
@@ -334,6 +384,9 @@ script PassiveSystemComponent extends Component
 
     @ExecSpace("ServerOnly")
     method void ClosePassiveSelectionServer(boolean releaseLock, boolean notifyClient)
+        if self.EnableDebugLogs == true then
+            log("[PassiveSystem][DEBUG] ClosePassiveSelectionServer. releaseLock=", releaseLock, ", notifyClient=", notifyClient, ", wasOpen=", self.IsPassiveSelectionOpen)
+        end
         self.IsPassiveSelectionOpen = false
         self._T.PendingSelection = nil
 
@@ -450,25 +503,41 @@ script PassiveSystemComponent extends Component
     method void NotifyPassiveSelectionOpenClient(table candidates, integer token, string grade)
         local uiComponent = self:ResolveComponentSafe(self.Entity, "PassiveSelectionUIComponent", "PanelPath")
         if uiComponent == nil or uiComponent.OpenPassiveSelectionClient == nil then
+            if self.EnableDebugLogs == true then
+                log_warning("[PassiveSystem][DEBUG] Notify open skipped: PassiveSelectionUIComponent missing.")
+            end
             return
         end
 
         local safeCandidates = self:CloneArray(candidates)
-        pcall(function()
+        local callOk, _ = pcall(function()
             uiComponent:OpenPassiveSelectionClient(safeCandidates, token, grade)
         end)
+        if self.EnableDebugLogs == true then
+            local count = 0
+            if safeCandidates ~= nil then
+                count = #safeCandidates
+            end
+            log("[PassiveSystem][DEBUG] Notify open RPC sent. token=", token, ", grade=", grade, ", candidateCount=", count, ", callOk=", callOk)
+        end
     end
 
     @ExecSpace("ServerOnly")
     method void NotifyPassiveSelectionCloseClient()
         local uiComponent = self:ResolveComponentSafe(self.Entity, "PassiveSelectionUIComponent", "PanelPath")
         if uiComponent == nil or uiComponent.ClosePassiveSelectionClient == nil then
+            if self.EnableDebugLogs == true then
+                log_warning("[PassiveSystem][DEBUG] Notify close skipped: PassiveSelectionUIComponent missing.")
+            end
             return
         end
 
-        pcall(function()
+        local callOk, _ = pcall(function()
             uiComponent:ClosePassiveSelectionClient()
         end)
+        if self.EnableDebugLogs == true then
+            log("[PassiveSystem][DEBUG] Notify close RPC sent. callOk=", callOk)
+        end
     end
 
     @ExecSpace("ServerOnly")

@@ -17,6 +17,7 @@ script PassiveSelectionUIComponent extends Component
     property string EmptyOptionName = "선택 불가"
     property string EmptyOptionDescription = "사용 가능한 패시브가 없습니다."
     property number OptionClickDebounceSeconds = 0.2
+    property boolean EnableDebugLogs = true
 
     -- Client init resolves UI references once and applies hidden default state.
     @ExecSpace("ClientOnly")
@@ -35,6 +36,33 @@ script PassiveSelectionUIComponent extends Component
         self:ClosePassiveSelectionClient()
     end
 
+    -- Sync guard closes stale panel state when server already ended selection but RPC close was missed.
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number delta)
+        if self._T.IsOpen ~= true then
+            return
+        end
+
+        local passiveSystem = self:ResolveComponentSafe(self.Entity, "PassiveSystemComponent", "IsPassiveSelectionOpen")
+        if passiveSystem == nil then
+            return
+        end
+
+        local isServerOpen = false
+        local readOk, readValue = pcall(function()
+            return passiveSystem.IsPassiveSelectionOpen
+        end)
+        if readOk == true and readValue == true then
+            isServerOpen = true
+        end
+        if isServerOpen ~= true then
+            if self.EnableDebugLogs == true then
+                log("[PassiveUI][DEBUG] Auto close by sync guard. token=", self._T.CurrentToken, ", isOpen=", self._T.IsOpen)
+            end
+            self:ClosePassiveSelectionClient()
+        end
+    end
+
     -- EndPlay detaches handlers/timers so stale callbacks cannot fire on destroyed entities.
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
@@ -51,6 +79,7 @@ script PassiveSelectionUIComponent extends Component
         self._T.CurrentToken = math.max(1, math.floor(tonumber(token) or 0))
         self._T.CurrentGrade = tostring(grade or "")
         self._T.CurrentCandidates = {}
+        local candidateCount = 0
 
         for index = 1, 3 do
             local candidate = nil
@@ -59,6 +88,7 @@ script PassiveSelectionUIComponent extends Component
             end
             if candidate ~= nil and candidate.Id ~= nil and tostring(candidate.Id) ~= "" then
                 self._T.CurrentCandidates[index] = self:CloneTableShallow(candidate)
+                candidateCount += 1
             else
                 self._T.CurrentCandidates[index] = nil
             end
@@ -66,14 +96,21 @@ script PassiveSelectionUIComponent extends Component
 
         self._T.ClickLocked = false
         self:ClearClickLockTimerClient()
-        self:RenderOptionsClient()
         self:SetSelectionVisibleClient(true)
+        self:RenderOptionsClient()
+        if self.EnableDebugLogs == true then
+            log("[PassiveUI][DEBUG] Open panel. token=", self._T.CurrentToken, ", grade=", self._T.CurrentGrade, ", candidateCount=", candidateCount)
+        end
     end
 
     -- Server invokes this RPC after confirm/cleanup to hide panel and release local click lock.
     @ExecSpace("Client")
     method void ClosePassiveSelectionClient()
         self:InitializeRuntimeClient()
+        local previousToken = self._T.CurrentToken
+        if self.EnableDebugLogs == true then
+            log("[PassiveUI][DEBUG] Close panel. prevToken=", previousToken, ", wasOpen=", self._T.IsOpen)
+        end
         self._T.CurrentToken = 0
         self._T.CurrentGrade = ""
         self._T.CurrentCandidates = {}
@@ -196,8 +233,9 @@ script PassiveSelectionUIComponent extends Component
             if entry ~= nil and entry.ButtonEntity ~= nil and isvalid(entry.ButtonEntity) == true then
                 local button = self:EnsureButtonComponentClient(entry.ButtonEntity)
                 if button ~= nil then
+                    local optionIndex = index
                     local callback = function(event)
-                        self:OnOptionClickedClient(index, event)
+                        self:OnOptionClickedClient(optionIndex, event)
                     end
 
                     local bindOk, bindHandler = pcall(function()
@@ -205,6 +243,11 @@ script PassiveSelectionUIComponent extends Component
                     end)
                     if bindOk == true then
                         entry.ButtonHandler = bindHandler
+                        if self.EnableDebugLogs == true then
+                            log("[PassiveUI][DEBUG] Option button bound. index=", optionIndex)
+                        end
+                    elseif self.EnableDebugLogs == true then
+                        log_warning("[PassiveUI][DEBUG] Option button bind failed. index=", optionIndex)
                     end
                 end
             end
@@ -232,23 +275,41 @@ script PassiveSelectionUIComponent extends Component
     -- Click handler validates local state first, then forwards only selected id+token to server authority.
     @ExecSpace("ClientOnly")
     method void OnOptionClickedClient(integer index, ButtonClickEvent event)
+        if self.EnableDebugLogs == true then
+            log("[PassiveUI][DEBUG] Click received. index=", index, ", isOpen=", self._T.IsOpen, ", clickLocked=", self._T.ClickLocked)
+        end
         if self._T.IsOpen ~= true then
+            if self.EnableDebugLogs == true then
+                log_warning("[PassiveUI][DEBUG] Click ignored: panel not open. index=", index)
+            end
             return
         end
         if self._T.ClickLocked == true then
+            if self.EnableDebugLogs == true then
+                log_warning("[PassiveUI][DEBUG] Click ignored: lock active. index=", index)
+            end
             return
         end
         if self:IsOptionClickableClient(index) ~= true then
+            if self.EnableDebugLogs == true then
+                log_warning("[PassiveUI][DEBUG] Click ignored: option not clickable. index=", index)
+            end
             return
         end
 
         local candidate = self:GetCandidateByIndexClient(index)
         if candidate == nil or candidate.Id == nil or tostring(candidate.Id) == "" then
+            if self.EnableDebugLogs == true then
+                log_warning("[PassiveUI][DEBUG] Click ignored: candidate missing. index=", index)
+            end
             return
         end
 
         local passiveSystem = self:ResolveComponentSafe(self.Entity, "PassiveSystemComponent", "IsPassiveSelectionOpen")
         if passiveSystem == nil or passiveSystem.RequestSelectPassiveFromDropServer == nil then
+            if self.EnableDebugLogs == true then
+                log_warning("[PassiveUI][DEBUG] Click ignored: passive system missing. index=", index)
+            end
             return
         end
 
@@ -257,9 +318,12 @@ script PassiveSelectionUIComponent extends Component
 
         local selectedId = tostring(candidate.Id)
         local token = math.floor(tonumber(self._T.CurrentToken) or 0)
-        pcall(function()
+        local callOk, _ = pcall(function()
             passiveSystem:RequestSelectPassiveFromDropServer(selectedId, token)
         end)
+        if self.EnableDebugLogs == true then
+            log("[PassiveUI][DEBUG] RequestSelect sent. index=", index, ", passiveId=", selectedId, ", token=", token, ", callOk=", callOk)
+        end
     end
 
     -- Visible wrapper toggles dim+panel together and keeps option clickability coherent with current open state.
@@ -554,4 +618,3 @@ script PassiveSelectionUIComponent extends Component
         return component
     end
 end
-

@@ -3495,3 +3495,28 @@
 |---|---|
 | Option callback index capture | `BindOptionButtonsClient()` now captures `optionIndex` per iteration before creating click callback, preventing all option callbacks from sharing an invalid loop index. |
 | Stale-panel close guard | Added client `OnUpdate(delta)` sync guard that auto-closes panel when `PassiveSystemComponent.IsPassiveSelectionOpen == false`, covering missed close RPC cases. |
+
+## 2026-03-02 Passive Selection Runtime Path Hotfix
+
+### PassiveSelectionUIComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/UI/PassiveSelectionUIComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/UI/PassiveSelectionUIComponent.codeblock`
+- **Updated:** `2026-03-02`
+
+| Item | Detail |
+|---|---|
+| Runtime parity fix | Applied the same click/close logic to `.mlua` as `.codeblock` so runtime script path cannot diverge. |
+| Option callback capture | Fixed loop-index closure by capturing `optionIndex` before binding each button callback. |
+| Close fallback | Added `OnUpdate(delta)` sync guard to close panel locally when server `IsPassiveSelectionOpen` is already false. |
+
+## 2026-03-02 Passive Selection Clickable State Fix
+
+### PassiveSelectionUIComponent (Updated)
+- **File:** `RootDesk/MyDesk/ProjectGR/Components/UI/PassiveSelectionUIComponent.mlua`
+- **Sync File:** `RootDesk/MyDesk/ProjectGR/Components/UI/PassiveSelectionUIComponent.codeblock`
+- **Updated:** `2026-03-02`
+
+| Item | Detail |
+|---|---|
+| Open/render order fix | In `OpenPassiveSelectionClient()`, changed call order to `SetSelectionVisibleClient(true)` then `RenderOptionsClient()` so `_T.IsOpen` is true before clickability is computed. |
+| Symptom resolved | Prevents valid options from being marked non-clickable (`Click ignored: option not clickable`) immediately after panel open. |
