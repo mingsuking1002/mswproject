@@ -24,7 +24,8 @@
         "MOD.Core.TransformComponent",
         "script.HPSystemComponent",
         "MOD.Core.TriggerComponent",
-        "script.MonsterChaseComponent"
+        "script.MonsterChaseComponent",
+        "script.BossAIComponent"
       ],
       "Properties": [],
       "Values": [

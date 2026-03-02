@@ -10288,7 +10288,7 @@
           "enable": true,
           "visible": true,
           "localize": true,
-          "displayOrder": 30,
+          "displayOrder": 20,
           "pathConstraints": "///",
           "revision": 1,
           "origin": {
@@ -10428,7 +10428,7 @@
           "enable": true,
           "visible": true,
           "localize": true,
-          "displayOrder": 1,
+          "displayOrder": 0,
           "pathConstraints": "////",
           "revision": 1,
           "origin": {

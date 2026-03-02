@@ -778,7 +778,7 @@ script InGameHUDComponent extends Component
         self:RefreshCharacterReloadBarClient(showGauge, reloadRatio)
     end
 
-    -- Inventory HUD text always reflects synced potion count and unified mana count.
+    -- Inventory HUD text reads synced properties first so client can render without server-only method calls.
     @ExecSpace("ClientOnly")
     method void RefreshInventoryTextsClient()
         local potionCount = 0
@@ -796,7 +796,15 @@ script InGameHUDComponent extends Component
                 potionCount = 0
             end
 
-            if inventory.GetCurrentCharMagazine ~= nil then
+            local manaRead = false
+            local manaOk, _ = pcall(function()
+                manaCount = math.max(0, math.floor(tonumber(inventory.Mana) or 0))
+            end)
+            if manaOk == true then
+                manaRead = true
+            end
+
+            if manaRead ~= true and inventory.GetCurrentCharMagazine ~= nil then
                 local magOk, magValue = pcall(function()
                     return inventory:GetCurrentCharMagazine()
                 end)

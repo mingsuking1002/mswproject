@@ -3813,3 +3813,20 @@
 | 함수명 | 파라미터 | 리턴값 | 설명 |
 |---|---|---|---|
 | `-` | `-` | 데이터 파일이므로 함수 없음 |
+
+## 2026-03-03 GRMagazineText 보유량 표시 보정
+
+## [InGameHUDComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/UI/InGameHUDComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/UI/InGameHUDComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `-` | `-` | 프로퍼티 추가/삭제 없음 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `RefreshInventoryTextsClient` | void | `void` | 클라이언트에서 서버 전용 메서드 호출 의존을 줄이고, `GRInventoryComponent.Mana(@Sync)`를 직접 읽어 `GRMagazineText`의 보유량 표시가 즉시 반영되도록 수정 |

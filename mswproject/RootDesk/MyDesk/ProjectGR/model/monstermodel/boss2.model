@@ -24,7 +24,8 @@
         "MOD.Core.TransformComponent",
         "script.HPSystemComponent",
         "MOD.Core.TriggerComponent",
-        "script.MonsterChaseComponent"
+        "script.MonsterChaseComponent",
+        "script.BossAIComponent"
       ],
       "Properties": [],
       "Values": [
@@ -124,8 +125,8 @@
           },
           "Value": {
             "$type": "MOD.Core.MODVector2, MOD.Core",
-            "x": 0.0350000262,
-            "y": 0.844999969
+            "x": 0.03500003,
+            "y": 0.845
           }
         },
         {
@@ -326,6 +327,15 @@
             "type": "System.Boolean, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
           },
           "Value": false
+        },
+        {
+          "TargetType": "script.BossAIComponent",
+          "Name": "BossStageId",
+          "ValueType": {
+            "$type": "MODNativeType",
+            "type": "System.Int64, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+          },
+          "Value": 2
         }
       ],
       "EventLinks": [],
