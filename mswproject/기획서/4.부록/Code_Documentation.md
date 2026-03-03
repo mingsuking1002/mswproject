@@ -2893,7 +2893,7 @@
 
 ## [BossAIComponent]
 - **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/BossAIComponent.mlua`
-- **수정일:** `2026-02-26`
+- **수정일:** `2026-03-03`
 
 ### Properties
 | 이름 | 타입 | 설명 |
@@ -2906,7 +2906,7 @@
 | 함수명 | 파라미터 | 리턴값 | 설명 |
 |---|---|---|---|
 | `StartAttackLoopServer` | void | void | 반복 패턴 타이머 시작 |
-| `AttackTickServer` | void | void | 몬스터 소환 + 감속 반경 체크 수행 |
+| `AttackTickServer` | void | void | 보스 월드 좌표에서 몬스터 소환 후 감속 반경 체크 수행 |
 | `CheckSlowdownServer` | `playerEntity: Entity` | void | 플레이어 근접 시 가속 해제 |
 
 ## [InventoryComponent]
@@ -3813,6 +3813,83 @@
 | 함수명 | 파라미터 | 리턴값 | 설명 |
 |---|---|---|---|
 | `-` | `-` | 데이터 파일이므로 함수 없음 |
+
+## 2026-03-03 Background Reload
+
+## [ReloadComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ReloadComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ReloadComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `-` | `-` | 프로퍼티 변경 없음 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `SetCurrentWeaponSlot` | `slot: integer` | `void` | 슬롯 전환 시 이전 슬롯의 재장전 타이머를 취소하지 않고 유지하여 백그라운드 재장전 완료를 허용. 현재 슬롯용 재장전 Sync UI만 초기화. |
+
+## [WeaponSwapComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `CancelReloadOnSwap` | boolean | 기본값을 `false`로 변경해 무기/태그 스왑 시 재장전 강제 취소를 비활성화. |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `ApplySlotDataToCombat` | `slot: integer` | `void` | `CancelReloadOnSwap == false`일 때 `reloadComponent:CancelCurrentReload()` 호출을 건너뛰어 백그라운드 재장전 유지. |
+
+## 2026-03-03 Controls Guide UI 반영
+
+## [ControlsGuideComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/UI/ControlsGuideComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/UI/ControlsGuideComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `GuidePanelPath` | string | 가이드 패널 엔티티 경로 |
+| `GuideOpenButtonPath` | string | 조작법 열기 버튼 경로 |
+| `GuideCloseButtonPath` | string | 가이드 닫기 버튼 경로 |
+| `PrevButtonPath` | string | 이전 페이지 버튼 경로 |
+| `NextButtonPath` | string | 다음 페이지 버튼 경로 |
+| `Page1Path` | string | 1페이지 이미지 엔티티 경로 |
+| `Page2Path` | string | 2페이지 이미지 엔티티 경로 |
+| `PageIndicatorPath` | string | 페이지 인디케이터 텍스트 경로 |
+| `GuideTitlePath` | string | 가이드 타이틀 텍스트 엔티티 경로 |
+| `CurrentPage` | integer | 현재 페이지 인덱스 |
+| `TotalPages` | integer | 총 페이지 수(최소 2) |
+| `ApplyPresetLayout` | boolean | 이미지 시안 기반 배치 프리셋 자동 적용 여부 |
+| `UsePageHintText` | boolean | 인디케이터를 `1 / 2` 대신 `페이지 넘기기` 고정 문구로 표시 |
+| `GuideTitleText/GuideCloseText/GuidePrevText/GuideNextText/PageHintText` | string | 타이틀/버튼/힌트 텍스트 커스텀 값 |
+| `GuideTitleFontSize/GuideButtonFontSize/GuideHintFontSize` | integer | 타이틀/버튼/힌트 폰트 크기 |
+| `Panel*/Page*/Title*/Close*/Prev*/Next*/PageHint*` | Vector2 | 패널/페이지/타이틀/버튼/힌트 위치 및 크기 프리셋 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `OnBeginPlay` | void | `void` | 런타임 캐시 초기화 후 레이아웃 프리셋 적용, 버튼 바인딩, 기본 페이지 렌더링 |
+| `OnMapEnter` | `enteredMap: Entity` | `void` | 맵 재진입 시 UI 참조/버튼 바인딩 복구 + 레이아웃 재적용 |
+| `OnUpdate` | `delta: number` | `void` | 저주기(0.25s)로 `LobbyFlowComponent.IsLobbyActive`를 폴링해 버튼/패널 가시성 동기화 |
+| `ApplyLobbyStateClient` | `isLobby: boolean` | `void` | 로비 상태일 때만 열기 버튼 표시, 비로비 상태에서는 패널 강제 닫기 |
+| `OpenGuideClient` | void | `void` | 패널 열기 + 1페이지로 리셋 |
+| `CloseGuideClient` | void | `void` | 패널 비활성화 및 입력 차단 |
+| `NextPageClient` | void | `void` | 다음 페이지로 이동(clamp 적용) |
+| `PrevPageClient` | void | `void` | 이전 페이지로 이동(clamp 적용) |
+| `ShowPageClient` | `pageIndex: integer` | `void` | 페이지 스프라이트/화살표/인디케이터(힌트 텍스트 모드 포함) 상태 일괄 갱신 |
+| `BindButtonsClient` | void | `void` | 열기/닫기/이전/다음 버튼 이벤트 연결 |
+| `ApplyGuideLayoutPresetClient` | void | `void` | 시안 레이아웃(패널/타이틀/닫기/화살표/힌트) 좌표·크기·텍스트 적용 |
+| `ApplyRectLayoutClient` | `targetEntity: Entity, anchoredPos: Vector2, rectSize: Vector2` | `void` | UITransform의 pivot/anchor/offset을 사용해 직사각 배치 강제 |
+| `ApplyTextStyleClient` | `targetEntity: Entity, textValue: string, fontSize: integer` | `void` | 타이틀/버튼 텍스트 및 폰트 크기 적용 |
+| `DisconnectAllButtonBindingsClient` | void | `void` | EndPlay 시 버튼 이벤트 핸들러 정리 |
 
 ## 2026-03-03 Key Remapping (Tab/Q/E)
 

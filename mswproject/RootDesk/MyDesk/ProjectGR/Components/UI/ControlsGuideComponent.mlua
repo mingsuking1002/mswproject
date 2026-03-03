@@ -1,0 +1,597 @@
+@Component
+script ControlsGuideComponent extends Component
+
+    property string GuidePanelPath = "/ui/MainGroup/GRGuidePanel"
+    property string GuideOpenButtonPath = "/ui/MainGroup/GRGuideOpenButton"
+    property string GuideCloseButtonPath = "/ui/MainGroup/GRGuidePanel/GRGuideCloseButton"
+    property string PrevButtonPath = "/ui/MainGroup/GRGuidePanel/GRGuidePrevButton"
+    property string NextButtonPath = "/ui/MainGroup/GRGuidePanel/GRGuideNextButton"
+    property string Page1Path = "/ui/MainGroup/GRGuidePanel/GRGuidePage1"
+    property string Page2Path = "/ui/MainGroup/GRGuidePanel/GRGuidePage2"
+    property string PageIndicatorPath = "/ui/MainGroup/GRGuidePanel/GRGuidePageIndicator"
+    property string GuideTitlePath = "/ui/MainGroup/GRGuidePanel/GRGuideTitleText"
+    property integer CurrentPage = 1
+    property integer TotalPages = 2
+    property boolean ApplyPresetLayout = true
+    property boolean UsePageHintText = true
+    property string GuideTitleText = "조작법"
+    property string GuideCloseText = "나가기"
+    property string GuidePrevText = "◁"
+    property string GuideNextText = "▷"
+    property string PageHintText = "페이지 넘기기"
+    property integer GuideTitleFontSize = 46
+    property integer GuideButtonFontSize = 34
+    property integer GuideHintFontSize = 42
+    property Vector2 PanelPosition = Vector2(0, 0)
+    property Vector2 PanelSize = Vector2(980, 620)
+    property Vector2 PagePosition = Vector2(0, -6)
+    property Vector2 PageSize = Vector2(860, 520)
+    property Vector2 TitlePosition = Vector2(0, 240)
+    property Vector2 TitleSize = Vector2(240, 70)
+    property Vector2 CloseButtonPosition = Vector2(300, 240)
+    property Vector2 CloseButtonSize = Vector2(190, 64)
+    property Vector2 PrevButtonPosition = Vector2(-350, 40)
+    property Vector2 PrevButtonSize = Vector2(80, 96)
+    property Vector2 NextButtonPosition = Vector2(350, 40)
+    property Vector2 NextButtonSize = Vector2(80, 96)
+    property Vector2 PageHintPosition = Vector2(240, -12)
+    property Vector2 PageHintSize = Vector2(240, 70)
+
+    -- Client bootstraps runtime caches once so button binding and page state stay deterministic.
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self:EnsureGRUtil()
+        self:InitializeRuntimeClient()
+        self:ResolveGuideEntitiesClient()
+        self:ApplyGuideLayoutPresetClient()
+        self:BindButtonsClient()
+
+        self.CurrentPage = self:ClampPageIndex(self.CurrentPage)
+        self:CloseGuideClient()
+        self:ShowPageClient(self.CurrentPage)
+        self:ApplyLobbyStateClient(self:ResolveLobbyStateClient())
+    end
+
+    -- Map enter can invalidate UI entity references, so resolve/bind flow is repeated.
+    @ExecSpace("ClientOnly")
+    method void OnMapEnter(Entity enteredMap)
+        self:ResolveGuideEntitiesClient()
+        self:ApplyGuideLayoutPresetClient()
+        self:BindButtonsClient()
+        self:ApplyLobbyStateClient(self:ResolveLobbyStateClient())
+        self:ShowPageClient(self.CurrentPage)
+    end
+
+    -- Lightweight polling detects LobbyFlow sync transitions without requiring explicit cross-component event hooks.
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number delta)
+        local remain = self._T.LobbyPollRemain
+        if remain == nil then
+            remain = 0
+        end
+
+        remain -= delta
+        if remain > 0 then
+            self._T.LobbyPollRemain = remain
+            return
+        end
+
+        self._T.LobbyPollRemain = 0.25
+        local isLobby = self:ResolveLobbyStateClient()
+        if self._T.IsLobbyState ~= isLobby then
+            self:ApplyLobbyStateClient(isLobby)
+        end
+    end
+
+    -- EndPlay clears button handlers so reconnect/reload never creates duplicate click callbacks.
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        self:DisconnectAllButtonBindingsClient()
+    end
+
+    -- Runtime init centralizes transient fields used only on client.
+    @ExecSpace("ClientOnly")
+    method void InitializeRuntimeClient()
+        self._T.ButtonBindingByKey = {}
+        self._T.IsLobbyState = true
+        self._T.LobbyPollRemain = 0
+    end
+
+    -- LobbyFlow-compatible API keeps guide-open button visible only in lobby state.
+    @ExecSpace("Client")
+    method void ApplyLobbyStateClient(boolean isLobby)
+        self._T.IsLobbyState = (isLobby == true)
+
+        local openButton = self._T.GuideOpenButtonEntity
+        if openButton == nil or isvalid(openButton) == false then
+            openButton = self:ResolveEntityByPath(self.GuideOpenButtonPath)
+            self._T.GuideOpenButtonEntity = openButton
+        end
+        if openButton ~= nil and isvalid(openButton) == true then
+            pcall(function()
+                openButton.Enable = self._T.IsLobbyState
+                openButton.Visible = self._T.IsLobbyState
+            end)
+        end
+
+        if self._T.IsLobbyState ~= true then
+            self:CloseGuideClient()
+        end
+    end
+
+    -- Open path resets to page 1 so each open starts from predictable first-page UX.
+    @ExecSpace("ClientOnly")
+    method void OpenGuideClient()
+        if self._T.IsLobbyState ~= true then
+            return
+        end
+
+        local panel = self._T.GuidePanelEntity
+        if panel == nil or isvalid(panel) == false then
+            panel = self:ResolveEntityByPath(self.GuidePanelPath)
+            self._T.GuidePanelEntity = panel
+        end
+        if panel == nil or isvalid(panel) == false then
+            return
+        end
+
+        pcall(function()
+            panel.Enable = true
+            panel.Visible = true
+        end)
+
+        self.CurrentPage = 1
+        self:ShowPageClient(1)
+    end
+
+    -- Close path disables panel to block raycast/input overlap while guide is hidden.
+    @ExecSpace("ClientOnly")
+    method void CloseGuideClient()
+        local panel = self._T.GuidePanelEntity
+        if panel == nil or isvalid(panel) == false then
+            panel = self:ResolveEntityByPath(self.GuidePanelPath)
+            self._T.GuidePanelEntity = panel
+        end
+        if panel ~= nil and isvalid(panel) == true then
+            pcall(function()
+                panel.Enable = false
+                panel.Visible = false
+            end)
+        end
+    end
+
+    -- Next-page navigation clamps to valid range so invalid page index writes cannot occur.
+    @ExecSpace("ClientOnly")
+    method void NextPageClient()
+        local page = self:ClampPageIndex(self.CurrentPage + 1)
+        self.CurrentPage = page
+        self:ShowPageClient(page)
+    end
+
+    -- Prev-page navigation clamps to valid range so first-page underflow is prevented.
+    @ExecSpace("ClientOnly")
+    method void PrevPageClient()
+        local page = self:ClampPageIndex(self.CurrentPage - 1)
+        self.CurrentPage = page
+        self:ShowPageClient(page)
+    end
+
+    -- Page renderer controls both page sprites and navigation controls in one path.
+    @ExecSpace("ClientOnly")
+    method void ShowPageClient(integer pageIndex)
+        local finalPage = self:ClampPageIndex(pageIndex)
+        self.CurrentPage = finalPage
+
+        local page1 = self._T.Page1Entity
+        if page1 == nil or isvalid(page1) == false then
+            page1 = self:ResolveEntityByPath(self.Page1Path)
+            self._T.Page1Entity = page1
+        end
+        if page1 ~= nil and isvalid(page1) == true then
+            pcall(function()
+                page1.Enable = (finalPage == 1)
+                page1.Visible = (finalPage == 1)
+            end)
+        end
+
+        local page2 = self._T.Page2Entity
+        if page2 == nil or isvalid(page2) == false then
+            page2 = self:ResolveEntityByPath(self.Page2Path)
+            self._T.Page2Entity = page2
+        end
+        if page2 ~= nil and isvalid(page2) == true then
+            pcall(function()
+                page2.Enable = (finalPage == 2)
+                page2.Visible = (finalPage == 2)
+            end)
+        end
+
+        local prevButton = self._T.PrevButtonEntity
+        if prevButton == nil or isvalid(prevButton) == false then
+            prevButton = self:ResolveEntityByPath(self.PrevButtonPath)
+            self._T.PrevButtonEntity = prevButton
+        end
+        if prevButton ~= nil and isvalid(prevButton) == true then
+            pcall(function()
+                local active = (finalPage > 1)
+                prevButton.Enable = active
+                prevButton.Visible = active
+            end)
+        end
+
+        local nextButton = self._T.NextButtonEntity
+        if nextButton == nil or isvalid(nextButton) == false then
+            nextButton = self:ResolveEntityByPath(self.NextButtonPath)
+            self._T.NextButtonEntity = nextButton
+        end
+        if nextButton ~= nil and isvalid(nextButton) == true then
+            pcall(function()
+                local active = (finalPage < self:GetFinalTotalPages())
+                nextButton.Enable = active
+                nextButton.Visible = active
+            end)
+        end
+
+        local indicator = self._T.PageIndicatorEntity
+        if indicator == nil or isvalid(indicator) == false then
+            indicator = self:ResolveEntityByPath(self.PageIndicatorPath)
+            self._T.PageIndicatorEntity = indicator
+        end
+        if indicator ~= nil and isvalid(indicator) == true and indicator.TextComponent ~= nil then
+            pcall(function()
+                if self.UsePageHintText == true then
+                    indicator.TextComponent.Text = self.PageHintText
+                else
+                    indicator.TextComponent.Text = tostring(finalPage) .. " / " .. tostring(self:GetFinalTotalPages())
+                end
+            end)
+        end
+    end
+
+    -- Button binding occurs once per key and safely reconnects if UI entities are recreated.
+    @ExecSpace("ClientOnly")
+    method void BindButtonsClient()
+        self._T.GuideOpenButtonEntity = self:ResolveEntityByPath(self.GuideOpenButtonPath)
+        self._T.GuideCloseButtonEntity = self:ResolveEntityByPath(self.GuideCloseButtonPath)
+        self._T.PrevButtonEntity = self:ResolveEntityByPath(self.PrevButtonPath)
+        self._T.NextButtonEntity = self:ResolveEntityByPath(self.NextButtonPath)
+
+        self:BindButtonByEntityClient("GuideOpen", self._T.GuideOpenButtonEntity, function(event)
+            self:OpenGuideClient()
+        end)
+        self:BindButtonByEntityClient("GuideClose", self._T.GuideCloseButtonEntity, function(event)
+            self:CloseGuideClient()
+        end)
+        self:BindButtonByEntityClient("GuidePrev", self._T.PrevButtonEntity, function(event)
+            self:PrevPageClient()
+        end)
+        self:BindButtonByEntityClient("GuideNext", self._T.NextButtonEntity, function(event)
+            self:NextPageClient()
+        end)
+    end
+
+    -- Generic binder protects against duplicate event registration on repeated resolve/bind passes.
+    @ExecSpace("ClientOnly")
+    method void BindButtonByEntityClient(string bindingKey, Entity buttonEntity, any callback)
+        if bindingKey == nil or bindingKey == "" then
+            return
+        end
+        if buttonEntity == nil or isvalid(buttonEntity) == false then
+            return
+        end
+        if callback == nil then
+            return
+        end
+        if self._T.ButtonBindingByKey == nil then
+            self._T.ButtonBindingByKey = {}
+        end
+
+        local existing = self._T.ButtonBindingByKey[bindingKey]
+        if existing ~= nil then
+            local oldEntity = existing.Entity
+            local oldHandler = existing.Handler
+            if oldEntity == buttonEntity and oldHandler ~= nil and isvalid(oldEntity) == true then
+                return
+            end
+            self:DisconnectButtonBindingClient(bindingKey)
+        end
+
+        if buttonEntity.ButtonComponent == nil then
+            pcall(function()
+                buttonEntity:AddComponent("MOD.Core.ButtonComponent")
+            end)
+        end
+        if buttonEntity.ButtonComponent == nil then
+            return
+        end
+
+        local connectOk, handler = pcall(function()
+            return buttonEntity:ConnectEvent(ButtonClickEvent, callback)
+        end)
+        if connectOk ~= true or handler == nil then
+            return
+        end
+
+        local binding = {}
+        binding.Entity = buttonEntity
+        binding.Handler = handler
+        self._T.ButtonBindingByKey[bindingKey] = binding
+    end
+
+    -- Single binding disconnect helper is reused by rebind path and EndPlay cleanup.
+    @ExecSpace("ClientOnly")
+    method void DisconnectButtonBindingClient(string bindingKey)
+        if self._T.ButtonBindingByKey == nil then
+            return
+        end
+        local binding = self._T.ButtonBindingByKey[bindingKey]
+        if binding == nil then
+            return
+        end
+
+        local buttonEntity = binding.Entity
+        local handler = binding.Handler
+        if buttonEntity ~= nil and isvalid(buttonEntity) == true and handler ~= nil then
+            pcall(function()
+                buttonEntity:DisconnectEvent(ButtonClickEvent, handler)
+            end)
+        end
+
+        self._T.ButtonBindingByKey[bindingKey] = nil
+    end
+
+    -- Bulk disconnect ensures every cached button handler is released on component teardown.
+    @ExecSpace("ClientOnly")
+    method void DisconnectAllButtonBindingsClient()
+        if self._T.ButtonBindingByKey == nil then
+            return
+        end
+
+        for key, _ in pairs(self._T.ButtonBindingByKey) do
+            self:DisconnectButtonBindingClient(key)
+        end
+    end
+
+    -- UI resolve cache is grouped so all path lookups share one call path and nil checks.
+    @ExecSpace("ClientOnly")
+    method void ResolveGuideEntitiesClient()
+        self._T.GuidePanelEntity = self:ResolveEntityByPath(self.GuidePanelPath)
+        self._T.GuideOpenButtonEntity = self:ResolveEntityByPath(self.GuideOpenButtonPath)
+        self._T.GuideCloseButtonEntity = self:ResolveEntityByPath(self.GuideCloseButtonPath)
+        self._T.PrevButtonEntity = self:ResolveEntityByPath(self.PrevButtonPath)
+        self._T.NextButtonEntity = self:ResolveEntityByPath(self.NextButtonPath)
+        self._T.Page1Entity = self:ResolveEntityByPath(self.Page1Path)
+        self._T.Page2Entity = self:ResolveEntityByPath(self.Page2Path)
+        self._T.PageIndicatorEntity = self:ResolveEntityByPath(self.PageIndicatorPath)
+        self._T.GuideTitleEntity = self:ResolveEntityByPath(self.GuideTitlePath)
+    end
+
+    -- Applies screenshot-based preset layout so runtime UI placement stays consistent across editor variations.
+    @ExecSpace("ClientOnly")
+    method void ApplyGuideLayoutPresetClient()
+        if self.ApplyPresetLayout ~= true then
+            return
+        end
+
+        self:ApplyRectLayoutClient(self._T.GuidePanelEntity, self.PanelPosition, self.PanelSize)
+        self:ApplyRectLayoutClient(self._T.Page1Entity, self.PagePosition, self.PageSize)
+        self:ApplyRectLayoutClient(self._T.Page2Entity, self.PagePosition, self.PageSize)
+        self:ApplyRectLayoutClient(self._T.GuideCloseButtonEntity, self.CloseButtonPosition, self.CloseButtonSize)
+        self:ApplyRectLayoutClient(self._T.PrevButtonEntity, self.PrevButtonPosition, self.PrevButtonSize)
+        self:ApplyRectLayoutClient(self._T.NextButtonEntity, self.NextButtonPosition, self.NextButtonSize)
+        self:ApplyRectLayoutClient(self._T.PageIndicatorEntity, self.PageHintPosition, self.PageHintSize)
+        self:ApplyRectLayoutClient(self._T.GuideTitleEntity, self.TitlePosition, self.TitleSize)
+
+        self:ApplyTextStyleClient(self._T.GuideCloseButtonEntity, self.GuideCloseText, self.GuideButtonFontSize)
+        self:ApplyTextStyleClient(self._T.PrevButtonEntity, self.GuidePrevText, self.GuideButtonFontSize)
+        self:ApplyTextStyleClient(self._T.NextButtonEntity, self.GuideNextText, self.GuideButtonFontSize)
+        self:ApplyTextStyleClient(self._T.GuideTitleEntity, self.GuideTitleText, self.GuideTitleFontSize)
+
+        if self._T.PageIndicatorEntity ~= nil and isvalid(self._T.PageIndicatorEntity) == true then
+            if self._T.PageIndicatorEntity.TextComponent ~= nil then
+                pcall(function()
+                    self._T.PageIndicatorEntity.TextComponent.FontSize = self.GuideHintFontSize
+                    if self.UsePageHintText == true then
+                        self._T.PageIndicatorEntity.TextComponent.Text = self.PageHintText
+                    end
+                end)
+            end
+        end
+    end
+
+    -- Writes anchored position/size directly so panel and controls follow one deterministic frame.
+    @ExecSpace("ClientOnly")
+    method void ApplyRectLayoutClient(Entity targetEntity, Vector2 anchoredPos, Vector2 rectSize)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+        if targetEntity.UITransformComponent == nil then
+            return
+        end
+
+        local width = 0
+        local height = 0
+        if rectSize ~= nil then
+            width = math.max(0, rectSize.x)
+            height = math.max(0, rectSize.y)
+        end
+        local halfW = width * 0.5
+        local halfH = height * 0.5
+        local posX = 0
+        local posY = 0
+        if anchoredPos ~= nil then
+            posX = anchoredPos.x
+            posY = anchoredPos.y
+        end
+
+        local uiTransform = targetEntity.UITransformComponent
+        pcall(function()
+            uiTransform.Pivot = Vector2(0.5, 0.5)
+        end)
+        pcall(function()
+            uiTransform.anchoredPosition = Vector2(posX, posY)
+        end)
+        pcall(function()
+            uiTransform.OffsetMin = Vector2(-halfW, -halfH)
+        end)
+        pcall(function()
+            uiTransform.OffsetMax = Vector2(halfW, halfH)
+        end)
+    end
+
+    -- Text helper keeps button/title copy synchronized with the current preset profile.
+    @ExecSpace("ClientOnly")
+    method void ApplyTextStyleClient(Entity targetEntity, string textValue, integer fontSize)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return
+        end
+        if targetEntity.TextComponent == nil then
+            return
+        end
+
+        pcall(function()
+            targetEntity.TextComponent.Text = textValue
+        end)
+        if fontSize > 0 then
+            pcall(function()
+                targetEntity.TextComponent.FontSize = fontSize
+            end)
+        end
+    end
+
+    -- Lobby state resolver reads synced LobbyFlow flag and falls back to lobby-true for startup resilience.
+    @ExecSpace("ClientOnly")
+    method boolean ResolveLobbyStateClient()
+        local lobbyFlow = self:ResolveComponentSafe(self.Entity, "LobbyFlowComponent", "IsLobbyActive")
+        if lobbyFlow == nil then
+            return true
+        end
+
+        local readOk, readValue = pcall(function()
+            return lobbyFlow.IsLobbyActive
+        end)
+        if readOk == true and readValue ~= nil then
+            return (readValue == true)
+        end
+
+        return true
+    end
+
+    -- Shared path resolver centralizes invalid-path handling for all UI entities.
+    @ExecSpace("ClientOnly")
+    method Entity ResolveEntityByPath(string path)
+        if path == nil or path == "" then
+            return nil
+        end
+        local entity = _EntityService:GetEntityByPath(path)
+        if entity == nil or isvalid(entity) == false then
+            return nil
+        end
+        return entity
+    end
+
+    -- Page clamp keeps page navigation safe even if TotalPages is edited to invalid values.
+    method integer ClampPageIndex(integer pageIndex)
+        local maxPage = self:GetFinalTotalPages()
+        local value = math.floor(pageIndex)
+        if value < 1 then
+            return 1
+        end
+        if value > maxPage then
+            return maxPage
+        end
+        return value
+    end
+
+    -- Total-page helper enforces minimum two-page guide contract from current spec.
+    method integer GetFinalTotalPages()
+        local total = math.floor(self.TotalPages)
+        if total < 2 then
+            total = 2
+        end
+        return total
+    end
+
+    -- Utility bootstrap keeps component lookup behavior consistent with other GR components.
+    method void EnsureGRUtil()
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return
+        end
+
+        local utilComponent = nil
+        if self.Entity ~= nil and isvalid(self.Entity) == true then
+            utilComponent = self.Entity:GetComponent("script.GRUtilModule")
+            if utilComponent == nil then
+                utilComponent = self.Entity:GetComponent("GRUtilModule")
+            end
+            if utilComponent == nil then
+                local addOk1, addResult1 = pcall(function()
+                    return self.Entity:AddComponent("script.GRUtilModule")
+                end)
+                if addOk1 == true then
+                    utilComponent = addResult1
+                end
+            end
+            if utilComponent == nil then
+                local addOk2, addResult2 = pcall(function()
+                    return self.Entity:AddComponent("GRUtilModule")
+                end)
+                if addOk2 == true then
+                    utilComponent = addResult2
+                end
+            end
+        end
+
+        if utilComponent ~= nil and isvalid(utilComponent) == true then
+            local bootstrapOk, utilApi = pcall(function()
+                return utilComponent:BootstrapUtil()
+            end)
+            if bootstrapOk == true and utilApi ~= nil then
+                self._T.GRUtil = utilApi
+            end
+            if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+                return
+            end
+        end
+
+        self._T.UseGRUtilFallback = true
+    end
+
+    -- Safe component resolver first uses shared util then falls back to local dual-name lookup.
+    method any ResolveComponentSafe(Entity targetEntity, string scriptName, string markerField)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.ResolveComponent ~= nil then
+            return self._T.GRUtil.ResolveComponent(targetEntity, scriptName, markerField)
+        end
+
+        local prefixedName = scriptName
+        local plainName = scriptName
+        if string.sub(scriptName, 1, 7) == "script." then
+            plainName = string.sub(scriptName, 8)
+        else
+            prefixedName = "script." .. scriptName
+        end
+
+        local component = targetEntity:GetComponent(prefixedName)
+        if component == nil then
+            component = targetEntity:GetComponent(plainName)
+        end
+        if component == nil then
+            return nil
+        end
+
+        if markerField ~= nil and markerField ~= "" then
+            local ok, _ = pcall(function()
+                return component[markerField]
+            end)
+            if ok == false then
+                return nil
+            end
+        end
+
+        return component
+    end
+end

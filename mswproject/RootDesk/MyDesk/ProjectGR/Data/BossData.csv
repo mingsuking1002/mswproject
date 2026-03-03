@@ -1,6 +1,6 @@
 ﻿id,collider_w,collider_h,collider_offset_x,collider_offset_y,name,mon_type,model_type,mon_hp,mon_atk,mon_spd,spawn_stage,spawn_time,atk_interval,summon_id,creep_score,drop_id,sprite_ruid,sound_ruid,death_effect_ruid,-copy20,-copy21,-copy22,-copy23,-copy24
-mon_b001,0,0,0,0,중간보스,boss,model://a0410f26-ba65-483b-88f8-164fd6dc1163,40000,50,0,1,14,6,mon_n007,40000,boss_drop01,85f81e86b059408594ad82d5cd70914d,71d2fb5c9fcf4b71adc834c47f98416b,cb316c3624f04c11b14fd26e57f1c363,,BossData자료형 정의,,,
-mon_b002,0,0,0,0,보스,boss,model://c46364cd-d32f-47bb-a97e-5d2ef484dacc,500000,60,0,2,14,3,mon_n014,500000,boss_drop02,f1638f90a7f54db68205b733f1d8197a,dce8ae67d2dc4cce93f9023e1497d4ca,4c8fb12bdead4c92bba66ad0261278cc,,컬럼명,역할,자료형,설명
+mon_b001,0,0,0,0,중간보스,boss,model://a0410f26-ba65-483b-88f8-164fd6dc1163,40000,50,0,1,14,6,mon_n005,40000,boss_drop01,85f81e86b059408594ad82d5cd70914d,71d2fb5c9fcf4b71adc834c47f98416b,cb316c3624f04c11b14fd26e57f1c363,,BossData자료형 정의,,,
+mon_b002,0,0,0,0,보스,boss,model://c46364cd-d32f-47bb-a97e-5d2ef484dacc,500000,60,0,2,14,3,mon_n012,500000,boss_drop02,f1638f90a7f54db68205b733f1d8197a,dce8ae67d2dc4cce93f9023e1497d4ca,4c8fb12bdead4c92bba66ad0261278cc,,컬럼명,역할,자료형,설명
 ,,,,,,,,,,,,,,,,,,,,,id,몬스터 테이블 키,STRING,
 ,,,,,,,,,,,,,,,,,,,,,name,몬스터 테이블 이름,STRING,
 ,,,,,,,,,,,,,,,,,,,,,mon_type,몬스터 타입,ERUM,

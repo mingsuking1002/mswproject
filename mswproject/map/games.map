@@ -208,7 +208,7 @@
       {
         "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
         "path": "/maps/games/LobbyBootstrap",
-        "componentNames": "MOD.Core.TransformComponent,script.Map01BootstrapComponent",
+        "componentNames": "MOD.Core.TransformComponent,script.Map01BootstrapComponent,script.ControlsGuideComponent",
         "jsonString": {
           "name": "LobbyBootstrap",
           "path": "/maps/games/LobbyBootstrap",
@@ -266,6 +266,11 @@
               "CenterSpawnTileCountX": 200,
               "CenterSpawnTileCountY": 200,
               "ApplyCenterSpawnOncePerUser": true
+            },
+            {
+              "@type": "script.ControlsGuideComponent",
+              "Enable": true,
+              "ApplyPresetLayout": false
             }
           ],
           "@version": 1
@@ -475,7 +480,7 @@
               "OrderInLayer": 0,
               "RenderSetting": 0,
               "SortingLayer": "Default",
-              "SpriteRUID": "dfa2ad99cdbe4e718eaf36d604739688",
+              "SpriteRUID": "72dad7c5cf6c4636a5d60331857c09c6",
               "StartFrameIndex": 0,
               "Color": {
                 "r": 1.0,
@@ -556,7 +561,7 @@
               "OrderInLayer": 0,
               "RenderSetting": 0,
               "SortingLayer": "Default",
-              "SpriteRUID": "dfa2ad99cdbe4e718eaf36d604739688",
+              "SpriteRUID": "72dad7c5cf6c4636a5d60331857c09c6",
               "StartFrameIndex": 0,
               "Color": {
                 "r": 1.0,
@@ -637,7 +642,7 @@
               "OrderInLayer": 0,
               "RenderSetting": 0,
               "SortingLayer": "Default",
-              "SpriteRUID": "dfa2ad99cdbe4e718eaf36d604739688",
+              "SpriteRUID": "72dad7c5cf6c4636a5d60331857c09c6",
               "StartFrameIndex": 0,
               "Color": {
                 "r": 1.0,
@@ -718,7 +723,7 @@
               "OrderInLayer": 0,
               "RenderSetting": 0,
               "SortingLayer": "Default",
-              "SpriteRUID": "dfa2ad99cdbe4e718eaf36d604739688",
+              "SpriteRUID": "72dad7c5cf6c4636a5d60331857c09c6",
               "StartFrameIndex": 0,
               "Color": {
                 "r": 1.0,

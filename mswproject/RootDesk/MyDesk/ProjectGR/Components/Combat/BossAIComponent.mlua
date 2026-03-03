@@ -72,11 +72,12 @@ script BossAIComponent extends Component
             return
         end
 
-        local playerPos3 = ownerPlayer.TransformComponent.WorldPosition
-        if playerPos3 == nil then
+        local bossPos3 = self.Entity.TransformComponent.WorldPosition
+        if bossPos3 == nil then
             return
         end
-        local spawnPos = self:CalcViewportSpawnPosition(playerPos3)
+        -- Spawn at boss world position so summoned monsters look like they are thrown toward the player.
+        local spawnPos = Vector3(bossPos3.x, bossPos3.y, bossPos3.z)
 
         local row = nil
         if spawnComponent.GetMonsterRowByIdServer ~= nil then
@@ -162,16 +163,6 @@ script BossAIComponent extends Component
         end
 
         self._T.SummonedMonsters = nextList
-    end
-
-    method Vector3 CalcViewportSpawnPosition(Vector3 playerPos)
-        local angle = math.random() * 2 * math.pi
-        local radius = 8
-        return Vector3(
-            playerPos.x + (math.cos(angle) * radius),
-            playerPos.y + (math.sin(angle) * radius),
-            playerPos.z
-        )
     end
 
     -- Player resolver uses same-map owner entity so boss AI targets current run player only.

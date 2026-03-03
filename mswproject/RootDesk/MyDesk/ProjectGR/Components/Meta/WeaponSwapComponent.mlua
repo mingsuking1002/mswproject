@@ -68,7 +68,7 @@ script WeaponSwapComponent extends Component
 
     property boolean PauseGameplayByFlag = true
     property boolean UseClientTimeScalePause = false
-    property boolean CancelReloadOnSwap = true
+    property boolean CancelReloadOnSwap = false
     property integer DefaultAmmo = 30
     property integer DefaultDamage = 10
     property number DefaultFireCooldown = 0.5
