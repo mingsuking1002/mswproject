@@ -27,13 +27,13 @@ script GRInventoryComponent extends Component
         self:LoadItemDataServer()
     end
 
-    -- E key requests server-authoritative potion consume.
+    -- Q key requests server-authoritative potion consume.
     @EventSender("Service", "InputService")
     handler HandleKeyDownEvent(KeyDownEvent event)
         if event == nil then
             return
         end
-        if event.key ~= KeyboardKey.E then
+        if event.key ~= KeyboardKey.Q then
             return
         end
         self:RequestUsePotionServer()

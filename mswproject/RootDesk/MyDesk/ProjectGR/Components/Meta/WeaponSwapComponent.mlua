@@ -106,7 +106,7 @@ script WeaponSwapComponent extends Component
         self._T.PendingSlotClient = self.CurrentWeaponSlot
     end
 
-    -- F toggles the menu, ESC cancels, and direction/space confirm follows the radial-selection intent.
+    -- E toggles the menu, ESC cancels, and direction/space confirm follows the radial-selection intent.
     @EventSender("Service", "InputService")
     handler HandleKeyDownEvent(KeyDownEvent event)
         local key = event.key

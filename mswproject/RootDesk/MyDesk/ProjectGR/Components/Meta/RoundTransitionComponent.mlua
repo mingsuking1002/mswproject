@@ -16,13 +16,13 @@ script RoundTransitionComponent extends Component
         self._T.IsTransitioning = false
     end
 
-    -- F key only requests transition; authoritative validation stays on server method.
+    -- E key only requests transition; authoritative validation stays on server method.
     @EventSender("Service", "InputService")
     handler HandleKeyDownEvent(KeyDownEvent event)
         if event == nil then
             return
         end
-        if event.key ~= KeyboardKey.F then
+        if event.key ~= KeyboardKey.E then
             return
         end
 

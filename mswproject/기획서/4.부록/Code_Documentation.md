@@ -3814,6 +3814,98 @@
 |---|---|---|---|
 | `-` | `-` | 데이터 파일이므로 함수 없음 |
 
+## 2026-03-03 Key Remapping (Tab/Q/E)
+
+## [TagManagerComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/TagManagerComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/TagManagerComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `-` | `-` | 프로퍼티 변경 없음 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `HandleKeyDownEvent` | `event: KeyDownEvent` | `void` | 태그 입력 키를 `Q`에서 `Tab`으로 변경 |
+
+## [GRInventoryComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/GRInventoryComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/GRInventoryComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `-` | `-` | 프로퍼티 변경 없음 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `HandleKeyDownEvent` | `event: KeyDownEvent` | `void` | 포션 입력 키를 `E`에서 `Q`로 변경 |
+
+## [WeaponSwapComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `-` | `-` | 프로퍼티 변경 없음 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `HandleKeyDownEvent` | `event: KeyDownEvent` | `void` | 무기교체 메뉴 토글 키를 `F`에서 `E`로 변경 (`ESC` 종료 유지) |
+
+## [ShopManagerComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/ShopManagerComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/ShopManagerComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `-` | `-` | 프로퍼티 변경 없음 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `HandleKeyDownEvent` | `event: KeyDownEvent` | `void` | 상점 오픈 입력 키를 `F`에서 `E`로 변경 (`ESC` 종료 유지) |
+
+## [RoundTransitionComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/RoundTransitionComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/RoundTransitionComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `-` | `-` | 프로퍼티 변경 없음 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `HandleKeyDownEvent` | `event: KeyDownEvent` | `void` | 포탈 상호작용 입력 키를 `F`에서 `E`로 변경 |
+
+## [RankingUIComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/UI/RankingUIComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/UI/RankingUIComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `-` | `-` | 프로퍼티 변경 없음 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `HandleKeyDownEvent` | `event: KeyDownEvent` | `void` | `Tab` 기반 랭킹 탭 토글 핸들러 제거 (탭 전환은 UI 버튼 전용) |
+
 ## 2026-03-03 GRMagazineText 보유량 표시 보정
 
 ## [InGameHUDComponent]

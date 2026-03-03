@@ -90,10 +90,10 @@ script TagManagerComponent extends Component
         self:NotifyTagChangedClient(1)
     end
 
-    -- Q requests server-authoritative tag swap; all swap decisions stay on server.
+    -- Tab requests server-authoritative tag swap; all swap decisions stay on server.
     @EventSender("Service", "InputService")
     handler HandleKeyDownEvent(KeyDownEvent event)
-        if event.key ~= KeyboardKey.Q then
+        if event.key ~= KeyboardKey.Tab then
             return
         end
 

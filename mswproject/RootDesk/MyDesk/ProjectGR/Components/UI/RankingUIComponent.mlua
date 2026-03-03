@@ -79,29 +79,6 @@ script RankingUIComponent extends Component
         self:RefreshRankingUIClient()
     end
 
-    -- Optional tab toggle key for quick mode switch while testing ranking layout.
-    @EventSender("Service", "InputService")
-    handler HandleKeyDownEvent(KeyDownEvent event)
-        if event == nil then
-            return
-        end
-        if event.key ~= KeyboardKey.Tab then
-            return
-        end
-
-        local nextTab = 2
-        if self.CurrentTab == 2 then
-            nextTab = 1
-        end
-
-        if self._T.IsLobbyState == true and self._T.IsRankingPanelOpen == true then
-            self:OpenRankingPanelClient(nextTab)
-            return
-        end
-
-        self:SetCurrentTabClient(nextTab)
-    end
-
     -- Explicit tab setter keeps tab normalization and refresh side effects centralized.
     @ExecSpace("ClientOnly")
     method void SetCurrentTabClient(integer tab)
