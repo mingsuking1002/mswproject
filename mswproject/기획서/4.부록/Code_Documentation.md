@@ -4294,3 +4294,18 @@
 | 함수명 | 파라미터 | 리턴값 | 설명 |
 |---|---|---|---|
 | `OnBossDefeatedServer` | `deathPos: Vector3` | `void` | Stage1: 포탈 생성 대신 `ExecuteStageTransitionServer()` 즉시 호출, Stage2+: `FinalizeNormalClearServer()`로 즉시 게임 종료/결과/로비 복귀 흐름 사용 |
+
+## [WeaponSwapComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `Weapon*_Data.Ammo` | integer | 슬롯 스냅샷 시점 탄약(캡처값) |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `ApplySlotDataToCombat` | `slot: integer` | `void` | 슬롯 복원 시 `ReloadComponent._T.AmmoBySlot[slot]` 최신값이 캡처 탄약보다 크면 최신값을 우선 적용해 백그라운드 재장전 완료 탄약 보존 |

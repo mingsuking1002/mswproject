@@ -1219,7 +1219,23 @@ script WeaponSwapComponent extends Component
                 reloadComponent:SetCurrentWeaponSlot(finalSlot)
             end)
             pcall(function()
-                reloadComponent:SetSlotAmmo(finalSlot, data.Ammo)
+                local liveAmmo = nil
+                if reloadComponent._T ~= nil and reloadComponent._T.AmmoBySlot ~= nil then
+                    liveAmmo = reloadComponent._T.AmmoBySlot[finalSlot]
+                end
+
+                local savedAmmo = tonumber(data.Ammo)
+                if savedAmmo == nil then
+                    savedAmmo = 0
+                end
+                savedAmmo = math.max(0, math.floor(savedAmmo))
+
+                local liveAmmoValue = tonumber(liveAmmo)
+                if liveAmmoValue ~= nil and liveAmmoValue > savedAmmo then
+                    reloadComponent:SetSlotAmmo(finalSlot, math.max(0, math.floor(liveAmmoValue)))
+                else
+                    reloadComponent:SetSlotAmmo(finalSlot, savedAmmo)
+                end
             end)
             pcall(function()
                 reloadComponent.ReloadTime = data.ReloadTime
