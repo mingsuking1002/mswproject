@@ -644,7 +644,7 @@ script MovementComponent extends Component
                 if deadState == nil or deadState == "" then
                     deadState = "DEAD"
                 end
-                self:TryChangeStateSafely(stateComponent, deadState)
+                self:TryChangeStateSafely(stateComponent, deadState, false)
                 return
             end
         end
@@ -654,7 +654,7 @@ script MovementComponent extends Component
             targetState = self.MoveStateName
         end
 
-        self:TryChangeStateSafely(stateComponent, targetState)
+        self:TryChangeStateSafely(stateComponent, targetState, false)
     end
 
     -- Client-side state refresh keeps Avatar animation visible even if server-driven state replication lags.

@@ -1181,7 +1181,7 @@ script WeaponModelComponent extends Component
             if self.DisableAutoSpawnAfterModelMissing == true then
                 self._T.WeaponHolderAutoSpawnDisabled = true
             end
-            self:LogSwapWarning("EnsureWeaponHolderChildServer failed. primary=", primaryModelId, ", fallback=", fallbackModelId)
+            self:LogSwapWarning("EnsureWeaponHolderChildServer failed. primary=", primaryModelId, ", fallback=", fallbackModelId, "")
             return
         end
 

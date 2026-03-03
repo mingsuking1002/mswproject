@@ -1,0 +1,142 @@
+@Component
+script BGMManagerComponent extends Component
+
+    property string BGMRuid = ""
+    property number BGMVolume = 0.5
+    property boolean BGMLoop = true
+    property boolean AutoPlayOnStart = true
+    property number BGMLoopInterval = 60.0
+
+    -- Client starts BGM playback only when auto-play is enabled.
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self._T.BGMLoopTimerId = 0
+        if self.AutoPlayOnStart == true then
+            self:PlayBGM()
+        end
+    end
+
+    -- Public play API can be called by gameplay flow (e.g. resume from pause state).
+    @ExecSpace("ClientOnly")
+    method void PlayBGM()
+        local soundRuid = self:NormalizeSoundRuid(self.BGMRuid)
+        if soundRuid == "" then
+            self:StopLoopFallbackTimerClient()
+            return
+        end
+
+        local volume = tonumber(self.BGMVolume)
+        if volume == nil then
+            volume = 0.5
+        end
+        volume = math.max(0, volume)
+
+        self:StopLoopFallbackTimerClient()
+
+        local playedWithLoop = false
+        if self.BGMLoop == true then
+            local loopOk, _ = pcall(function()
+                _SoundService:PlayBGM(soundRuid, volume)
+            end)
+            if loopOk == true then
+                playedWithLoop = true
+            end
+        end
+
+        if playedWithLoop ~= true then
+            pcall(function()
+                _SoundService:PlayBGM(soundRuid, volume)
+            end)
+        end
+
+        if self.BGMLoop == true and playedWithLoop ~= true then
+            self:StartLoopFallbackTimerClient(soundRuid, volume)
+        end
+    end
+
+    -- Public stop API is safe to call repeatedly.
+    @ExecSpace("ClientOnly")
+    method void StopBGM()
+        self:StopLoopFallbackTimerClient()
+
+        if _SoundService.StopBGM ~= nil then
+            pcall(function()
+                _SoundService:StopBGM(true)
+            end)
+        end
+    end
+
+    -- Fallback timer replays BGM when the engine build does not support explicit loop flag.
+    @ExecSpace("ClientOnly")
+    method void StartLoopFallbackTimerClient(string soundRuid, number volume)
+        self:StopLoopFallbackTimerClient()
+        if self.BGMLoop ~= true then
+            return
+        end
+
+        local interval = tonumber(self.BGMLoopInterval)
+        if interval == nil or interval <= 0 then
+            interval = 60.0
+        end
+
+        local replay = function()
+            if self.Entity == nil or isvalid(self.Entity) == false then
+                self:StopLoopFallbackTimerClient()
+                return
+            end
+            if self.BGMLoop ~= true then
+                self:StopLoopFallbackTimerClient()
+                return
+            end
+
+            pcall(function()
+                _SoundService:PlayBGM(soundRuid, volume)
+            end)
+        end
+
+        self._T.BGMLoopTimerId = _TimerService:SetTimerRepeat(replay, interval, 0)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void StopLoopFallbackTimerClient()
+        if self._T.BGMLoopTimerId ~= nil and self._T.BGMLoopTimerId > 0 then
+            _TimerService:ClearTimer(self._T.BGMLoopTimerId)
+            self._T.BGMLoopTimerId = 0
+        end
+    end
+
+    method string NormalizeSoundRuid(string rawValue)
+        if rawValue == nil then
+            return ""
+        end
+
+        local text = tostring(rawValue)
+        text = string.gsub(text, "^%s+", "")
+        text = string.gsub(text, "%s+$", "")
+        text = string.lower(text)
+        if text == "" then
+            return ""
+        end
+        if text == "-" or text == "null" or text == "nil" then
+            return ""
+        end
+
+        local soundPrefix = "sound://"
+        if string.sub(text, 1, #soundPrefix) == soundPrefix then
+            text = string.sub(text, #soundPrefix + 1)
+        end
+
+        return text
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        self:StopBGM()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnDestroy()
+        self:StopBGM()
+    end
+
+end

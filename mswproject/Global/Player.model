@@ -40,7 +40,8 @@
         "script.FireSystemComponent",
         "script.ReloadComponent",
         "script.WeaponModelComponent",
-        "MOD.Core.PhysicsColliderComponent"
+        "MOD.Core.PhysicsColliderComponent",
+        "script.BGMComponent"
       ],
       "Properties": [
         {
@@ -615,6 +616,15 @@
             "type": "System.Single, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
           },
           "Value": 80.0
+        },
+        {
+          "TargetType": "script.BGMComponent",
+          "Name": "BGMRuid",
+          "ValueType": {
+            "$type": "MODNativeType",
+            "type": "System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+          },
+          "Value": "66d6b9caf0c04f81826294744d6477bc"
         }
       ],
       "EventLinks": [],

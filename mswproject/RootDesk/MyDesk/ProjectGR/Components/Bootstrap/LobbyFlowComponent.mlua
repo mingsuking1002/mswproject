@@ -131,20 +131,20 @@ script LobbyFlowComponent extends Component
             return
         end
 
-        local targetUserId = requestUserId
-        if targetUserId == nil or targetUserId == "" then
-            targetUserId = self:GetOwnerUserId()
+        local inGameUserId = requestUserId
+        if inGameUserId == nil or inGameUserId == "" then
+            inGameUserId = self:GetOwnerUserId()
         end
 
-        log("[LobbyFlow] Start request accepted. userId=", targetUserId, ", map=", self.InGameMapName)
-        self:BeginInGameStateServer(targetUserId)
+        log("[LobbyFlow] Start request accepted. userId=", inGameUserId, ", map=", self.InGameMapName)
+        self:BeginInGameStateServer(inGameUserId)
     end
 
     -- Start transition always enters in-game state first, then attempts map move when user id is available.
     @ExecSpace("ServerOnly")
-    method void BeginInGameStateServer(string targetUserId)
+    method void BeginInGameStateServer(string inGameUserId)
         if self.EnableDebugLogs == true then
-            log("[LobbyFlow][DEBUG] BeginInGameStateServer called. targetUserId=", targetUserId)
+            log("[LobbyFlow][DEBUG] BeginInGameStateServer called. inGameUserId=", inGameUserId)
         end
 
         self:PrepareRunStartStateServer()
@@ -153,19 +153,19 @@ script LobbyFlowComponent extends Component
         self:TryStartRunTimerServer()
         self:TryResumeMonsterSpawnServer()
 
-        if targetUserId == nil or targetUserId == "" then
+        if inGameUserId == nil or inGameUserId == "" then
             self:TryResetRunStartPositionServer()
             log_warning("[LobbyFlow] Start request has empty user id. Applied in-game state without map move.")
             return
         end
 
-        local moved = self:MoveUserToInGameMapByUserId(targetUserId)
+        local moved = self:MoveUserToInGameMapByUserId(inGameUserId)
         if moved ~= true then
-            log_warning("[LobbyFlow] In-game map move failed. Keeping in-game state on current map. userId=", targetUserId, ", map=", self.InGameMapName)
+            log_warning("[LobbyFlow] In-game map move failed. Keeping in-game state on current map. userId=", inGameUserId, ", map=", self.InGameMapName)
         else
             self:TryResetRunStartPositionServer()
             if self.EnableDebugLogs == true then
-                log("[LobbyFlow][DEBUG] In-game map move success. userId=", targetUserId, ", map=", self.InGameMapName)
+                log("[LobbyFlow][DEBUG] In-game map move success. userId=", inGameUserId, ", map=", self.InGameMapName)
             end
         end
     end

@@ -24,6 +24,10 @@ script FireSystemComponent extends Component
     @Sync
     property string CurrentWeaponId = ""
     @Sync
+    property string CurrentFireSoundRuid = ""
+    @Sync
+    property number CurrentFireSoundVolume = 1.0
+    @Sync
     property string CurrentFireType = "projectile"
     property string CurrentProjectileType = "single_projectile"
     property string CurrentProjectileId = ""
@@ -142,6 +146,7 @@ script FireSystemComponent extends Component
             return
         end
 
+        self:TryPlayFireSoundServer(Vector3(shooterPosition2D.x, shooterPosition2D.y, 0))
         self:NotifyPassiveProjectileFiredServer()
         self:NotifyWeaponExpGainServer(self.CurrentWeaponId, 1)
         self:StartFireCooldown()
@@ -1217,6 +1222,111 @@ script FireSystemComponent extends Component
         local passiveMultiplier = 1 + (self.PassiveIncreasePercent * 0.01)
         local finalDamage = baseDamage * buffMultiplier * passiveMultiplier
         return math.max(math.floor(finalDamage), 0)
+    end
+
+    -- Fire sound is server-triggered and dispatched per user to keep anti-cheat authority while preserving local playback.
+    @ExecSpace("ServerOnly")
+    method void TryPlayFireSoundServer(Vector3 soundPosition)
+        local soundRuid = self:NormalizeSoundRuid(self.CurrentFireSoundRuid)
+        if soundRuid == "" then
+            return
+        end
+
+        local volume = tonumber(self.CurrentFireSoundVolume)
+        if volume == nil then
+            volume = 1.0
+        end
+        volume = math.max(0, volume)
+        if volume <= 0 then
+            return
+        end
+
+        local playbackPosition = soundPosition
+        if playbackPosition == nil then
+            local worldPos = self.Entity.TransformComponent.WorldPosition
+            if worldPos ~= nil then
+                playbackPosition = Vector3(worldPos.x, worldPos.y, worldPos.z)
+            else
+                playbackPosition = Vector3(0, 0, 0)
+            end
+        end
+
+        local users = _UserService.UserEntities
+        if users == nil then
+            local listener = self.Entity
+            local playedAtPos = false
+            local playAtPosOk, _ = pcall(function()
+                _SoundService:PlaySoundAtPos(soundRuid, playbackPosition, listener, volume)
+            end)
+            if playAtPosOk == true then
+                playedAtPos = true
+            end
+            if playedAtPos ~= true then
+                pcall(function()
+                    _SoundService:PlaySound(soundRuid, volume)
+                end)
+            end
+            return
+        end
+
+        for userId, userEntity in pairs(users) do
+            if userId == nil or tostring(userId) == "" then
+                continue
+            end
+
+            local listener = userEntity
+            if listener == nil or isvalid(listener) == false then
+                listener = self.Entity
+            end
+
+            local playedAtPos = false
+            local playAtPosOk, _ = pcall(function()
+                _SoundService:PlaySoundAtPos(soundRuid, playbackPosition, listener, volume, tostring(userId))
+            end)
+            if playAtPosOk == true then
+                playedAtPos = true
+            end
+            if playedAtPos ~= true then
+                pcall(function()
+                    _SoundService:PlaySound(soundRuid, volume, tostring(userId))
+                end)
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SetCurrentFireSoundServer(string soundRuid, number volume)
+        self.CurrentFireSoundRuid = self:NormalizeSoundRuid(soundRuid)
+
+        local parsedVolume = tonumber(volume)
+        if parsedVolume == nil then
+            parsedVolume = 1.0
+        end
+        self.CurrentFireSoundVolume = math.max(0, parsedVolume)
+    end
+
+    method string NormalizeSoundRuid(string rawValue)
+        if rawValue == nil then
+            return ""
+        end
+
+        local text = tostring(rawValue)
+        text = string.gsub(text, "^%s+", "")
+        text = string.gsub(text, "%s+$", "")
+        text = string.lower(text)
+        if text == "" then
+            return ""
+        end
+        if text == "-" or text == "null" or text == "nil" then
+            return ""
+        end
+
+        local soundPrefix = "sound://"
+        if string.sub(text, 1, #soundPrefix) == soundPrefix then
+            text = string.sub(text, #soundPrefix + 1)
+        end
+
+        return text
     end
 
     -- Passive heal-on-hit hook is emitted only for successful fire events to match gameplay design intent.

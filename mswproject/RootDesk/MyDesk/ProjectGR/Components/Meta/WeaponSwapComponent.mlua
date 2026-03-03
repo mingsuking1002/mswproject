@@ -457,6 +457,21 @@ script WeaponSwapComponent extends Component
             data.ReloadTime = reloadTime
         end
 
+        local fireSoundRuid = self:GetRowString(row, "firesoundruid", "")
+        if fireSoundRuid == "" then
+            fireSoundRuid = self:GetRowString(row, "fire_sound_ruid", "")
+        end
+        data.FireSoundRuid = fireSoundRuid
+
+        local fireSoundVolume = self:GetRowNumber(row, "firesoundvolume", -1)
+        if fireSoundVolume < 0 then
+            fireSoundVolume = self:GetRowNumber(row, "fire_sound_volume", -1)
+        end
+        if fireSoundVolume < 0 then
+            fireSoundVolume = 1.0
+        end
+        data.FireSoundVolume = math.max(0, fireSoundVolume)
+
         if self:GetRowString(row, "start_level", "") == "" then
             self:WarnMissingRequiredColumnOnce(self.WeaponDataTableName, "start_level", data.WeaponId, "")
         end
@@ -715,6 +730,12 @@ script WeaponSwapComponent extends Component
         if data.SmiteVisualLifetime == nil then
             data.SmiteVisualLifetime = 0.35
         end
+        if data.FireSoundRuid == nil then
+            data.FireSoundRuid = ""
+        end
+        if data.FireSoundVolume == nil then
+            data.FireSoundVolume = 1.0
+        end
         if data.SpriteRuidOverride == nil then
             data.SpriteRuidOverride = ""
         end
@@ -736,6 +757,12 @@ script WeaponSwapComponent extends Component
             parsedSmiteLifetime = 0.35
         end
         data.SmiteVisualLifetime = parsedSmiteLifetime
+
+        local parsedFireSoundVolume = tonumber(data.FireSoundVolume)
+        if parsedFireSoundVolume == nil or parsedFireSoundVolume < 0 then
+            parsedFireSoundVolume = 1.0
+        end
+        data.FireSoundVolume = parsedFireSoundVolume
 
         return data
     end
@@ -915,6 +942,20 @@ script WeaponSwapComponent extends Component
             end)
             if turretModelOk == true and turretModelValue ~= nil then
                 data.TurretModelId = tostring(turretModelValue)
+            end
+
+            local fireSoundRuidOk, fireSoundRuidValue = pcall(function()
+                return fireComponent.CurrentFireSoundRuid
+            end)
+            if fireSoundRuidOk == true and fireSoundRuidValue ~= nil then
+                data.FireSoundRuid = tostring(fireSoundRuidValue)
+            end
+
+            local fireSoundVolumeOk, fireSoundVolumeValue = pcall(function()
+                return fireComponent.CurrentFireSoundVolume
+            end)
+            if fireSoundVolumeOk == true and fireSoundVolumeValue ~= nil then
+                data.FireSoundVolume = math.max(0, tonumber(fireSoundVolumeValue) or data.FireSoundVolume)
             end
         end
 
@@ -1119,6 +1160,14 @@ script WeaponSwapComponent extends Component
                 fireComponent.CurrentTurretModelId = tostring(data.TurretModelId)
             end)
             pcall(function()
+                if fireComponent.SetCurrentFireSoundServer ~= nil then
+                    fireComponent:SetCurrentFireSoundServer(tostring(data.FireSoundRuid), data.FireSoundVolume)
+                else
+                    fireComponent.CurrentFireSoundRuid = tostring(data.FireSoundRuid)
+                    fireComponent.CurrentFireSoundVolume = math.max(0, tonumber(data.FireSoundVolume) or 1.0)
+                end
+            end)
+            pcall(function()
                 if fireComponent.BuildCurrentCooldownKeyServer ~= nil and
                     fireComponent.EnsureCooldownStateServer ~= nil and
                     fireComponent.ResolveCurrentCooldownDurationServer ~= nil then
@@ -1243,6 +1292,14 @@ script WeaponSwapComponent extends Component
             end)
             pcall(function()
                 fireComponent.CurrentTurretModelId = tostring(data.TurretModelId)
+            end)
+            pcall(function()
+                if fireComponent.SetCurrentFireSoundServer ~= nil then
+                    fireComponent:SetCurrentFireSoundServer(tostring(data.FireSoundRuid), data.FireSoundVolume)
+                else
+                    fireComponent.CurrentFireSoundRuid = tostring(data.FireSoundRuid)
+                    fireComponent.CurrentFireSoundVolume = math.max(0, tonumber(data.FireSoundVolume) or 1.0)
+                end
             end)
             pcall(function()
                 if fireComponent.SyncCooldownStateForCurrentWeaponServer ~= nil then

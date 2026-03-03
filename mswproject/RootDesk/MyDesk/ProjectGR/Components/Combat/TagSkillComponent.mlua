@@ -230,7 +230,7 @@ script TagSkillComponent extends Component
     end
 
     @ExecSpace("ServerOnly")
-    method table ResolveBuffTypeAndValueServer(string skillId, table skillRow)
+    method any ResolveBuffTypeAndValueServer(string skillId, table skillRow)
         if skillRow == nil then
             return "", 0
         end

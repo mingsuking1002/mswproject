@@ -1,4 +1,4 @@
-# 🟡 대기중
+# 🟢 완료
 
 ---
 
@@ -9,12 +9,14 @@
 | 일시 | 상태 |
 |---|---|
 | 2026-03-03 | 🟡 대기중 |
+| 2026-03-03 | 🔵 진행중 |
+| 2026-03-03 | 🟢 완료 |
 
 ---
 
 ## 1. 개요
 
-① **무기 발사 사운드**: WeaponData에 `fire_sound_ruid` 컬럼 추가, 발사 시 해당 사운드 재생.
+① **무기 발사 사운드**: WeaponData에 `firesoundruid` 컬럼 추가, 발사 시 해당 사운드 재생.
 ② **게임 BGM**: Property로 RUID 설정 가능, 게임 시작 시 루프 재생.
 
 ---
@@ -22,8 +24,8 @@
 ## 2. 수정 대상 파일
 
 ### ① [MODIFY] WeaponData.csv
-- 신규 컬럼: `fire_sound_ruid` (STRING) — 무기별 발사 사운드 RUID
-- 신규 컬럼: `fire_sound_volume` (FLOAT, 기본 1.0) — 볼륨 (선택)
+- 신규 컬럼: `firesoundruid` (STRING) — 무기별 발사 사운드 RUID
+- 신규 컬럼: `firesoundvolume` (FLOAT, 기본 1.0) — 볼륨 (선택)
 
 ### ② [MODIFY] FireSystemComponent.mlua
 **Execution Space:** [둘 다] — 사운드 재생은 Client, 사운드 RUID 결정은 Server
@@ -37,11 +39,11 @@
 - `PlayFireSoundClient`: `_SoundService:PlaySound(self.CurrentFireSoundRuid, self.CurrentFireSoundVolume, userId)` 실행
 
 **WeaponData 로드 연동:**
-- `WeaponSwapComponent.ApplyWeaponDataToFireServer()` 내에서 `fire_sound_ruid` 읽어서 `FireSystemComponent.CurrentFireSoundRuid`에 설정
+- `WeaponSwapComponent.ApplyWeaponDataToFireServer()` 내에서 `firesoundruid` 읽어서 `FireSystemComponent.CurrentFireSoundRuid`에 설정
 
 ### ③ [MODIFY] WeaponSwapComponent.mlua
-- `ApplyWeaponDataToFireServer()` 또는 무기 장착 시 WeaponData row에서 `fire_sound_ruid` 읽기
-- `fireComponent.CurrentFireSoundRuid = row:GetItem("fire_sound_ruid")`
+- `ApplyWeaponDataToFireServer()` 또는 무기 장착 시 WeaponData row에서 `firesoundruid` 읽기
+- `fireComponent.CurrentFireSoundRuid = row:GetItem("firesoundruid")`
 
 ### ④ [NEW] BGMManagerComponent.mlua
 **Execution Space:** [Client Only]
@@ -69,7 +71,7 @@
 
 | 컴포넌트 | 연동 방식 |
 |---|---|
-| WeaponSwapComponent | WeaponData row → `fire_sound_ruid` 읽어서 FireSystem에 설정 |
+| WeaponSwapComponent | WeaponData row → `firesoundruid` 읽어서 FireSystem에 설정 |
 | FireSystemComponent | 발사 성공 시 사운드 재생 RPC |
 | GameTimerComponent | PauseGame 시 BGM 정지, ResumeGame 시 재시작 (선택) |
 

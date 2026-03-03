@@ -1,0 +1,33 @@
+{
+  "Id": "",
+  "GameId": "",
+  "EntryKey": "codeblock://fb1a1beb-60d2-4320-bdca-148eeb9f84ed",
+  "ContentType": "x-mod/codeblock",
+  "Content": "",
+  "Usage": 0,
+  "UsePublish": 1,
+  "UseService": 0,
+  "CoreVersion": "26.1.0.0",
+  "StudioVersion": "",
+  "DynamicLoading": 0,
+  "ContentProto": {
+    "Use": "Json",
+    "Json": {
+      "CoreVersion": {
+        "Major": 0,
+        "Minor": 2
+      },
+      "ScriptVersion": {
+        "Major": 1,
+        "Minor": 1
+      },
+      "Description": "",
+      "Id": "cfa07f36-b683-489a-af37-7018b8fe9f84",
+      "Language": 1,
+      "Name": "BGMManagerComponent",
+      "Type": 1,
+      "Source": 1,
+      "Target": "@Component\nscript BGMManagerComponent extends Component\n\n    property string BGMRuid = \"\"\n    property number BGMVolume = 0.5\n    property boolean BGMLoop = true\n    property boolean AutoPlayOnStart = true\n    property number BGMLoopInterval = 60.0\n\n    -- Client starts BGM playback only when auto-play is enabled.\n    @ExecSpace(\"ClientOnly\")\n    method void OnBeginPlay()\n        self._T.BGMLoopTimerId = 0\n        if self.AutoPlayOnStart == true then\n            self:PlayBGM()\n        end\n    end\n\n    -- Public play API can be called by gameplay flow (e.g. resume from pause state).\n    @ExecSpace(\"ClientOnly\")\n    method void PlayBGM()\n        local soundRuid = self:NormalizeSoundRuid(self.BGMRuid)\n        if soundRuid == \"\" then\n            self:StopLoopFallbackTimerClient()\n            return\n        end\n\n        local volume = tonumber(self.BGMVolume)\n        if volume == nil then\n            volume = 0.5\n        end\n        volume = math.max(0, volume)\n\n        self:StopLoopFallbackTimerClient()\n\n        local playedWithLoop = false\n        if self.BGMLoop == true then\n            local loopOk, _ = pcall(function()\n                _SoundService:PlayBGM(soundRuid, volume)\n            end)\n            if loopOk == true then\n                playedWithLoop = true\n            end\n        end\n\n        if playedWithLoop ~= true then\n            pcall(function()\n                _SoundService:PlayBGM(soundRuid, volume)\n            end)\n        end\n\n        if self.BGMLoop == true and playedWithLoop ~= true then\n            self:StartLoopFallbackTimerClient(soundRuid, volume)\n        end\n    end\n\n    -- Public stop API is safe to call repeatedly.\n    @ExecSpace(\"ClientOnly\")\n    method void StopBGM()\n        self:StopLoopFallbackTimerClient()\n\n        if _SoundService.StopBGM ~= nil then\n            pcall(function()\n                _SoundService:StopBGM(true)\n            end)\n        end\n    end\n\n    -- Fallback timer replays BGM when the engine build does not support explicit loop flag.\n    @ExecSpace(\"ClientOnly\")\n    method void StartLoopFallbackTimerClient(string soundRuid, number volume)\n        self:StopLoopFallbackTimerClient()\n        if self.BGMLoop ~= true then\n            return\n        end\n\n        local interval = tonumber(self.BGMLoopInterval)\n        if interval == nil or interval <= 0 then\n            interval = 60.0\n        end\n\n        local replay = function()\n            if self.Entity == nil or isvalid(self.Entity) == false then\n                self:StopLoopFallbackTimerClient()\n                return\n            end\n            if self.BGMLoop ~= true then\n                self:StopLoopFallbackTimerClient()\n                return\n            end\n\n            pcall(function()\n                _SoundService:PlayBGM(soundRuid, volume)\n            end)\n        end\n\n        self._T.BGMLoopTimerId = _TimerService:SetTimerRepeat(replay, interval, 0)\n    end\n\n    @ExecSpace(\"ClientOnly\")\n    method void StopLoopFallbackTimerClient()\n        if self._T.BGMLoopTimerId ~= nil and self._T.BGMLoopTimerId > 0 then\n            _TimerService:ClearTimer(self._T.BGMLoopTimerId)\n            self._T.BGMLoopTimerId = 0\n        end\n    end\n\n    method string NormalizeSoundRuid(string rawValue)\n        if rawValue == nil then\n            return \"\"\n        end\n\n        local text = tostring(rawValue)\n        text = string.gsub(text, \"^%s+\", \"\")\n        text = string.gsub(text, \"%s+$\", \"\")\n        text = string.lower(text)\n        if text == \"\" then\n            return \"\"\n        end\n        if text == \"-\" or text == \"null\" or text == \"nil\" then\n            return \"\"\n        end\n\n        local soundPrefix = \"sound://\"\n        if string.sub(text, 1, #soundPrefix) == soundPrefix then\n            text = string.sub(text, #soundPrefix + 1)\n        end\n\n        return text\n    end\n\n    @ExecSpace(\"ClientOnly\")\n    method void OnEndPlay()\n        self:StopBGM()\n    end\n\n    @ExecSpace(\"ClientOnly\")\n    method void OnDestroy()\n        self:StopBGM()\n    end\n\nend\n"
+    }
+  }
+}

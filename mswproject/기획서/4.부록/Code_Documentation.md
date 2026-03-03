@@ -3830,3 +3830,164 @@
 | 함수명 | 파라미터 | 리턴값 | 설명 |
 |---|---|---|---|
 | `RefreshInventoryTextsClient` | void | `void` | 클라이언트에서 서버 전용 메서드 호출 의존을 줄이고, `GRInventoryComponent.Mana(@Sync)`를 직접 읽어 `GRMagazineText`의 보유량 표시가 즉시 반영되도록 수정 |
+
+## 2026-03-03 Pending SPEC 일괄 반영 (BossSpawnBugfix / LintErrorFixes / MonsterSpawnReplace / SoundSystem)
+
+## [MonsterSpawnComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `_T.NormalSpawnBreakpoints` | table | normal 후보의 `spawn_time` 분기점 캐시(정렬) |
+| `_T.LastEliteCheckElapsedSec` | number | 엘리트 체크 시점 런타임 값(점프 보호 보조) |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `BuildNormalSpawnBreakpointsCache` | `rows: table` | `void` | 데이터 로드 시 normal 분기점 배열을 1회 구축 |
+| `ResolveCurrentNormalSpawnBreakpointMin` | `elapsedSec: number` | `integer` | 현재 경과시간에 해당하는 최신 분기점 minute 반환 |
+| `ResolveSpawnCandidates` | `stage: integer, elapsedSec: number` | `table` | normal 누적 풀 제거, `spawn_time == currentBreakpoint` 행만 후보화 |
+| `CheckEliteSpawnsServer` | void | `void` | `spawnSec <= elapsed < spawnSec + window` 조건으로 과거 엘리트 대량 소환 차단 |
+| `ResolveEliteSpawnWindowSeconds` | void | `number` | 엘리트 허용 윈도우(`max(SpawnInterval*3, 1.0)`) 계산 |
+| `FindOrAddComponentSafe` | `targetEntity: Entity, typeName: string` | `Component` | 누락된 안전 컴포넌트 추가 API 복구 (`Map01BootstrapComponent` 동일 로직) |
+
+## [MovementComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Core/MovementComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Core/MovementComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `-` | `-` | 프로퍼티 변경 없음 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `UpdateStateAnimation` | `moveDirection: Vector2` | `void` | `TryChangeStateSafely` 호출 2곳에 3번째 인자 `false` 명시 |
+
+## [TagSkillComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/TagSkillComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/TagSkillComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `-` | `-` | 프로퍼티 변경 없음 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `ResolveBuffTypeAndValueServer` | `skillId: string, skillRow: table` | `any` | 다중 반환(`string, number`)과 일치하도록 반환 타입 선언 수정 |
+
+## [WeaponModelComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Core/WeaponModelComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `-` | `-` | 프로퍼티 변경 없음 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `EnsureWeaponHolderChildServer` | void | `void` | `LogSwapWarning` 호출 인자를 5개로 보정(마지막 `""`) |
+
+## [LobbyFlowComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `-` | `-` | 프로퍼티 변경 없음 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `RequestStartGameServer` | `requestUserId: string` | `void` | 로컬 변수명을 `inGameUserId`로 정리 |
+| `BeginInGameStateServer` | `inGameUserId: string` | `void` | 예약어 충돌 가능성이 있는 파라미터명 `targetUserId`를 `inGameUserId`로 변경 |
+
+## [FireSystemComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/FireSystemComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `CurrentFireSoundRuid` | string (@Sync) | 현재 무기 발사 사운드 RUID |
+| `CurrentFireSoundVolume` | number (@Sync) | 현재 무기 발사 사운드 볼륨 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `TryFireServer` | `targetWorldPosition: Vector2` | `void` | 발사 성공 시 `TryPlayFireSoundServer` 호출 추가 |
+| `TryPlayFireSoundServer` | `soundPosition: Vector3` | `void` | 서버 권위로 사용자별 발사 사운드 재생(`PlaySoundAtPos` → `PlaySound` 폴백) |
+| `SetCurrentFireSoundServer` | `soundRuid: string, volume: number` | `void` | 무기 교체 시 사운드 필드 일괄 반영 API |
+| `NormalizeSoundRuid` | `rawValue: string` | `string` | `sound://` 접두/공백/null 토큰 정규화 |
+
+## [WeaponSwapComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/WeaponSwapComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `Weapon*_Data.FireSoundRuid` | string | 슬롯별 무기 발사 사운드 RUID 저장 필드 |
+| `Weapon*_Data.FireSoundVolume` | number | 슬롯별 무기 발사 사운드 볼륨 저장 필드 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `ApplyWeaponRowToSlotDataServer` | `data: table, weaponId: string` | `void` | `firesoundruid`/`firesoundvolume`(레거시 snake_case 폴백 포함) 로드 |
+| `NormalizeSlotData` | `source: table, slot: integer` | `table` | `FireSoundRuid`, `FireSoundVolume` 기본값/클램프 추가 |
+| `CaptureRuntimeToSlot` | `slot: integer` | `void` | `FireSystemComponent`의 현재 발사 사운드 런타임을 슬롯 스냅샷으로 저장 |
+| `ApplySlotDataToCombat` | `slot: integer` | `void` | 슬롯 데이터의 발사 사운드를 FireSystem에 적용 |
+| `ApplySlotDataToCombatPreservingReload` | `slot: integer, wasReloading: boolean, savedReloadEndTime: number` | `void` | 재장전 상태 보존 경로에서도 발사 사운드 적용 |
+
+## [BGMManagerComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Core/BGMManagerComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Core/BGMManagerComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `BGMRuid` | string | 배경음 사운드 RUID |
+| `BGMVolume` | number | 배경음 볼륨 |
+| `BGMLoop` | boolean | 반복 재생 여부 |
+| `AutoPlayOnStart` | boolean | BeginPlay 자동 재생 여부 |
+| `BGMLoopInterval` | number | 루프 폴백 타이머 간격(초) |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `OnBeginPlay` | void | `void` | 자동 재생 설정 시 BGM 시작 |
+| `PlayBGM` | void | `void` | BGM 재생(루프 지원 실패 시 타이머 폴백) |
+| `StopBGM` | void | `void` | BGM 중지 및 루프 타이머 정리 |
+| `StartLoopFallbackTimerClient` | `soundRuid: string, volume: number` | `void` | 엔진 루프 미지원 대비 반복 재생 폴백 |
+| `StopLoopFallbackTimerClient` | void | `void` | 루프 폴백 타이머 해제 |
+
+## [WeaponData.csv]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Data/WeaponData.csv`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `firesoundruid` | string | 무기 발사 사운드 RUID |
+| `firesoundvolume` | float | 무기 발사 사운드 볼륨 (기본값 1.0) |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `-` | `-` | 데이터 파일이므로 함수 없음 |

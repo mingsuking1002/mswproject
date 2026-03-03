@@ -74,6 +74,8 @@ script MonsterSpawnComponent extends Component
         self._T.WarnedMissingBackdropBounds = false
         self._T.StageStartElapsedTime = 0
         self._T.EliteSpawnedSet = {}
+        self._T.NormalSpawnBreakpoints = {}
+        self._T.LastEliteCheckElapsedSec = 0
 
         self.IsSpawnActive = false
         self.IsBossPhase = false
@@ -228,6 +230,8 @@ script MonsterSpawnComponent extends Component
         self._T.ModelTypeByMonType = nil
         self._T.RowFallbackModelById = nil
         self._T.EliteSpawnedSet = {}
+        self._T.NormalSpawnBreakpoints = {}
+        self._T.LastEliteCheckElapsedSec = 0
 
         local tableName = self:ResolveMonsterDataTableName()
         if tableName == "" then
@@ -295,6 +299,7 @@ script MonsterSpawnComponent extends Component
         end
 
         self._T.MonsterRows = mergedRows
+        self:BuildNormalSpawnBreakpointsCache(mergedRows)
         self:BuildRowModelFallbackCache(mergedRows)
         self:BuildOptionalMonsterColumnsCache(mergedRows)
         self:BuildCreepScoreCache(mergedRows)
@@ -377,6 +382,44 @@ script MonsterSpawnComponent extends Component
             local creepScore = self:GetRowInteger(row, "creep_score", 0)
             self._T.CreepScoreByMonsterId[rowId] = math.max(0, creepScore)
         end
+    end
+
+    -- Breakpoint cache keeps normal spawn selection O(n) without rebuilding minute buckets every tick.
+    method void BuildNormalSpawnBreakpointsCache(table rows)
+        self._T.NormalSpawnBreakpoints = {}
+        if rows == nil then
+            return
+        end
+
+        local seen = {}
+        for _, row in pairs(rows) do
+            if row == nil then
+                continue
+            end
+            if self:IsBossRow(row) == true or self:IsEliteRow(row) == true then
+                continue
+            end
+
+            local spawnMinute = self:GetSpawnMinuteFromRow(row)
+            if spawnMinute == nil then
+                continue
+            end
+
+            local normalizedMinute = math.floor(tonumber(spawnMinute) or -1)
+            if normalizedMinute < 0 then
+                continue
+            end
+            if seen[normalizedMinute] == true then
+                continue
+            end
+
+            seen[normalizedMinute] = true
+            table.insert(self._T.NormalSpawnBreakpoints, normalizedMinute)
+        end
+
+        table.sort(self._T.NormalSpawnBreakpoints, function(a, b)
+            return a < b
+        end)
     end
 
     method boolean ValidateSpawnConfigRowContract(UserDataRow row)
@@ -604,6 +647,7 @@ script MonsterSpawnComponent extends Component
         self._T.BossSpawnedEntity = nil
         self._T.EliteSpawnedSet = {}
         self._T.StageStartElapsedTime = 0
+        self._T.LastEliteCheckElapsedSec = 0
 
         local loaded = self:LoadMonsterDataFromTable()
         self._T.DataReady = (self._T.Config ~= nil and loaded == true)
@@ -1028,6 +1072,7 @@ script MonsterSpawnComponent extends Component
         result.NormalRows = {}
         result.BossRows = {}
         local enforceStage = (self._T.UseModeMonsterData ~= true)
+        local currentBreakpoint = self:ResolveCurrentNormalSpawnBreakpointMin(elapsedSec)
 
         local rows = self._T.MonsterRows
         if rows == nil then
@@ -1059,11 +1104,41 @@ script MonsterSpawnComponent extends Component
             elseif self:IsEliteRow(row) == true then
                 continue
             else
+                if currentBreakpoint < 0 then
+                    continue
+                end
+                local normalizedMinute = math.floor(tonumber(spawnMinute) or -1)
+                if normalizedMinute ~= currentBreakpoint then
+                    continue
+                end
                 table.insert(result.NormalRows, row)
             end
         end
 
         return result
+    end
+
+    method integer ResolveCurrentNormalSpawnBreakpointMin(number elapsedSec)
+        local breakpoints = self._T.NormalSpawnBreakpoints
+        if breakpoints == nil or #breakpoints <= 0 then
+            return -1
+        end
+
+        local elapsedMinutes = math.floor(math.max(0, tonumber(elapsedSec) or 0) / 60)
+        local selected = -1
+        for i = 1, #breakpoints do
+            local candidate = tonumber(breakpoints[i]) or -1
+            if candidate < 0 then
+                continue
+            end
+            if candidate <= elapsedMinutes then
+                selected = math.floor(candidate)
+            else
+                break
+            end
+        end
+
+        return selected
     end
 
     method number GetSpawnMinuteFromRow(UserDataRow row)
@@ -1114,6 +1189,9 @@ script MonsterSpawnComponent extends Component
             stageStart = math.max(0, self._T.StageStartElapsedTime)
         end
         elapsed = math.max(0, elapsedValue - stageStart)
+        self._T.LastEliteCheckElapsedSec = elapsed
+
+        local spawnWindowSec = self:ResolveEliteSpawnWindowSeconds()
 
         local stage = 1
         local stageOk, stageValue = pcall(function()
@@ -1154,9 +1232,24 @@ script MonsterSpawnComponent extends Component
             if elapsed < spawnSec then
                 continue
             end
+            if elapsed >= (spawnSec + spawnWindowSec) then
+                continue
+            end
 
             self:SpawnEliteOnceServer(row, eliteId)
         end
+    end
+
+    method number ResolveEliteSpawnWindowSeconds()
+        local window = 1.0
+        local config = self._T.Config
+        if config ~= nil then
+            local configuredInterval = tonumber(config.SpawnInterval)
+            if configuredInterval ~= nil and configuredInterval > 0 then
+                window = math.max(configuredInterval * 3.0, 1.0)
+            end
+        end
+        return window
     end
 
     @ExecSpace("ServerOnly")
@@ -3533,5 +3626,47 @@ script MonsterSpawnComponent extends Component
         end
 
         return component
+    end
+
+    method Component FindOrAddComponentSafe(Entity targetEntity, string typeName)
+        if targetEntity == nil or isvalid(targetEntity) == false then
+            return nil
+        end
+
+        if self._T.GRUtil ~= nil and self._T.GRUtil.FindOrAddComponent ~= nil then
+            return self._T.GRUtil.FindOrAddComponent(targetEntity, typeName)
+        end
+
+        local existing = self:ResolveComponentSafe(targetEntity, typeName, nil)
+        if existing ~= nil then
+            return existing
+        end
+
+        local prefixedName = typeName
+        local plainName = typeName
+        if string.sub(typeName, 1, 7) == "script." then
+            plainName = string.sub(typeName, 8)
+        else
+            prefixedName = "script." .. typeName
+        end
+
+        local added = nil
+        local addOk1, addResult1 = pcall(function()
+            return targetEntity:AddComponent(prefixedName)
+        end)
+        if addOk1 == true then
+            added = addResult1
+        end
+
+        if added == nil then
+            local addOk2, addResult2 = pcall(function()
+                return targetEntity:AddComponent(plainName)
+            end)
+            if addOk2 == true then
+                added = addResult2
+            end
+        end
+
+        return added
     end
 end
