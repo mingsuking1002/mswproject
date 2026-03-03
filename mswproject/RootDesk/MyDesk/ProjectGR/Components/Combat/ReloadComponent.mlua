@@ -271,13 +271,6 @@ script ReloadComponent extends Component
         local prevSlot = self.CurrentWeaponSlot
         self._T.AmmoBySlot[prevSlot] = self.CurrentAmmo
 
-        -- Previous-slot reload is preserved so weapon swaps do not discard in-flight reload progress.
-        -- Only current-slot sync UI state is cleared while switching active slot context.
-        if prevSlot == self.CurrentWeaponSlot then
-            self.IsReloading = false
-            self:SetCurrentReloadWindowSync(0, 0)
-        end
-
         local targetMax = self._T.MaxAmmoBySlot[slot]
         if targetMax == nil then
             targetMax = self.MaxAmmo

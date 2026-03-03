@@ -54,6 +54,7 @@ script MonsterSpawnComponent extends Component
         self._T.RequiredColumnWarned = {}
         self._T.CreepScoreByMonsterId = {}
         self._T.BossSpawnedEntity = nil
+        self._T.BossDefeatedByStage = {}
         self._T.WarnedMissingContainer = false
         self._T.HasMapPhysicsSimulator = nil
         self._T.WarnedMissingPhysicsSimulator = false
@@ -645,6 +646,7 @@ script MonsterSpawnComponent extends Component
 
         self.IsBossPhase = false
         self._T.BossSpawnedEntity = nil
+        self._T.BossDefeatedByStage = {}
         self._T.EliteSpawnedSet = {}
         self._T.StageStartElapsedTime = 0
         self._T.LastEliteCheckElapsedSec = 0
@@ -918,6 +920,7 @@ script MonsterSpawnComponent extends Component
         self._T.SpawnMetaByEntity = {}
         self._T.AutoBoundPlacedMonsters = {}
         self._T.BossSpawnedEntity = nil
+        self._T.BossDefeatedByStage = {}
         self.IsBossPhase = false
 
         for _, entity in pairs(toDestroy) do
@@ -1100,6 +1103,10 @@ script MonsterSpawnComponent extends Component
             end
 
             if self:IsBossRow(row) == true then
+                local rowStage = self:GetRowInteger(row, "spawn_stage", 1)
+                if self._T.BossDefeatedByStage ~= nil and self._T.BossDefeatedByStage[rowStage] == true then
+                    continue
+                end
                 table.insert(result.BossRows, row)
             elseif self:IsEliteRow(row) == true then
                 continue
@@ -1794,6 +1801,10 @@ script MonsterSpawnComponent extends Component
                 stage = math.max(1, math.floor(stageValue))
             end
         end
+        if self._T.BossDefeatedByStage == nil then
+            self._T.BossDefeatedByStage = {}
+        end
+        self._T.BossDefeatedByStage[stage] = true
 
         if stage <= 1 then
             local shop = self:ResolveComponentSafe(self.Entity, "ShopManagerComponent", "IsShopOpen")
@@ -1810,9 +1821,9 @@ script MonsterSpawnComponent extends Component
             end
 
             local transition = self:ResolveComponentSafe(self.Entity, "RoundTransitionComponent", "PortalInteractRadius")
-            if transition ~= nil and transition.SpawnPortalAtPositionServer ~= nil and deathPos ~= nil then
+            if transition ~= nil and transition.ExecuteStageTransitionServer ~= nil then
                 pcall(function()
-                    transition:SpawnPortalAtPositionServer(deathPos)
+                    transition:ExecuteStageTransitionServer()
                 end)
             end
             return
@@ -1820,16 +1831,11 @@ script MonsterSpawnComponent extends Component
 
         local infinite = self:ResolveComponentSafe(self.Entity, "InfiniteModeComponent", "CurrentScore")
         if infinite ~= nil then
-            if infinite.OnBossKilledServer ~= nil then
+            if infinite.FinalizeNormalClearServer ~= nil then
                 pcall(function()
-                    infinite:OnBossKilledServer("stage2_boss")
+                    infinite:FinalizeNormalClearServer()
                 end)
                 return
-            end
-            if infinite.ActivateInfiniteModeServer ~= nil then
-                pcall(function()
-                    infinite:ActivateInfiniteModeServer(true)
-                end)
             end
         end
     end

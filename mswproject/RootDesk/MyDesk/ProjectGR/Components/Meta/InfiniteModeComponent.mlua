@@ -11,6 +11,7 @@ script InfiniteModeComponent extends Component
     property string ModeMonsterDataTableName = "ModeMonsterData"
 
     property string ScoreTextPath = "/ui/DefaultGroup/GRScoreText"
+    property string GoldTextPath = "/ui/DefaultGroup/GRGoldText"
     property string ResultPanelPath = "/ui/MainGroup/GRResultPanel"
     property string ReentryPopupPath = "/ui/MainGroup/GRReentryPopup"
     property string ReentryAcceptButtonPath = "/ui/MainGroup/GRReentryPopup/AcceptButton"
@@ -492,7 +493,7 @@ script InfiniteModeComponent extends Component
         return nowSeconds
     end
 
-    -- Runtime score text is shown during gameplay and hidden while in lobby.
+    -- Runtime score/gold texts are shown during gameplay and hidden while in lobby.
     @ExecSpace("Client")
     method void ApplyScoreUIClient()
         local scoreEntity = self:ResolveUIEntity(self.ScoreTextPath)
@@ -501,11 +502,13 @@ script InfiniteModeComponent extends Component
         end
 
         local visible = (self:IsLobbyActiveForScoreClient() ~= true)
+        local safeScore = math.max(0, self.CurrentScore)
+        local safeGold = self:GetCurrentGoldForScoreUIClient()
 
         local textComponent = scoreEntity.TextComponent
         if textComponent ~= nil and isvalid(textComponent) == true then
             pcall(function()
-                textComponent.Text = "SCORE: " .. tostring(math.max(0, self.CurrentScore))
+                textComponent.Text = "SCORE: " .. tostring(safeScore)
             end)
         end
 
@@ -513,6 +516,41 @@ script InfiniteModeComponent extends Component
             scoreEntity.Enable = visible
             scoreEntity.Visible = visible
         end)
+
+        local goldEntity = self:ResolveUIEntity(self.GoldTextPath)
+        if goldEntity == nil or isvalid(goldEntity) == false then
+            return
+        end
+
+        local goldTextComponent = goldEntity.TextComponent
+        if goldTextComponent ~= nil and isvalid(goldTextComponent) == true then
+            pcall(function()
+                -- Gold format is matched with shop UI text (e.g. "500G").
+                goldTextComponent.Text = tostring(safeGold) .. "G"
+            end)
+        end
+
+        pcall(function()
+            goldEntity.Enable = visible
+            goldEntity.Visible = visible
+        end)
+    end
+
+    -- Score HUD gold line reads synced GoldComponent so gameplay HUD can stay always-on outside shop UI.
+    @ExecSpace("ClientOnly")
+    method integer GetCurrentGoldForScoreUIClient()
+        local goldValue = 0
+        local gold = self:ResolveComponentSafe(self.Entity, "GoldComponent", "CurrentGold")
+        if gold ~= nil then
+            local readOk, readValue = pcall(function()
+                return gold.CurrentGold
+            end)
+            if readOk == true and readValue ~= nil then
+                goldValue = math.max(0, math.floor(readValue))
+            end
+        end
+
+        return goldValue
     end
 
     -- Lobby check uses gameplay state fallback so score text appears immediately on run start.

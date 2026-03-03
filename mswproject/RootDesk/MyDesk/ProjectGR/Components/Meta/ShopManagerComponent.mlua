@@ -25,7 +25,13 @@ script ShopManagerComponent extends Component
 
 	property integer AmmoPrice = 50
 
-	property integer PassivePrice = 200
+	property integer PassivePrice = 1500
+
+	property integer PotionMaxPurchaseCount = 5
+
+	property integer AmmoMaxPurchaseCount = 5
+
+	property integer PassiveMaxPurchaseCount = 1
 
 	property boolean UseGameplayLockDuringShop = true
 
@@ -571,14 +577,16 @@ script ShopManagerComponent extends Component
 	method table BuildSlotDataServer(string slotType)
 		        local normalizedType = self:NormalizeShopSlotType(slotType)
 		        local row = self:GetShopRowByTypeServer(normalizedType)
+		        local defaultMaxPurchaseCount = self:GetDefaultMaxPurchaseCountByType(normalizedType)
 		
 		        if normalizedType == "potion" then
 		            local price = self:GetRowIntegerWithAlias(row, "Price", "price", self.HealPrice)
 		            local effectValue = self:GetRowNumberWithAlias(row, "EffectValue", "effect_value", 1)
-		            local maxPurchaseCount = self:GetRowIntegerWithAlias(row, "Maximum", "maximum", 1)
+		            local maxPurchaseCount = self:GetRowIntegerWithAlias(row, "Maximum", "maximum", defaultMaxPurchaseCount)
 		            if maxPurchaseCount <= 0 then
-		                maxPurchaseCount = 1
+		                maxPurchaseCount = defaultMaxPurchaseCount
 		            end
+		            maxPurchaseCount = math.max(defaultMaxPurchaseCount, maxPurchaseCount)
 		            local itemName = self:GetRowStringWithAlias(row, "ItemName", "name", "체력 포션")
 		            local description = self:GetRowStringWithAlias(row, "Description", "description", "체력 포션 1개 획득")
 		            return {
@@ -596,10 +604,11 @@ script ShopManagerComponent extends Component
 		        if normalizedType == "ammo" then
 		            local price = self:GetRowIntegerWithAlias(row, "Price", "price", self.AmmoPrice)
 		            local effectValue = self:GetRowNumberWithAlias(row, "EffectValue", "effect_value", 1)
-		            local maxPurchaseCount = self:GetRowIntegerWithAlias(row, "Maximum", "maximum", 1)
+		            local maxPurchaseCount = self:GetRowIntegerWithAlias(row, "Maximum", "maximum", defaultMaxPurchaseCount)
 		            if maxPurchaseCount <= 0 then
-		                maxPurchaseCount = 1
+		                maxPurchaseCount = defaultMaxPurchaseCount
 		            end
+		            maxPurchaseCount = math.max(defaultMaxPurchaseCount, maxPurchaseCount)
 		            local itemName = self:GetRowStringWithAlias(row, "ItemName", "name", "마나 보충")
 		            local description = self:GetRowStringWithAlias(row, "Description", "description", "마나 1개 획득")
 		            return {
@@ -615,10 +624,11 @@ script ShopManagerComponent extends Component
 		        end
 		
 		        if normalizedType == "passive" then
-		            local maxPurchaseCount = self:GetRowIntegerWithAlias(row, "Maximum", "maximum", 1)
+		            local maxPurchaseCount = self:GetRowIntegerWithAlias(row, "Maximum", "maximum", defaultMaxPurchaseCount)
 		            if maxPurchaseCount <= 0 then
-		                maxPurchaseCount = 1
+		                maxPurchaseCount = defaultMaxPurchaseCount
 		            end
+		            maxPurchaseCount = math.max(defaultMaxPurchaseCount, maxPurchaseCount)
 		
 		            local passiveSystem = self:ResolveComponentSafe(self.Entity, "PassiveSystemComponent", "AcquiredPassiveCount")
 		            if passiveSystem ~= nil and passiveSystem.GetNextPassiveCandidateServer ~= nil then
@@ -705,6 +715,18 @@ script ShopManagerComponent extends Component
 		                end
 		
 		                findRow = self:FindShopRowServer("slot_type", "heal")
+		                if findRow ~= nil then
+		                    return findRow
+		                end
+		            end
+
+		            if normalizedType == "ammo" then
+		                findRow = self:FindShopRowServer("SlotType", "mana")
+		                if findRow ~= nil then
+		                    return findRow
+		                end
+
+		                findRow = self:FindShopRowServer("slot_type", "mana")
 		                if findRow ~= nil then
 		                    return findRow
 		                end
@@ -833,6 +855,20 @@ script ShopManagerComponent extends Component
 		        return parsed
 	end
 
+	method integer GetDefaultMaxPurchaseCountByType(string slotType)
+		        local normalizedType = self:NormalizeShopSlotType(slotType)
+		        if normalizedType == "potion" then
+		            return math.max(1, math.floor(self.PotionMaxPurchaseCount))
+		        end
+		        if normalizedType == "ammo" then
+		            return math.max(1, math.floor(self.AmmoMaxPurchaseCount))
+		        end
+		        if normalizedType == "passive" then
+		            return math.max(1, math.floor(self.PassiveMaxPurchaseCount))
+		        end
+		        return 1
+	end
+
 	method string NormalizeShopSlotType(string slotType)
 		        local token = ""
 		        if slotType ~= nil then
@@ -850,6 +886,12 @@ script ShopManagerComponent extends Component
 		            return "potion"
 		        end
 		        if token == "ammo" then
+		            return "ammo"
+		        end
+		        if token == "mana" then
+		            return "ammo"
+		        end
+		        if token == "magazine" then
 		            return "ammo"
 		        end
 		        if token == "passive" then

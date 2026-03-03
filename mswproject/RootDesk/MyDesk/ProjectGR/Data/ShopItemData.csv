@@ -1,4 +1,4 @@
 ﻿id,slot_type,name,description,price,effect_value,maximum
-product_1,potion,체력 포션,체력포션 1개 획득,1000,1,5
-product_2,mana,마나 충전기,mana  획득,50,1,5
+product_1,potion,체력 포션,체력포션 1개 획득,100,1,5
+product_2,mana,마나 충전기,mana 획득,50,1,5
 product_3,passive,패시브 스킬,상시 패시브 스킬 중 랜덤 1개,1500,1,1

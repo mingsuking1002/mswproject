@@ -3814,6 +3814,58 @@
 |---|---|---|---|
 | `-` | `-` | 데이터 파일이므로 함수 없음 |
 
+## [ShopManagerComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/ShopManagerComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/ShopManagerComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `PassivePrice` | integer | 데이터 로드 실패 시 패시브 기본 가격(1500) |
+| `PotionMaxPurchaseCount` | integer | 포션 슬롯 기본 최대 구매 횟수(기본 5) |
+| `AmmoMaxPurchaseCount` | integer | 마나 슬롯 기본 최대 구매 횟수(기본 5) |
+| `PassiveMaxPurchaseCount` | integer | 패시브 슬롯 기본 최대 구매 횟수(기본 1) |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `BuildSlotDataServer` | `slotType: string` | `table` | `maximum` 미해결 시 타입별 기본 최대 구매 횟수 적용 |
+| `GetShopRowByTypeServer` | `slotType: string` | `UserDataRow` | `ammo` 슬롯 조회 시 `mana` alias 추가 조회 |
+| `NormalizeShopSlotType` | `slotType: string` | `string` | `mana`, `magazine`을 `ammo`로 정규화 |
+| `GetDefaultMaxPurchaseCountByType` | `slotType: string` | `integer` | 슬롯 타입별 기본 최대 구매 횟수 반환 |
+
+## [ShopItemData.csv]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Data/ShopItemData.csv`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `product_1.price` | number | 포션 가격을 `100`으로 조정 |
+| `product_3.maximum` | integer | 패시브 최대 구매 횟수를 `1`로 조정 |
+| `product_2.description` | string | 마나 설명 문자열 공백 정리 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `-` | `-` | 데이터 파일이므로 함수 없음 |
+
+## [LobbyFlowComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Bootstrap/LobbyFlowComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `GuideOpenButtonPath` | string | 도움말(조작법) 열기 버튼 엔티티 경로 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `ApplyLobbyUIClient` | `isLobby: boolean` | `void` | 로비 상태일 때만 `GuideOpenButtonPath` 버튼을 표시하고, 인게임(`isLobby=false`)에서는 즉시 숨김 처리 |
+
 ## 2026-03-03 Background Reload
 
 ## [ReloadComponent]
@@ -4160,3 +4212,85 @@
 | 함수명 | 파라미터 | 리턴값 | 설명 |
 |---|---|---|---|
 | `-` | `-` | 데이터 파일이므로 함수 없음 |
+
+## [InfiniteModeComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/InfiniteModeComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Meta/InfiniteModeComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `ScoreTextPath` | string | 인게임 스코어 텍스트 경로 (`/ui/DefaultGroup/GRScoreText`) |
+| `GoldTextPath` | string | 인게임 골드 텍스트 경로 (`/ui/DefaultGroup/GRGoldText`) |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `ApplyScoreUIClient` | `void` | `void` | 스코어는 `GRScoreText`, 골드는 `GRGoldText`를 각각 갱신하고 둘 다 인게임 동안 상시 노출 |
+| `GetCurrentGoldForScoreUIClient` | `void` | `integer` | `GoldComponent.CurrentGold`를 읽어 score HUD 골드 라인에 사용할 안전 값 반환 |
+
+## [DefaultGroup.ui]
+- **파일명:** `ui/DefaultGroup.ui`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `/ui/DefaultGroup/GRGoldText` | UI Entity | `GRScoreText` 바로 아래에 배치된 인게임 상시 골드 표시 텍스트 (`0G` 포맷) |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `-` | `-` | `-` | UI 리소스 파일이므로 함수 없음 |
+
+## [MonsterSpawnComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `_T.BossDefeatedByStage` | table | 스테이지별 보스 처치 이력을 저장하는 런타임 테이블 (`stageId -> true`) |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `OnInitialize` | `void` | `void` | 런타임 시작 시 `BossDefeatedByStage` 초기화 |
+| `ResolveSpawnCandidates` | `stage: integer, elapsedSec: number` | `table` | 보스 후보 구성 시 이미 처치한 `spawn_stage` 보스를 제외하여 재스폰 방지 |
+| `OnBossDefeatedServer` | `deathPos: Vector3` | `void` | 현재 스테이지를 기준으로 `BossDefeatedByStage[stageId] = true` 기록 |
+| `ActivateInfiniteModeServer` | `enabled: boolean` | `boolean` | 모드 전환 시 보스 처치 이력 테이블 리셋 |
+| `KillAllMonstersServer` | `void` | `void` | 필드 하드 리셋 시 보스 처치 이력 테이블 리셋 |
+
+## [ReloadComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ReloadComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/ReloadComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `CurrentWeaponSlot` | integer | 현재 활성 슬롯 인덱스 |
+| `_T.ReloadTimerBySlot` | table | 슬롯별 재장전 타이머 핸들 |
+| `_T.ReloadEndTimeBySlot` | table | 슬롯별 재장전 완료 예정 시각 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `SetCurrentWeaponSlot` | `slot: integer` | `void` | 슬롯 전환 시 이전 슬롯의 `IsReloading`/reload-window 강제 초기화를 제거해 백그라운드 재장전 유지 |
+
+## [MonsterSpawnComponent]
+- **파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.mlua`
+- **Sync 파일명:** `RootDesk/MyDesk/ProjectGR/Components/Combat/MonsterSpawnComponent.codeblock`
+- **수정일:** `2026-03-03`
+
+### Properties
+| 이름 | 타입 | 설명 |
+|---|---|---|
+| `IsBossPhase` | boolean | 보스 페이즈 진행 상태 |
+
+### Functions
+| 함수명 | 파라미터 | 리턴값 | 설명 |
+|---|---|---|---|
+| `OnBossDefeatedServer` | `deathPos: Vector3` | `void` | Stage1: 포탈 생성 대신 `ExecuteStageTransitionServer()` 즉시 호출, Stage2+: `FinalizeNormalClearServer()`로 즉시 게임 종료/결과/로비 복귀 흐름 사용 |

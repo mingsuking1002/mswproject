@@ -14,6 +14,7 @@ script LobbyFlowComponent extends Component
     property string StartButtonPath = "/ui/MainGroup/GRStartButton"
     property string RankingTextPath = "/ui/MainGroup/GRRankingText"
     property string MyRankTextPath = "/ui/MainGroup/GRMyRankText"
+    property string GuideOpenButtonPath = "/ui/MainGroup/GRGuideOpenButton"
     property string UIRootPath = "/ui/MainGroup"
     property string UIRootFallbackPath = "/ui/DefaultGroup"
     property string GRBGPath = "/ui/MainGroup/GRBG"
@@ -498,7 +499,7 @@ script LobbyFlowComponent extends Component
         end
     end
 
-    -- Client UI authority lives only here: start/ranking/my-rank visibility by lobby state.
+    -- Client UI authority lives only here: lobby-only widgets are hidden immediately on in-game transition.
     @ExecSpace("ClientOnly")
     method void ApplyLobbyUIClient(boolean isLobby)
         local startButton = self:ResolveUIEntity(self.StartButtonPath)
@@ -506,6 +507,14 @@ script LobbyFlowComponent extends Component
             pcall(function()
                 startButton.Enable = isLobby
                 startButton.Visible = isLobby
+            end)
+        end
+
+        local guideOpenButton = self:ResolveUIEntity(self.GuideOpenButtonPath)
+        if guideOpenButton ~= nil and isvalid(guideOpenButton) == true then
+            pcall(function()
+                guideOpenButton.Enable = isLobby
+                guideOpenButton.Visible = isLobby
             end)
         end
 
