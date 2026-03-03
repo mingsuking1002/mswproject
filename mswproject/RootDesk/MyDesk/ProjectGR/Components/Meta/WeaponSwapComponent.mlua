@@ -68,7 +68,7 @@ script WeaponSwapComponent extends Component
 
     property boolean PauseGameplayByFlag = true
     property boolean UseClientTimeScalePause = false
-    property boolean CancelReloadOnSwap = false
+    property boolean CancelReloadOnSwap = true
     property integer DefaultAmmo = 30
     property integer DefaultDamage = 10
     property number DefaultFireCooldown = 0.5
@@ -106,7 +106,7 @@ script WeaponSwapComponent extends Component
         self._T.PendingSlotClient = self.CurrentWeaponSlot
     end
 
-    -- E toggles the menu, ESC cancels, and direction/space confirm follows the radial-selection intent.
+    -- F toggles the menu, ESC cancels, and direction/space confirm follows the radial-selection intent.
     @EventSender("Service", "InputService")
     handler HandleKeyDownEvent(KeyDownEvent event)
         local key = event.key
@@ -1219,23 +1219,7 @@ script WeaponSwapComponent extends Component
                 reloadComponent:SetCurrentWeaponSlot(finalSlot)
             end)
             pcall(function()
-                local liveAmmo = nil
-                if reloadComponent._T ~= nil and reloadComponent._T.AmmoBySlot ~= nil then
-                    liveAmmo = reloadComponent._T.AmmoBySlot[finalSlot]
-                end
-
-                local savedAmmo = tonumber(data.Ammo)
-                if savedAmmo == nil then
-                    savedAmmo = 0
-                end
-                savedAmmo = math.max(0, math.floor(savedAmmo))
-
-                local liveAmmoValue = tonumber(liveAmmo)
-                if liveAmmoValue ~= nil and liveAmmoValue > savedAmmo then
-                    reloadComponent:SetSlotAmmo(finalSlot, math.max(0, math.floor(liveAmmoValue)))
-                else
-                    reloadComponent:SetSlotAmmo(finalSlot, savedAmmo)
-                end
+                reloadComponent:SetSlotAmmo(finalSlot, data.Ammo)
             end)
             pcall(function()
                 reloadComponent.ReloadTime = data.ReloadTime
